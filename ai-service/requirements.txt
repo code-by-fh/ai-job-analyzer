@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+openai
+psycopg2-binary
+sqlalchemy
+pydantic
+celery
+redis
+alembic
+markdown
+xhtml2pdf
+pypdf
+python-multipart
+websockets
