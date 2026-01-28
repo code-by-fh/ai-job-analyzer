@@ -17,7 +17,7 @@ The system consists of 8 Docker containers:
 | --- | --- | --- | --- |
 | **frontend** | UI | Next.js (React) | User interface for searching, viewing results, and managing profile settings. |
 | **scraper-api** | API | FastAPI | Accepts search requests and initiates the Celery workflow. |
-| **scraper-worker** | Worker | Celery (Python) | Handles IO-bound tasks (fetching links, downloading HTML). |
+| **scraper-worker** | Worker | Celery (Python) | Handles IO-bound tasks (fetching links, downloading HTML). **Using Headless Browser (Playwright) & Proxy-ready**. |
 | **ai-api** | API | FastAPI | Serves jobs and user settings from the DB to the frontend. |
 | **ai-worker** | Worker | Celery (Python) | Handles CPU-bound tasks (LLM filtering & analysis). |
 | **rabbitmq** | Broker | RabbitMQ | Manages queues (`scraper_queue`, `ai_queue`) and message routing. |
@@ -50,7 +50,7 @@ sequenceDiagram
         Worker_S->>RMQ: Publish Result -> Next Task "filter_urls" (ai_queue)
         
         RMQ->>Worker_AI: Consume "filter_urls"
-        Worker_AI->>Worker_AI: LLM Call (GPT-3.5)
+        Worker_AI->>Worker_AI: LLM Call
         Worker_AI->>RMQ: Publish Result -> Next Task "schedule_crawls" (scraper_queue)
         
         RMQ->>Worker_S: Consume "schedule_crawls"
@@ -66,10 +66,9 @@ sequenceDiagram
         
         RMQ->>Worker_AI: Consume "analyze_job"
         Worker_AI->>DB: Fetch User Profile
-        Worker_AI->>Worker_AI: LLM Analysis (DeepSeek/GPT) based on Profile
+        Worker_AI->>Worker_AI: LLM Analysis
         Worker_AI->>DB: INSERT Job Result
     end
-
 ```
 
 ## 4. Database Schema (PostgreSQL)
@@ -118,7 +117,10 @@ Stores the user's search profile for personalized analysis.
 * Scraper and AI Workers are decoupled.
 * Worker containers can be scaled up easily under load: `docker-compose up --scale ai-worker=5`.
 
-
+4. **Observability & Logging:**
+* **Structured Logging:** All services use a standardized `%(asctime)s - %(name)s - %(levelname)s - %(message)s` format.
+* **Traceability:** Tasks log their unique IDs, URL targets, and execution status (Task Started -> LLM Call -> DB Save).
+* **Debugging:** `scraper-worker` includes detailed Playwright logs for browser interactions (Launch -> Navigate -> Wait -> Extract).
 
 ---
 
@@ -131,4 +133,4 @@ Stores the user's search profile for personalized analysis.
 * **Result Backend:** Redis (Alpine).
 * **Database:** PostgreSQL 15 (SQLAlchemy ORM).
 * **AI:** OpenRouter API (OpenAI / DeepSeek Models).
-* **HTML Parsing:** BeautifulSoup4, Markdownify.
+* **HTML Parsing:** Playwright (Headless Browser) + BeautifulSoup4 + Markdownify.

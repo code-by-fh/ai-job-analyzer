@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import DynamicList from '../components/DynamicList';
 
 export default function Settings() {
@@ -24,7 +24,7 @@ export default function Settings() {
   const [crawling, setCrawling] = useState(false);
 
   useEffect(() => {
-    fetch('http://localhost:8002/settings')
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`)
       .then(res => res.json())
       .then(data => {
         setFormData({
@@ -49,7 +49,7 @@ export default function Settings() {
     e.preventDefault();
     setStatus('Speichere...');
     try {
-      await fetch('http://localhost:8002/settings', {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -61,8 +61,6 @@ export default function Settings() {
     }
   };
 
-  // ... andere funktionen ...
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -70,27 +68,26 @@ export default function Settings() {
     setUploading(true);
     setStatus("Analysiere PDF... (kann 10-20sek dauern)");
 
-    const formData = new FormData();
-    formData.append("file", file);
+    const uploadData = new FormData();
+    uploadData.append("file", file);
 
     try {
-      const res = await fetch('http://localhost:8002/settings/upload-cv', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
         method: 'POST',
-        body: formData,
+        body: uploadData,
       });
 
       if (!res.ok) throw new Error("Upload failed");
 
       const result = await res.json();
-
-      // Formular mit den neuen Daten aktualisieren
       const data = result.data;
+
       setFormData({
-        role: data.role || formData.get('role') || '', // Fallback
-        skills: data.skills || '',
-        min_salary: data.min_salary || '',
-        location: data.location || '',
-        preferences: formData.get('preferences') as string || '', // AI extrahiert das nicht
+        role: data.role || formData.role || '',
+        skills: data.skills || formData.skills || '',
+        min_salary: data.min_salary || formData.min_salary || '',
+        location: data.location || formData.location || '',
+        preferences: formData.preferences || '',
         cv_data: data.cv_data || { experience: [], projects: [], education: '' },
         job_urls: formData.job_urls || []
       });
@@ -103,8 +100,6 @@ export default function Settings() {
       setUploading(false);
     }
   };
-
-  // --- HELPER FÜR DYNAMIC LISTS ---
 
   const handleExpChange = (idx: number, field: string, val: string) => {
     const newExp = [...formData.cv_data.experience];
@@ -164,16 +159,16 @@ export default function Settings() {
     if (formData.job_urls.length === 0) return;
     setCrawling(true);
     setStatus('Starte Crawler...');
-    
+
     for (const url of formData.job_urls) {
-        if (!url) continue;
-        try {
-            await fetch('http://localhost:8001/search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: url, location: formData.location || 'Remote' })
-            });
-        } catch (e) { console.error("Crawler error", e); }
+      if (!url) continue;
+      try {
+        await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: url, location: formData.location || 'Remote' })
+        });
+      } catch (e) { console.error("Crawler error", e); }
     }
     setStatus('Crawl Auftrag gesendet! 🕵️‍♂️');
     setCrawling(false);
@@ -184,8 +179,7 @@ export default function Settings() {
     if (!confirm("Bist du sicher? Dein gesamter Lebenslauf und alle Einstellungen werden unwiderruflich gelöscht.")) return;
 
     try {
-      await fetch('http://localhost:8002/settings', { method: 'DELETE' });
-      // State resetten
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, { method: 'DELETE' });
       setFormData({
         role: '', skills: '', min_salary: '', location: '', preferences: '',
         cv_data: { experience: [], projects: [], education: '' },
@@ -201,7 +195,7 @@ export default function Settings() {
     if (!confirm("⚠️ WARNUNG: Das löscht ALLE Jobs und dein komplettes Profil. Alles weg. Wirklich?")) return;
 
     try {
-      await fetch('http://localhost:8002/reset');
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reset`);
       setFormData({
         role: '', skills: '', min_salary: '', location: '', preferences: '',
         cv_data: { experience: [], projects: [], education: '' },
@@ -335,8 +329,8 @@ export default function Settings() {
               </div>
             ))}
             <div className="flex gap-2">
-                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} className="flex-1 border border-slate-300 p-2 rounded text-slate-900 text-sm" placeholder="Neue URL hinzufügen..." onKeyDown={(e) => e.key === 'Enter' && addUrl()} />
-                <button onClick={addUrl} className="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-200 font-bold transition shadow-sm cursor-pointer">+</button>
+              <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} className="flex-1 border border-slate-300 p-2 rounded text-slate-900 text-sm" placeholder="Neue URL hinzufügen..." onKeyDown={(e) => e.key === 'Enter' && addUrl()} />
+              <button onClick={addUrl} className="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-200 font-bold transition shadow-sm cursor-pointer">+</button>
             </div>
           </div>
         </section>

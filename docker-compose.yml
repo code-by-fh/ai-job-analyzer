@@ -12,33 +12,27 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
 
-  # --- RESULT BACKEND & CACHE ---
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
 
-  # --- MESSAGE BROKER (NEU) ---
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - "5672:5672"   # AMQP Port (für Celery)
-      - "15672:15672" # Management UI (für dich im Browser)
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
 
-  # --- SCRAPER SERVICES ---
-  
   scraper-api:
     build: ./scraper-service
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
     ports:
       - "8001:8000"
     environment:
-      # Broker ist jetzt RabbitMQ (amqp protocol)
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
-      # Backend bleibt Redis
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
     depends_on:
@@ -47,7 +41,7 @@ services:
 
   scraper-worker:
     build: ./scraper-service
-    command: celery -A main.celery_app worker --loglevel=info --concurrency=2 -Q scraper_queue
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=2 -Q scraper_queue
     environment:
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -56,11 +50,9 @@ services:
       - rabbitmq
       - redis
 
-  # --- AI SERVICES ---
-
   ai-api:
     build: ./ai-service
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
     ports:
       - "8002:8000"
     environment:
@@ -75,7 +67,7 @@ services:
 
   ai-worker:
     build: ./ai-service
-    command: celery -A main.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
     environment:
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -90,13 +82,14 @@ services:
       - ./ai-service:/app
       - /app/__pycache__
 
-  # --- FRONTEND ---
   # frontend:
   #   build: ./frontend
   #   ports:
   #     - "3000:3000"
   #   environment:
   #     - NEXT_PUBLIC_API_URL=http://localhost:8002
+  #     - NEXT_PUBLIC_API_WS_URL=ws://localhost:8002/ws
+  #     - NEXT_PUBLIC_API_SCRAPER_URL=http://localhost:8001
   #   depends_on:
   #     - ai-api
 

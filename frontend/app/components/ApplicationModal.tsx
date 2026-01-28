@@ -19,7 +19,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId }: Pr
   // NEU: Download Funktion
   const handleDownload = async () => {
     try {
-      const res = await fetch(`http://localhost:8002/jobs/${jobId}/download`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/download`);
       if (!res.ok) throw new Error("Download fehlgeschlagen");
       
       // Blob erstellen und virtuellen Link klicken

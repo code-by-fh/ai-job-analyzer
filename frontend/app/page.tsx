@@ -38,7 +38,7 @@ export default function Home() {
   // --- API ---
   const fetchJobs = async () => {
     try {
-      const res = await fetch('http://localhost:8002/jobs');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`);
       const data = await res.json();
       setJobs(data);
     } catch (e) { console.error("Fehler beim Laden:", e); }
@@ -46,11 +46,11 @@ export default function Home() {
 
   useEffect(() => {
     fetchJobs();
-    fetch('http://localhost:8002/status')
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`)
       .then(res => res.json())
       .then(data => { if (data.crawling) setIsCrawling(true); });
 
-    const ws = new WebSocket("ws://localhost:8002/ws");
+    const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === "crawl_started") {
@@ -79,7 +79,7 @@ export default function Home() {
     if (!query) return;
     setIsCrawling(true);
     try {
-      await fetch('http://localhost:8001/search', {
+      await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, location: 'Remote' })
       });
@@ -98,7 +98,7 @@ export default function Home() {
 
     setPendingIds(prev => [...prev, job.id]);
     try {
-      await fetch(`http://localhost:8002/jobs/${job.id}/generate`, { method: 'POST' });
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, { method: 'POST' });
     } catch (e) {
       setPendingIds(prev => prev.filter(id => id !== job.id));
     }

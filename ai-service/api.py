@@ -1,94 +1,30 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Text, Float, Integer, JSON, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import NullPool
-from sqlalchemy.sql import func
-from celery import Celery
-from openai import OpenAI
 import os
 import json
 import logging
-from typing import List, Optional
+import io
+import asyncio
+from datetime import date
+from typing import List
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+import redis.asyncio as redis_async
+import redis as redis_sync
+from openai import OpenAI
+from pypdf import PdfReader
 import markdown
 from xhtml2pdf import pisa
 from io import BytesIO
-from fastapi.responses import StreamingResponse
-from datetime import date
-from fastapi import UploadFile, File
-import io
-from pypdf import PdfReader
-import redis.asyncio as redis_async 
-import redis as redis_sync
-from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect
-import asyncio
+
+from celery_config import celery_app
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel
+# Note: tasks are referenced by name strings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@database:5432/jobdb")
-
-engine = create_engine(DATABASE_URL, poolclass=NullPool)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-class JobEntry(Base):
-    __tablename__ = "jobs"
-    id = Column(String, primary_key=True)
-    title = Column(String)
-    company = Column(String)
-    description = Column(Text)
-    match_score = Column(Float)
-    reasoning = Column(Text)
-    application_draft = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    url = Column(String, nullable=True)
-    status = Column(String, default="OPEN") 
-    generation_error = Column(String, nullable=True)
-
-class UserProfile(Base):
-    __tablename__ = "user_settings"
-    id = Column(Integer, primary_key=True) 
-    role = Column(String, default="Software Engineer")
-    skills = Column(String, default="Python, Docker")
-    min_salary = Column(String, default="60000")
-    location = Column(String, default="Remote")
-    preferences = Column(Text, default="")
-    cv_data = Column(JSON, default={}) 
-    job_urls = Column(JSON, default=[])
-
-class ExperienceItem(BaseModel):
-    company: str
-    role: str
-    duration: str
-    description: str
-
-class ProjectItem(BaseModel):
-    name: str
-    tech_stack: str
-    description: str
-
-class CVDataModel(BaseModel):
-    experience: List[ExperienceItem] = []
-    projects: List[ProjectItem] = []
-    education: str = ""
-
-class SettingsData(BaseModel):
-    role: str
-    skills: str
-    min_salary: str
-    location: str
-    preferences: str
-    cv_data: CVDataModel
-    job_urls: List[str] = []
-
-celery_app = Celery(
-    'ai_worker',
-    broker=os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@rabbitmq:5672//"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-)
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -140,22 +76,16 @@ async def lifespan(app: FastAPI):
     task.cancel()
     
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-def format_cv_for_prompt(cv_json):
-    if not cv_json:
-        return "Keine detaillierte Erfahrung angegeben."
-    
-    text = "BERUFLICHE ERFAHRUNG:\n"
-    for exp in cv_json.get("experience", []):
-        text += f"- {exp['role']} bei {exp['company']} ({exp['duration']}): {exp['description']}\n"
-    
-    text += "\nPROJEKTE:\n"
-    for proj in cv_json.get("projects", []):
-        text += f"- {proj['name']} (Tech: {proj['tech_stack']}): {proj['description']}\n"
-        
-    text += f"\nAUSBILDUNG:\n{cv_json.get('education', '')}"
-    return text
+allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+logger.info(f"Allowed origins: {allowed_origins}")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"]
+)
 
 def extract_text_from_pdf(file_bytes):
     try:
@@ -208,162 +138,6 @@ def parse_cv_with_ai(cv_text):
         logger.error(f"AI Parse Error: {e}")
         return None
 
-@celery_app.task(name="ai.filter_urls")
-def filter_urls_task(args):
-    if not args: return []
-    base_url, urls_list = args
-    urls_to_check = urls_list[:60]
-    try:
-        response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free",
-            messages=[
-                {"role": "system", "content": "Du bist ein Crawler-Filter. Gib NUR ein JSON Array mit relevanten Job-Detail-URLs zurück."},
-                {"role": "user", "content": f"Basis: {base_url}. Liste: {json.dumps(urls_to_check)}"}
-            ],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip().replace("```json", "").replace("```", "")
-        return json.loads(content)
-    except Exception as e:
-        logger.error(f"Filter Error: {e}")
-        return []
-
-@celery_app.task(name="ai.analyze_job")
-def analyze_job_task(job_data):
-    logger.info(f"[TASK] Analyzing: {job_data['title']}")
-    db = SessionLocal()
-    r = redis_sync.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
-    
-    try:
-        if db.query(JobEntry).filter(JobEntry.id == job_data['id']).first():
-            return
-        
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
-        if profile:
-            cv_text = format_cv_for_prompt(profile.cv_data)
-            profile_str = f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
-        else:
-            profile_str = "Python Dev"
-
-        response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free", 
-            messages=[
-                {"role": "system", "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }"}, 
-                {"role": "user", "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}"}
-            ],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip().replace("```json", "").replace("```", "")
-        data = json.loads(content)
-        
-        db_job = JobEntry(
-            id=job_data['id'], 
-            title=job_data['title'], 
-            company=job_data['company'], 
-            description=job_data['description'], 
-            match_score=float(data.get("score", 0)), 
-            url=job_data.get('url'),
-            reasoning=data.get("reason_de", ""),
-            application_draft=None,
-            status="OPEN"
-        )
-        
-        db.add(db_job)
-        db.commit()
-
-        payload = json.dumps({
-            "type": "new_job",
-            "job": {
-                "id": db_job.id,
-                "title": db_job.title,
-                "company": db_job.company,
-                "description": db_job.description,
-                "match_score": db_job.match_score,
-                "reasoning": db_job.reasoning,
-                "url": db_job.url,
-                "status": "OPEN",
-                "created_at": db_job.created_at.isoformat() if db_job.created_at else None
-            }
-        })
-        
-        r.publish("job_updates", payload)
-        logger.info(f"✅ WebSocket Event 'new_job' gesendet für {db_job.title}")
-
-    except Exception as e:
-        logger.error(f"Analyze Error: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-@celery_app.task(name="ai.generate_application")
-def generate_application_task(job_id):
-    logger.info(f"[TASK] Generiere Anschreiben für Job: {job_id}")
-    db = SessionLocal()
-    r = redis_sync.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
-    
-    try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
-        if not job:
-            logger.error(f"FEHLER: Job ID {job_id} nicht in DB gefunden!")
-            return
-
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
-        if not profile:
-            error_msg = "Profil unvollständig. Bitte in den Einstellungen Lebenslauf hinterlegen."
-            logger.error(f"error_msg: {error_msg}")
-            
-            r.publish("job_updates", json.dumps({
-                "type": "global_error",
-                "message": error_msg
-            }))
-            
-            r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
-            return
-        
-        logger.info(f"Daten geladen. Job: {job.title}, User: {profile.role}")
-
-        cv_text = format_cv_for_prompt(profile.cv_data)
-        
-        system_prompt = """
-        Du bist ein professioneller Karriere-Coach. Schreibe ein überzeugendes Anschreiben.
-        Nutze Markdown.
-        """
-        
-        user_prompt = f"""
-        STELLENANZEIGE: {job.title} bei {job.company}
-        {job.description[:2000]}
-        
-        BEWERBER: {profile.role}
-        {cv_text}
-        """
-
-        logger.info("⏳ Sende Anfrage an OpenAI...")
-        response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free", 
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.7
-        )
-        logger.info("Antwort von OpenAI erhalten.")
-        
-        job.application_draft = response.choices[0].message.content
-        db.commit()
-        logger.info("Anschreiben in DB gespeichert.")
-        
-        r = redis_sync.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
-        r.publish("job_updates", json.dumps({
-            "type": "job_update",
-            "job_id": job.id,
-            "status": "COMPLETED",
-            "application_draft": job.application_draft
-        }))
-        logger.info(f"✅ WebSocket Event 'job_update' für {job.id} gesendet.")
-        
-    except Exception as e:
-        logger.error(f"CRASH BEI GENERIERUNG: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -390,7 +164,10 @@ def get_jobs():
 
 @app.post("/jobs/{job_id}/generate")
 def trigger_generation(job_id: str):
-    generate_application_task.apply_async(args=[job_id], queue="ai_queue")
+    # Note: importing task from worker to use apply_async with typed args is better 
+    # but using name string avoids circular imports if we are not careful.
+    # celery_app.send_task is safer for decoupling.
+    celery_app.send_task("ai.generate_application", args=[job_id], queue="ai_queue")
     return {"status": "started"}
 
 @app.get("/settings")

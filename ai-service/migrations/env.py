@@ -11,7 +11,7 @@ sys.path.append(os.getcwd())
 
 # 2. Deine SQLAlchemy Models importieren
 # Das erlaubt Alembic, Änderungen am Code automatisch zu erkennen
-from main import Base, DATABASE_URL
+from database import Base, DATABASE_URL
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
