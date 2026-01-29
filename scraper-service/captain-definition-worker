@@ -2,12 +2,8 @@
     "schemaVersion": 2,
     "dockerfilePath": "./Dockerfile",
     "overrideCommand": [
-        "celery",
-        "-A",
-        "worker.celery_app",
-        "worker",
-        "--loglevel=info",
-        "-Q",
-        "scraper_queue"
+        "/bin/sh",
+        "-c",
+        "celery -A worker.celery_app worker --loglevel=info --concurrency=2 -Q ai_queue"
     ]
 }
