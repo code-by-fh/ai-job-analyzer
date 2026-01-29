@@ -19,7 +19,7 @@ if [ "$SERVICE_MODE" = "worker" ]; then
         echo "❌ FEHLER: worker.py nicht gefunden! Existiert nur main.py?"
         exit 1
     fi
-    exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
+    exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q scraper_queue
 
 elif [ "$SERVICE_MODE" = "api" ]; then
     echo "✅ MODUS: API erkannt."
