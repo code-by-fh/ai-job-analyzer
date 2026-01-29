@@ -13,19 +13,16 @@ RUN apt-get update && apt-get install -y \
     libcairo2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Umgebungsvariablen (wie besprochen)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# 3. Dependencies kopieren und installieren
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Restlichen Code kopieren
 COPY . .
 
-# 5. Entrypoint Skript ausführbar machen
 RUN chmod +x entrypoint.sh
 
-# 6. Startbefehl
 ENTRYPOINT ["./entrypoint.sh"]
+
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "80"]

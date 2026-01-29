@@ -5,19 +5,18 @@ export PYTHONPATH=$PYTHONPATH:/app
 
 echo "--- ENTRYPOINT START ---"
 
+echo "Running Database Migrations..."
+alembic upgrade head || echo "Migrations skipped or failed"
+
 if [ "$SERVICE_MODE" = "worker" ]; then
-    echo "🔵 Starting CELERY WORKER..."
+    echo "🔵 MODUS ERKANNT: Starting Celery Worker (worker.py)..."
     exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
 
 elif [ "$SERVICE_MODE" = "api" ]; then
-    echo "🟢 Starting FASTAPI..."
-    echo "Running Database Migrations..."
-    alembic upgrade head || echo "Migrations skipped or failed"
-    # Hier der Befehl für die API (api.py)
-    # Port 80 ist wichtig für CapRover Container-intern
+    echo "🟢 MODUS ERKANNT: Starting FastAPI (api.py)..."
     exec uvicorn api:app --host 0.0.0.0 --port 80
 
 else
-    echo "⚪ No mode selected, executing passed command..."
+    echo "⚪ KEIN MODUS GESETZT: Führe Standard-CMD aus Dockerfile aus..."
     exec "$@"
 fi

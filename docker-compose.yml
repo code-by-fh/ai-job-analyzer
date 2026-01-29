@@ -43,6 +43,7 @@ services:
     build: ./scraper-service
     command: celery -A worker.celery_app worker --loglevel=info --concurrency=2 -Q scraper_queue
     environment:
+      - SERVICE_MODE=worker
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
@@ -67,8 +68,9 @@ services:
 
   ai-worker:
     build: ./ai-service
-    command: celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
+    command: celery -A celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
     environment:
+      - SERVICE_MODE=worker
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
