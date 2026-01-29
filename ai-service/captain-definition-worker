@@ -4,6 +4,6 @@
     "overrideCommand": [
         "/bin/sh",
         "-c",
-        "celery -A worker worker --loglevel=info --concurrency=2 -Q ai_queue"
+        "celery -A worker.celery_app worker --loglevel=info --concurrency=2 -Q ai_queue"
     ]
 }
