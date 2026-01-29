@@ -4,7 +4,7 @@
     "overrideCommand": [
         "celery",
         "-A",
-        "worker", 
+        "worker:celery_app",
         "worker",
         "--loglevel=info",
         "--concurrency=2",
