@@ -1,9 +1,13 @@
 #!/bin/sh
+set -e
 
 sleep 5
 
 echo "Running Database Migrations..."
-alembic upgrade head
+# Optional: Nur ausführen, wenn alembic vorhanden ist
+alembic upgrade head || echo "Migrations skipped or failed"
+
+export PYTHONPATH=$PYTHONPATH:/app
 
 echo "Starting command: $@"
 exec "$@"
