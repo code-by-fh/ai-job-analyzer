@@ -1,7 +1,5 @@
-#!/bin/sh
 set -e
 
-# Pfad sicherstellen
 export PYTHONPATH=$PYTHONPATH:/app
 
 echo "========================================"
@@ -13,15 +11,12 @@ ls -la *.py 2>/dev/null || echo "Keine Python-Dateien gefunden!"
 
 echo "Gelesene Variable SERVICE_MODE: '$SERVICE_MODE'"
 
-# Datenbank Migration
 echo "Running Database Migrations..."
 alembic upgrade head || echo "Migrations skipped (oder nicht konfiguriert)"
 
-# DIE WEICHE
 if [ "$SERVICE_MODE" = "worker" ]; then
     echo "✅ MODUS: WORKER erkannt."
     echo "Starte Celery mit worker.py..."
-    # Prüfen ob worker.py existiert
     if [ ! -f "worker.py" ]; then
         echo "❌ FEHLER: worker.py nicht gefunden! Existiert nur main.py?"
         exit 1
@@ -37,7 +32,6 @@ else
     echo "⚠️  WARNUNG: Kein gültiger SERVICE_MODE gesetzt (Wert ist leer oder falsch)."
     echo "Fallback: Führe übergebene Argumente aus: $@"
     
-    # Wenn keine Argumente da sind, crashen wir lieber kontrolliert, als 'main' zu raten
     if [ -z "$1" ]; then
         echo "❌ FEHLER: Weder SERVICE_MODE gesetzt noch Argumente übergeben."
         echo "Der Container weiß nicht, was er tun soll."
