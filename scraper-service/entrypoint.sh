@@ -16,7 +16,7 @@ if [ "$SERVICE_MODE" = "worker" ]; then
     echo "✅ MODUS: WORKER erkannt."
     echo "Starte Celery mit worker.py..."
     if [ ! -f "worker.py" ]; then
-        echo "❌ FEHLER: worker.py nicht gefunden! Existiert nur main.py?"
+        echo "❌ FEHLER: worker.py nicht gefunden!"
         exit 1
     fi
     exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q scraper_queue
