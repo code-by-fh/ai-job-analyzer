@@ -11,44 +11,67 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const pathname = usePathname();
     const isLoginPage = pathname === '/login';
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const { user } = useAuth(); // To check if we should show shell elements
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const { user } = useAuth();
 
     // If it's the login page, render clean layout without dashboard chrome
     if (isLoginPage) {
-        return <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">{children}</div>;
+        return (
+            <>
+                <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">{children}</div>
+                {/* Theme Toggle - Fixed bottom right */}
+                <div className="fixed bottom-4 right-4 z-50">
+                    <ThemeToggler />
+                </div>
+            </>
+        );
     }
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
 
             {/* DESKTOP SIDEBAR */}
-            <aside className="
-                hidden md:flex flex-col w-64 fixed inset-y-0 left-0 z-50
+            <aside className={`
+                hidden md:flex flex-col fixed inset-y-0 left-0 z-50
                 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl
                 border-r border-slate-200 dark:border-slate-800
                 transition-all duration-300
-            ">
-                <div className="p-6 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 flex items-center justify-center text-white font-bold">
-                        AI
+                ${sidebarCollapsed ? 'w-20' : 'w-64'}
+            `}>
+                {/* Header with collapse button */}
+                <div className="p-6 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 flex items-center justify-center text-white font-bold flex-shrink-0">
+                            AI
+                        </div>
+                        {!sidebarCollapsed && (
+                            <div className="min-w-0">
+                                <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
+                                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">Deep Intelligence</p>
+                            </div>
+                        )}
                     </div>
-                    <div>
-                        <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
-                        <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">Deep Intelligence</p>
-                    </div>
+                    <button
+                        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
+                        title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                        </svg>
+                    </button>
                 </div>
 
                 <nav className="flex-1 px-4 py-4 space-y-1">
-                    <NavLink href="/" icon="🏠" label="Dashboard" active={pathname === '/'} />
-                    <NavLink href="/settings" icon="⚙️" label="Settings" active={pathname === '/settings'} />
+                    <NavLink href="/" icon="🏠" label="Dashboard" active={pathname === '/'} collapsed={sidebarCollapsed} />
+                    <NavLink href="/settings" icon="⚙️" label="Settings" active={pathname === '/settings'} collapsed={sidebarCollapsed} />
                     {user?.is_admin && (
-                        <NavLink href="/admin/users" icon="🛡️" label="Admin Users" active={pathname.startsWith('/admin')} />
+                        <NavLink href="/admin/users" icon="🛡️" label="Admin Users" active={pathname.startsWith('/admin')} collapsed={sidebarCollapsed} />
                     )}
                 </nav>
 
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                    <ThemeToggler />
-                    <UserMenu />
+                <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+                    {!sidebarCollapsed && <UserMenu />}
                 </div>
             </aside>
 
@@ -75,7 +98,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             <NavLink href="/admin/users" icon="🛡️" label="Admin Users" active={pathname.startsWith('/admin')} onClick={() => setMobileMenuOpen(false)} />
                         )}
                         <div className="pt-8 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                            <ThemeToggler />
                             <UserMenu />
                         </div>
                     </nav>
@@ -83,32 +105,43 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             )}
 
             {/* MAIN CONTENT AREA */}
-            <main className="flex-1 md:pl-64 w-full transition-all duration-300">
+            <main className={`flex-1 w-full transition-all duration-300 ${sidebarCollapsed ? 'md:pl-20' : 'md:pl-64'}`}>
                 <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 md:pt-8 min-h-screen">
                     {children}
                 </div>
             </main>
+
+            {/* Theme Toggle - Fixed bottom right */}
+            <div className="fixed bottom-4 right-4 z-50">
+                <ThemeToggler />
+            </div>
         </div>
     );
 }
 
-function NavLink({ href, icon, label, active, onClick }: { href: string, icon: string, label: string, active: boolean, onClick?: () => void }) {
+function NavLink({ href, icon, label, active, collapsed, onClick }: { href: string, icon: string, label: string, active: boolean, collapsed?: boolean, onClick?: () => void }) {
     return (
         <Link
             href={href}
             onClick={onClick}
             className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group
+                ${collapsed ? 'justify-center' : ''}
                 ${active
                     ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 shadow-sm dark:shadow-none ring-1 ring-indigo-200 dark:ring-indigo-500/20'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-slate-200'
                 }
             `}
+            title={collapsed ? label : undefined}
         >
             <span className={`text-lg transition-transform duration-300 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>{icon}</span>
-            <span>{label}</span>
-            {active && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
+            {!collapsed && (
+                <>
+                    <span>{label}</span>
+                    {active && (
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
+                    )}
+                </>
             )}
         </Link>
     );
