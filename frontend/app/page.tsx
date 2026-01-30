@@ -24,6 +24,7 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'score' | 'date'>('score');
+  const [isScrolled, setIsScrolled] = useState(false);
 
   // Generator & Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -73,6 +74,14 @@ export default function Home() {
       }
     };
     return () => ws.close();
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 0);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const startSearch = async () => {
@@ -135,7 +144,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans pb-20">
+    <div className="min-h-screen bg-slate-50 text-gray-900 font-sans pb-20">
       <ApplicationModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -144,45 +153,111 @@ export default function Home() {
       />
 
       {/* HEADER */}
-      <div className="bg-white sticky top-0 z-30 border-b border-gray-100 py-4">
+      <div
+        className={`
+          sticky top-0 z-50 transition-all duration-300 border-b
+          ${isScrolled
+            ? 'bg-white/80 backdrop-blur-md border-gray-200/50 py-2 shadow-sm'
+            : 'bg-white border-gray-100 py-5'
+          }
+        `}
+      >
         <div className="max-w-5xl mx-auto px-4">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between transition-all duration-300">
+
+            {/* LOGO AREA */}
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🤖</span>
-              <h1 className="text-xl font-bold tracking-tight">Job Agent</h1>
-              <Link href="/settings" className="text-xs font-semibold text-gray-500 hover:text-black border border-gray-200 px-3 py-1 rounded-full transition ml-2">
-                Einstellungen
+              <div className={`
+                flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-indigo-200 shadow-lg transition-all duration-300
+                ${isScrolled ? 'w-8 h-8 text-sm' : 'w-10 h-10 text-lg'}
+              `}>
+                🤖
+              </div>
+              <div className="flex flex-col">
+                <h1 className={`font-bold tracking-tight text-gray-900 leading-none transition-all ${isScrolled ? 'text-lg' : 'text-xl'}`}>
+                  Job Agent
+                </h1>
+                {!isScrolled && (
+                  <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mt-0.5">AI Recruiter</span>
+                )}
+              </div>
+              <Link
+                href="/settings"
+                className="
+                  ml-4 px-3 py-1.5 rounded-lg
+                  text-xs font-bold text-indigo-600 bg-indigo-50 
+                  hover:bg-indigo-100 hover:text-indigo-700 
+                  transition-all duration-200 
+                  border border-indigo-100
+                  flex items-center gap-1.5
+                "
+              >
+                <span>⚙️</span>
+                <span>Einstellungen</span>
               </Link>
             </div>
 
-            <div className="flex w-full md:w-auto gap-2">
-              <input
-                className="border border-gray-200 px-4 py-2 rounded-lg w-full md:w-96 focus:outline-none focus:border-black transition text-sm bg-white"
-                value={query} onChange={(e) => setQuery(e.target.value)}
-                placeholder="https://karriere.firma.de/jobs..."
-                disabled={isCrawling}
-              />
+            {/* SEARCH AREA */}
+            <div className="flex w-full md:w-auto gap-2 group">
+              <div className={`
+                flex items-center border rounded-full px-4 transition-all duration-300 bg-slate-50 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-500/10
+                ${isScrolled ? 'py-1.5 shadow-sm border-gray-200' : 'py-2.5 border-transparent'}
+                w-full md:w-[28rem]
+              `}>
+                <span className="text-gray-400 mr-2">🔍</span>
+                <input
+                  className="w-full bg-transparent focus:outline-none text-sm placeholder:text-gray-400 text-gray-800"
+                  value={query} onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Traumjob suchen... (z.B. URL oder Keywords)"
+                  disabled={isCrawling}
+                />
+              </div>
+
               <button
                 onClick={startSearch}
                 disabled={isCrawling}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm transition disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-sm"
+                className={`
+                  bg-gray-900 hover:bg-black text-white rounded-full font-medium text-sm transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg shadow-gray-200
+                  ${isScrolled ? 'px-4 py-1.5' : 'px-6 py-2.5'}
+                `}
               >
-                {isCrawling && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>}
-                {isCrawling ? 'Scan läuft...' : 'Scan starten'}
+                {isCrawling ? <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span> : <span>Go</span>}
               </button>
             </div>
           </div>
 
-          <div className="flex justify-between items-center text-xs font-medium text-gray-400 mt-4 h-6">
-            <div className="flex items-center gap-2">
+          {/* SECONDARY ROW (Collapses on Scroll) */}
+          <div className={`
+            flex justify-between items-center text-xs font-medium text-gray-500 overflow-hidden transition-all duration-300 ease-in-out
+            ${isScrolled ? 'h-0 opacity-0 mt-0 frame-hidden' : 'h-8 opacity-100 mt-2 frame-visible'}
+          `}>
+            <div className="flex items-center gap-3 pl-14">
               <span>{jobs.length} Ergebnisse</span>
               {isCrawling && (
-                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded animate-pulse font-bold">📡 Crawler aktiv...</span>
+                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full animate-pulse font-bold text-[10px] uppercase tracking-wide">
+                  Scanning...
+                </span>
               )}
             </div>
-            <div className="flex gap-4">
-              <button onClick={() => setSortBy('score')} className={`${sortBy === 'score' ? 'text-indigo-600 underline decoration-2 underline-offset-4' : 'hover:text-indigo-600'} transition cursor-pointer`}>Relevanz</button>
-              <button onClick={() => setSortBy('date')} className={`${sortBy === 'date' ? 'text-indigo-600 underline decoration-2 underline-offset-4' : 'hover:text-indigo-600'} transition cursor-pointer`}>Datum</button>
+            <div className="flex gap-1 bg-gray-100/50 p-1 rounded-lg">
+              <button
+                onClick={() => setSortBy('score')}
+                className={`
+                  px-3 py-1 rounded-md transition-all cursor-pointer text-xs font-medium
+                  ${sortBy === 'score' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-white/60'}
+                `}
+              >
+                Relevanz
+              </button>
+              <button
+                onClick={() => setSortBy('date')}
+                className={`
+                  px-3 py-1 rounded-md transition-all cursor-pointer text-xs font-medium
+                  ${sortBy === 'date' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-white/60'}
+                `}
+              >
+                Neueste
+              </button>
             </div>
           </div>
         </div>
