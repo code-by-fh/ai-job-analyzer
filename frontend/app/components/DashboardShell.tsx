@@ -39,27 +39,16 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 ${sidebarCollapsed ? 'w-20' : 'w-64'}
             `}>
                 {/* Header with collapse button */}
-                <div className="p-6 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 flex items-center justify-center text-white font-bold flex-shrink-0">
-                            AI
-                        </div>
-                        {!sidebarCollapsed && (
-                            <div className="min-w-0">
-                                <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
-                                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">Deep Intelligence</p>
-                            </div>
-                        )}
+                <div className="p-6 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 flex items-center justify-center text-white font-bold flex-shrink-0">
+                        AI
                     </div>
-                    <button
-                        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
-                        title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-                        </svg>
-                    </button>
+                    {!sidebarCollapsed && (
+                        <div className="min-w-0">
+                            <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
+                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">Deep Intelligence</p>
+                        </div>
+                    )}
                 </div>
 
                 <nav className="flex-1 px-4 py-4 space-y-1">
@@ -71,7 +60,32 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 </nav>
 
                 <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-                    {!sidebarCollapsed && <UserMenu />}
+                    {!sidebarCollapsed ? (
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                                <UserMenu />
+                            </div>
+                            <button
+                                onClick={() => setSidebarCollapsed(true)}
+                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
+                                title="Collapse Sidebar"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                                </svg>
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => setSidebarCollapsed(false)}
+                            className="w-full p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                            title="Expand Sidebar"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 mx-auto rotate-180">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
             </aside>
 
