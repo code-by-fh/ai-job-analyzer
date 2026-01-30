@@ -9,6 +9,24 @@ It is designed for scalability, fault tolerance, and real-time observability. We
 
 The workflow relies on **Celery Chains** (Baton Pass pattern) to handle complex dependencies (Scraping -> Filtering -> Crawling -> Analysis) without blocking processes.
 
+## 2. Getting Started (First Run)
+
+When launching the application for the first time:
+
+1.  **Start the Stack:** Run `docker-compose up -d`.
+2.  **Access the App:** Open `http://localhost:3000`.
+3.  **Default Admin Login:**
+    *   **Username:** `admin`
+    *   **Password:** `admin`
+4.  **Create Users:**
+    *   Log in as Admin.
+    *   Navigate to the **Admin Dashboard** (via the header).
+    *   Create new accounts for individual users.
+5.  **Data Isolation:**
+    *   Each user has their own **Profile Settings** and **Job List**.
+    *   Jobs crawled by User A are NOT visible to User B.
+    *   Only Admins can manage user accounts.
+
 ## 2. System Components
 
 The system consists of 8 Docker containers:
@@ -71,7 +89,26 @@ sequenceDiagram
     end
 ```
 
-## 4. Database Schema (PostgreSQL)
+## 4. User Management & Security
+
+The system implements a full Multi-User Architecture:
+
+*   **Authentication:** JWT (JSON Web Tokens) with `Bcrypt` password hashing.
+*   **Roles:**
+    *   **Admin:** Can create/delete users and reset the system.
+    *   **User:** Can search jobs, manage their own profile, and generate applications.
+*   **Data Isolation:** All resources (Jobs, Settings, CVs) are scoped to the `user_id`.
+
+## 5. Database Schema (PostgreSQL)
+
+### Table: `users`
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | INTEGER (PK) | Unique User ID. |
+| `username` | VARCHAR | Login Name (Unique). |
+| `hashed_password` | VARCHAR | Bcrypt hash. |
+| `is_admin` | BOOLEAN | Role flag. |
 
 ### Table: `jobs`
 
@@ -79,7 +116,8 @@ Stores the found and analyzed job postings.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `id` | VARCHAR (PK) | UUID v5 (generated from URL), prevents duplicates. |
+| `id` | VARCHAR (PK) | UUID v5 (generated from URL + UserID). |
+| `user_id` | INTEGER (FK) | Owner of the job. |
 | `title` | VARCHAR | Job title. |
 | `company` | VARCHAR | Company name (Domain). |
 | `description` | TEXT | Cleaned content as Markdown. |
@@ -92,7 +130,8 @@ Stores the user's search profile for personalized analysis.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `id` | INTEGER (PK) | Single-Row Design (ID=1). |
+| `id` | INTEGER (PK) | Primary Key. |
+| `user_id` | INTEGER (FK) | Link to `users` table. |
 | `role` | VARCHAR | Target role (e.g., "Backend Dev"). |
 | `skills` | VARCHAR | Tech Stack (e.g., "Python, AWS"). |
 | `min_salary` | VARCHAR | Salary expectations. |
@@ -101,7 +140,9 @@ Stores the user's search profile for personalized analysis.
 
 ---
 
-## 5. Scalability & Production Readiness
+---
+
+## 6. Scalability & Production Readiness
 
 1. **RabbitMQ Reliability:**
 * Messages are persistent. If a worker crashes, the task is not lost (Re-Queueing).
@@ -124,7 +165,9 @@ Stores the user's search profile for personalized analysis.
 
 ---
 
-## 6. Tech Stack
+---
+
+## 7. Tech Stack
 
 * **Frontend:** Next.js 14, Tailwind CSS, TypeScript.
 * **Backend API:** FastAPI (Python 3.9).

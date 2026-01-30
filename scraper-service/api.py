@@ -23,6 +23,7 @@ app.add_middleware(
 class JobSearch(BaseModel):
     query: str
     location: str
+    user_id: int = 1 # Default to 1 (Admin) if not provided
 
 @app.post("/search")
 async def search_jobs(search: JobSearch):
@@ -30,7 +31,7 @@ async def search_jobs(search: JobSearch):
         return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
         
     workflow = chain(
-        celery_app.signature('scraper.fetch_links', args=[search.query], queue='scraper_queue'),
+        celery_app.signature('scraper.fetch_links', args=[search.query, search.user_id], queue='scraper_queue'),
         celery_app.signature('ai.filter_urls', queue='ai_queue'),
         celery_app.signature('scraper.schedule_crawls', queue='scraper_queue')
     )

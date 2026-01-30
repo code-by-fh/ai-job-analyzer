@@ -1,6 +1,6 @@
 import os
-from sqlalchemy import create_engine, Column, String, Text, Float, Integer, JSON, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine, Column, String, Text, Float, Integer, JSON, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
 from pydantic import BaseModel
@@ -11,6 +11,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@database:54
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    is_admin = Column(Boolean, default=False)
 
 class JobEntry(Base):
     __tablename__ = "jobs"
@@ -25,10 +32,12 @@ class JobEntry(Base):
     url = Column(String, nullable=True)
     status = Column(String, default="OPEN") 
     generation_error = Column(String, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 class UserProfile(Base):
     __tablename__ = "user_settings"
     id = Column(Integer, primary_key=True) 
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     role = Column(String, default="Software Engineer")
     skills = Column(String, default="Python, Docker")
     min_salary = Column(String, default="60000")

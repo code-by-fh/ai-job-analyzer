@@ -83,8 +83,8 @@ def get_clean_content(html):
 
 
 @celery_app.task(name="scraper.fetch_links")
-def fetch_links_task(start_url):
-    logger.info(f"🔗 [TASK] Fetching links started for: {start_url}")
+def fetch_links_task(start_url, user_id=1):
+    logger.info(f"🔗 [TASK] Fetching links started for: {start_url} (User: {user_id})")
     
     r = redis.from_url(REDIS_URL)
     r.setex("system:crawling", 600, "true")
@@ -108,10 +108,16 @@ def fetch_links_task(start_url):
         all_links.add(full_url)
         
     logger.info(f"Found {len(all_links)} internal links on {start_url}")
-    return [start_url, list(all_links)]
+    return [start_url, list(all_links), user_id]
 
 @celery_app.task(name="scraper.schedule_crawls")
-def schedule_crawls_task(filtered_links):
+def schedule_crawls_task(args):
+    # Expects [filtered_links, user_id]
+    if not args or len(args) < 2:
+        logger.error("Invalid args for schedule_crawls_task")
+        return
+        
+    filtered_links, user_id = args
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
     
     if not filtered_links:
@@ -120,18 +126,18 @@ def schedule_crawls_task(filtered_links):
         r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
         return
 
-    logger.info(f"🗓️ Scheduling {len(filtered_links)} detailed crawls...")
+    logger.info(f"🗓️ Scheduling {len(filtered_links)} detailed crawls for User {user_id}...")
     
     for link in filtered_links:
-        celery_app.send_task('scraper.scrape_detail', args=[link], queue='scraper_queue')
+        celery_app.send_task('scraper.scrape_detail', args=[link, user_id], queue='scraper_queue')
     
     logger.info(f"All {len(filtered_links)} tasks scheduled.")
     r.delete("system:crawling")
     r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
 @celery_app.task(name="scraper.scrape_detail")
-def scrape_job_detail_task(url):
-    logger.info(f"🕵️ [TASK] Scraping Detail for: {url}")
+def scrape_job_detail_task(url, user_id=1):
+    logger.info(f"🕵️ [TASK] Scraping Detail for: {url} (User: {user_id})")
     
     try:
         html = get_html_with_browser(url)
@@ -147,7 +153,12 @@ def scrape_job_detail_task(url):
         soup = BeautifulSoup(html, 'html.parser')
         title = soup.find('h1').get_text().strip() if soup.find('h1') else "Job Position"
         
-        job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, url))
+        # Use simple URL-based ID, but maybe mix in user_id if we want unique per user?
+        # For now, sticking to URL based ID. Duplicates will be handled in ai-service (checked by ID).
+        # If user_id is different, we might want to allow it.
+        # But if ID is same, ai-service will skip!
+        # Fix: changing ID to include user_id.
+        job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{url}"))
         logger.info(f"Extracted Job: '{title}' (ID: {job_id}) from {url}")
 
         job_data = {
@@ -155,7 +166,8 @@ def scrape_job_detail_task(url):
             "title": title,
             "company": urlparse(url).netloc,
             "description": content[:4000],
-            "url": url
+            "url": url,
+            "user_id": user_id
         }
         
         celery_app.send_task("ai.analyze_job", args=[job_data], queue="ai_queue")

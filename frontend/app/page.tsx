@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import ApplicationModal from './components/ApplicationModal';
+import { useAuth } from './components/AuthProvider';
+import { useRouter } from 'next/navigation';
+import UserMenu from './components/UserMenu';
 
 // --- TYPEN ---
 interface Job {
@@ -19,6 +22,9 @@ interface Job {
 }
 
 export default function Home() {
+  const { user, token, isAuthenticated, logout } = useAuth();
+  const router = useRouter();
+
   // --- STATE ---
   const [query, setQuery] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -36,17 +42,28 @@ export default function Home() {
 
   const [globalError, setGlobalError] = useState<string | null>(null);
 
+  // Redirect if not logged in
+  useEffect(() => {
+    // Check auth logic is handled inside AuthProvider basically, but double check
+    const t = localStorage.getItem('token');
+    if (!t) router.push('/login');
+  }, [router]);
+
   // --- API ---
   const fetchJobs = async () => {
+    if (!token) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) { logout(); return; }
       const data = await res.json();
       setJobs(data);
     } catch (e) { console.error("Fehler beim Laden:", e); }
   };
 
   useEffect(() => {
-    fetchJobs();
+    if (token) fetchJobs();
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`)
       .then(res => res.json())
       .then(data => { if (data.crawling) setIsCrawling(true); });
@@ -59,22 +76,33 @@ export default function Home() {
       }
       else if (data.type === "crawl_completed") {
         setIsCrawling(false);
-        fetchJobs();
+        if (token) fetchJobs();
       }
       else if (data.type === "new_job") {
-        setJobs(prevJobs => [data.job, ...prevJobs]);
+        // Optionally filter if job doesn't belong to user, but backend sends everything?
+        // Backend logic in API sends everything broadcasted? 
+        // FIX: Use filtering on client or backend needs to filter WS messages (complex).
+        // Actually backend sends payload via Redis -> WS.
+        // Pass user_id in payload?
+        if (data.job?.user_id === user?.id) {
+          setJobs(prevJobs => [data.job, ...prevJobs]);
+        }
       }
       else if (data.type === "job_update") {
-        setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
+        // Checking ownership here too
+        if (data.user_id === user?.id) {
+          setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
+        }
         setPendingIds(prev => prev.filter(id => id !== data.job_id));
       }
       else if (data.type === "global_error") {
+        // Global error might be relevant to all
         setGlobalError(data.message);
         setTimeout(() => setGlobalError(null), 8000);
       }
     };
     return () => ws.close();
-  }, []);
+  }, [token, user]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -84,13 +112,25 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // --- SCROLL TO DETAILS EFFECT ---
+  useEffect(() => {
+    if (expandedJobId) {
+      setTimeout(() => {
+        const element = document.getElementById(`job-details-${expandedJobId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
+  }, [expandedJobId]);
+
   const startSearch = async () => {
     if (!query) return;
     setIsCrawling(true);
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, location: 'Remote' })
+        body: JSON.stringify({ query, location: 'Remote', user_id: user?.id })
       });
     } catch (e) {
       setIsCrawling(false);
@@ -107,7 +147,10 @@ export default function Home() {
 
     setPendingIds(prev => [...prev, job.id]);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, { method: 'POST' });
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
     } catch (e) {
       setPendingIds(prev => prev.filter(id => id !== job.id));
     }
@@ -165,36 +208,19 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4">
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between transition-all duration-300">
 
-            {/* LOGO AREA */}
-            <div className="flex items-center gap-3">
-              <div className={`
-                flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-indigo-200 shadow-lg transition-all duration-300
-                ${isScrolled ? 'w-8 h-8 text-sm' : 'w-10 h-10 text-lg'}
-              `}>
-                🤖
-              </div>
-              <div className="flex flex-col">
-                <h1 className={`font-bold tracking-tight text-gray-900 leading-none transition-all ${isScrolled ? 'text-lg' : 'text-xl'}`}>
-                  Job Agent
+            {/* LOGO AREA (Replaced by User Menu) */}
+            <div className="flex items-center gap-4">
+              <UserMenu />
+
+              {/* Divider */}
+              <div className="h-8 w-px bg-gray-200 hidden sm:block"></div>
+
+              <div className="flex flex-col items-start hidden sm:flex">
+                <h1 className={`font-bold tracking-tight text-gray-900 leading-none transition-all ${isScrolled ? 'text-base' : 'text-lg'}`}>
+                  Job<span className="text-indigo-600">Agent</span>
                 </h1>
-                {!isScrolled && (
-                  <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mt-0.5">AI Recruiter</span>
-                )}
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">AI Recruiter</span>
               </div>
-              <Link
-                href="/settings"
-                className="
-                  ml-4 px-3 py-1.5 rounded-lg
-                  text-xs font-bold text-indigo-600 bg-indigo-50 
-                  hover:bg-indigo-100 hover:text-indigo-700 
-                  transition-all duration-200 
-                  border border-indigo-100
-                  flex items-center gap-1.5
-                "
-              >
-                <span>⚙️</span>
-                <span>Einstellungen</span>
-              </Link>
             </div>
 
             {/* SEARCH AREA */}
@@ -320,7 +346,7 @@ export default function Home() {
                   </div>
 
                   {/* Action Bar */}
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3 mt-auto pt-2">
 
                     {/* 1. ORIGINAL LINK BUTTON */}
                     {/* WICHTIG: Damit das geht, muss 'url' in der DB sein! */}
@@ -329,13 +355,17 @@ export default function Home() {
                         href={job.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2 bg-white border border-gray-200 hover:border-black text-gray-900 rounded-lg text-sm font-medium transition flex items-center gap-2"
+                        className="
+                          px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all duration-200 
+                          hover:border-gray-300 hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2
+                        "
                       >
-                        ↗ Zum Job
+                        <span className="text-gray-400">↗</span>
+                        <span>Zum Job</span>
                       </a>
                     ) : (
-                      // Fallback, falls kein Link da ist (z.B. alte Jobs)
-                      <span className="text-xs text-gray-300 italic px-2">Kein Link</span>
+                      // Fallback, falls kein Link da ist
+                      <span className="text-xs text-gray-300 italic px-2 py-2">Kein Link verfügbar</span>
                     )}
 
                     {/* 2. GENERATE BUTTON */}
@@ -343,38 +373,44 @@ export default function Home() {
                       onClick={() => handleGenerate(job)}
                       disabled={isGenerating}
                       className={`
-                        px-4 py-2 rounded-lg text-sm font-bold border flex items-center gap-2 transition shadow-sm cursor-pointer
+                        px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all duration-200 flex items-center gap-2 cursor-pointer
+                        transform hover:-translate-y-0.5 active:translate-y-0
                         ${job.application_draft
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                          : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300'}
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:shadow-emerald-100'
+                          : 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-indigo-200 hover:shadow-indigo-300 border border-transparent'}
+                        disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
                       `}
                     >
                       {isGenerating ? (
                         <>
                           <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full"></span>
-                          Anschreiben wird generiert...
+                          <span>Wird erstellt...</span>
                         </>
                       ) : job.application_draft ? (
-                        '✅ Anschreiben ansehen'
+                        <>
+                          <span>✅</span>
+                          <span>Anschreiben ansehen</span>
+                        </>
                       ) : (
-                        '✨ Anschreiben generieren'
+                        <>
+                          <span>✨</span>
+                          <span>Anschreiben generieren</span>
+                        </>
                       )}
                     </button>
 
+                    {/* 3. DETAILS TOGGLE */}
                     {/* 3. DETAILS TOGGLE */}
                     <button
                       onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                       className="
                             ml-auto px-4 py-2 
-                            bg-slate-100 hover:bg-slate-200 
-                            text-slate-700 hover:text-slate-900 
-                            rounded-lg text-sm font-medium 
-                            transition-all
-                            cursor-pointer
-                            hover:shadow-sm active:scale-[0.98]
+                            text-slate-500 hover:text-slate-800 
+                            font-medium text-sm transition-colors cursor-pointer
+                            hover:bg-slate-100 rounded-lg
                         "
                     >
-                      {isExpanded ? 'Schließen' : 'Details'}
+                      {isExpanded ? 'Weniger anzeigen' : 'Details & Beschreibung'}
                     </button>
                   </div>
                 </div>
@@ -382,7 +418,10 @@ export default function Home() {
 
               {/* DETAILS AREA - Clean White with Separator */}
               {isExpanded && (
-                <div className="border-t border-gray-100 bg-white rounded-b-xl overflow-hidden animate-in slide-in-from-top-2 duration-300">
+                <div
+                  id={`job-details-${job.id}`}
+                  className="border-t border-gray-100 bg-white rounded-b-xl overflow-hidden animate-in slide-in-from-top-2 duration-300 scroll-mt-24"
+                >
                   <div className="p-8 sm:p-12 bg-slate-50/50">
 
                     {/* Badge & Header */}

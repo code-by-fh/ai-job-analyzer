@@ -2,8 +2,14 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import DynamicList from '../components/DynamicList';
+import { useAuth } from '../components/AuthProvider';
+import { useRouter } from 'next/navigation';
+import PasswordChangeForm from '../components/PasswordChangeForm';
 
 export default function Settings() {
+  const { user, token, isAuthenticated } = useAuth();
+  const router = useRouter();
+
   const [formData, setFormData] = useState({
     role: '',
     skills: '',
@@ -24,22 +30,32 @@ export default function Settings() {
   const [crawling, setCrawling] = useState(false);
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`)
-      .then(res => res.json())
-      .then(data => {
-        setFormData({
-          role: data.role || '',
-          skills: data.skills || '',
-          min_salary: data.min_salary || '',
-          location: data.location || '',
-          preferences: data.preferences || '',
-          cv_data: data.cv_data || { experience: [], projects: [], education: '' },
-          job_urls: data.job_urls || []
-        });
-        setLoading(false);
+    const t = localStorage.getItem('token');
+    if (!t) {
+      router.push('/login');
+      return;
+    }
+
+    if (token) {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
-      .catch(e => { console.error(e); setLoading(false); });
-  }, []);
+        .then(res => res.json())
+        .then(data => {
+          setFormData({
+            role: data.role || '',
+            skills: data.skills || '',
+            min_salary: data.min_salary || '',
+            location: data.location || '',
+            preferences: data.preferences || '',
+            cv_data: data.cv_data || { experience: [], projects: [], education: '' },
+            job_urls: data.job_urls || []
+          });
+          setLoading(false);
+        })
+        .catch(e => { console.error(e); setLoading(false); });
+    }
+  }, [token, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -51,7 +67,10 @@ export default function Settings() {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(formData)
       });
       setStatus('Gespeichert! ✅');
@@ -74,6 +93,7 @@ export default function Settings() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
         body: uploadData,
       });
 
@@ -166,7 +186,7 @@ export default function Settings() {
         await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: url, location: formData.location || 'Remote' })
+          body: JSON.stringify({ query: url, location: formData.location || 'Remote', user_id: user?.id })
         });
       } catch (e) { console.error("Crawler error", e); }
     }
@@ -179,7 +199,10 @@ export default function Settings() {
     if (!confirm("Bist du sicher? Dein gesamter Lebenslauf und alle Einstellungen werden unwiderruflich gelöscht.")) return;
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, { method: 'DELETE' });
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       setFormData({
         role: '', skills: '', min_salary: '', location: '', preferences: '',
         cv_data: { experience: [], projects: [], education: '' },
@@ -195,7 +218,9 @@ export default function Settings() {
     if (!confirm("⚠️ WARNUNG: Das löscht ALLE Jobs und dein komplettes Profil. Alles weg. Wirklich?")) return;
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reset`);
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reset`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       setFormData({
         role: '', skills: '', min_salary: '', location: '', preferences: '',
         cv_data: { experience: [], projects: [], education: '' },
@@ -378,6 +403,16 @@ export default function Settings() {
             rows={4}
             placeholder="Studium, Universität, Abschluss..."
           />
+        </section>
+
+        {/* KONTO & SICHERHEIT */}
+        <section className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <h2 className="text-lg font-bold text-slate-900 border-b pb-2 mb-4">🔐 Konto & Sicherheit</h2>
+
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+            <h3 className="font-bold text-sm text-slate-700 mb-3">Passwort ändern</h3>
+            <PasswordChangeForm token={token} />
+          </div>
         </section>
 
         {/* DANGER ZONE */}

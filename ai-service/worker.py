@@ -46,7 +46,16 @@ def filter_urls_task(args):
         logger.warning("filter_urls_task called with empty args")
         return []
         
-    base_url, urls_list = args
+    try:
+        user_id = 1
+        if len(args) == 3:
+            base_url, urls_list, user_id = args
+        else:
+             base_url, urls_list = args
+    except ValueError:
+        logger.error(f"Invalid args unpacking in filter_urls: {args}")
+        return []
+
     logger.info(f"Filtering url with Input list size: {len(urls_list)}")
     
     try:
@@ -65,7 +74,7 @@ def filter_urls_task(args):
         content = response.choices[0].message.content.strip().replace("```json", "").replace("```", "")
         result_urls = json.loads(content)
         logger.info(f"Filter result: {len(result_urls)} relevant URLs found.")
-        return result_urls
+        return [result_urls, user_id]
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         return []
@@ -74,7 +83,8 @@ def filter_urls_task(args):
 def analyze_job_task(job_data):
     job_id = job_data.get('id', 'unknown')
     job_title = job_data.get('title', 'unknown')
-    logger.info(f"[TASK] Starting Job Analysis for ID: {job_id}, Title: {job_title}")
+    user_id = job_data.get('user_id')
+    logger.info(f"[TASK] Starting Job Analysis for ID: {job_id}, Title: {job_title}, User: {user_id}")
     
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
@@ -84,12 +94,20 @@ def analyze_job_task(job_data):
             logger.info(f"Job {job_id} already exists in database. Skipping analysis.")
             return
         
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        # Determine profile to use (User Specific or Admin/Default)
+        profile = None
+        if user_id:
+             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        
+        # Fallback to Admin (ID=1) or default if no user speciifed
+        if not profile:
+             profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+
         if profile:
             cv_text = format_cv_for_prompt(profile.cv_data)
             profile_str = f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
         else:
-            logger.warning("No user profile found (ID 1). Using default fallback profile.")
+            logger.warning("No user profile found. Using default fallback profile.")
             profile_str = "Python Dev"
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
@@ -114,7 +132,8 @@ def analyze_job_task(job_data):
             url=job_data.get('url'),
             reasoning=data.get("reason_de", ""),
             application_draft=None,
-            status="OPEN"
+            status="OPEN",
+            user_id=user_id
         )
         
         db.add(db_job)
@@ -132,7 +151,8 @@ def analyze_job_task(job_data):
                 "reasoning": db_job.reasoning,
                 "url": db_job.url,
                 "status": "OPEN",
-                "created_at": db_job.created_at.isoformat() if db_job.created_at else None
+                "created_at": db_job.created_at.isoformat() if db_job.created_at else None,
+                "user_id": user_id
             }
         })
         
@@ -146,8 +166,8 @@ def analyze_job_task(job_data):
         db.close()
 
 @celery_app.task(name="ai.generate_application")
-def generate_application_task(job_id):
-    logger.info(f"[TASK] Generiere Anschreiben für Job ID: {job_id}")
+def generate_application_task(job_id, user_id=None):
+    logger.info(f"[TASK] Generiere Anschreiben für Job ID: {job_id}, User ID: {user_id}")
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
     
@@ -157,7 +177,15 @@ def generate_application_task(job_id):
             logger.error(f"FEHLER: Job ID {job_id} nicht in DB gefunden!")
             return
 
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        target_user_id = user_id if user_id else job.user_id
+        profile = None
+        if target_user_id:
+            profile = db.query(UserProfile).filter(UserProfile.user_id == target_user_id).first()
+        
+        # Fallback
+        if not profile:
+            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+
         if not profile:
             error_msg = "Profil unvollständig. Bitte in den Einstellungen Lebenslauf hinterlegen."
             logger.error(f"Application generation failed: {error_msg}")
@@ -199,13 +227,12 @@ def generate_application_task(job_id):
         db.commit()
         logger.info(f"Anschreiben für Job {job_id} in DB gespeichert.")
         
-        # Redis connection refresh often not needed if 'r' is valid, but kept from original structure or re-init if preferred. 
-        # Variable 'r' is already initialized above.
         r.publish("job_updates", json.dumps({
             "type": "job_update",
             "job_id": job.id,
             "status": "COMPLETED",
-            "application_draft": job.application_draft
+            "application_draft": job.application_draft,
+            "user_id": job.user_id
         }))
         logger.info(f"✅ WebSocket Event 'job_update' für {job.id} gesendet.")
         

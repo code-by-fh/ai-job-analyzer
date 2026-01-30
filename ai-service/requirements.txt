@@ -12,3 +12,6 @@ xhtml2pdf
 pypdf
 python-multipart
 websockets
+python-jose
+passlib
+bcrypt==3.2.2

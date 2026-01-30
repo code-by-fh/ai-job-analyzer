@@ -7,9 +7,11 @@ from datetime import date
 from typing import List
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Depends, status
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 
 import redis.asyncio as redis_async
 import redis as redis_sync
@@ -18,9 +20,19 @@ from pypdf import PdfReader
 import markdown
 from xhtml2pdf import pisa
 from io import BytesIO
+from sqlalchemy.orm import Session
 
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User
+from auth import (
+    create_access_token,
+    get_current_user,
+    get_current_admin_user,
+    verify_password,
+    get_password_hash,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+from datetime import timedelta
 # Note: tasks are referenced by name strings
 
 logging.basicConfig(level=logging.INFO)
@@ -68,10 +80,42 @@ async def redis_listener():
     except Exception as e:
         logger.error(f"RITISCHER FEHLER im Redis Listener: {e}")
 
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starte Redis Listener Task...")
     task = asyncio.create_task(redis_listener())
+    
+    # Create Default Admin
+    db = SessionLocal()
+    try:
+        if not db.query(User).filter(User.username == "admin").first():
+            logger.info("Create default admin user (admin/admin)")
+            hashed_pwd = get_password_hash("admin")
+            admin_user = User(username="admin", hashed_password=hashed_pwd, is_admin=True)
+            db.add(admin_user)
+            db.commit()
+    except Exception as e:
+        logger.error(f"Error creating default admin: {e}")
+    finally:
+        db.close()
+
     yield
     task.cancel()
     
@@ -138,6 +182,93 @@ def parse_cv_with_ai(cv_text):
         logger.error(f"AI Parse Error: {e}")
         return None
 
+@app.post("/auth/login", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == form_data.username).first()
+        if not user or not verify_password(form_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    finally:
+        db.close()
+
+@app.post("/auth/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if not verify_password(request.current_password, user.hashed_password):
+             raise HTTPException(status_code=400, detail="Incorrect current password")
+        
+        user.hashed_password = get_password_hash(request.new_password)
+        db.commit()
+        return {"status": "password updated"}
+    finally:
+        db.close()
+
+@app.get("/me", response_model=UserResponse)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@app.get("/users", response_model=List[UserResponse])
+async def read_users(
+    skip: int = 0, limit: int = 100, 
+    current_user: User = Depends(get_current_admin_user)
+):
+    db = SessionLocal()
+    try:
+        users = db.query(User).offset(skip).limit(limit).all()
+        return users
+    finally:
+        db.close()
+
+@app.post("/users", response_model=UserResponse)
+async def create_user(
+    user: UserCreate, 
+    current_user: User = Depends(get_current_admin_user)
+):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter(User.username == user.username).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Username already registered")
+        hashed_password = get_password_hash(user.password)
+        new_user = User(username=user.username, hashed_password=hashed_password, is_admin=False)
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    finally:
+        db.close()
+
+@app.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int, 
+    current_user: User = Depends(get_current_admin_user)
+):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+             raise HTTPException(status_code=404, detail="User not found")
+        db.delete(user)
+        db.commit()
+        return {"status": "deleted"}
+    finally:
+        db.close()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -155,28 +286,37 @@ async def get_system_status():
     return {"crawling": bool(is_crawling)}
 
 @app.get("/jobs")
-def get_jobs():
+def get_jobs(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        return db.query(JobEntry).order_by(JobEntry.match_score.desc()).all()
+        return db.query(JobEntry).filter(JobEntry.user_id == current_user.id).order_by(JobEntry.match_score.desc()).all()
     finally:
         db.close()
 
 @app.post("/jobs/{job_id}/generate")
-def trigger_generation(job_id: str):
-    # Note: importing task from worker to use apply_async with typed args is better 
-    # but using name string avoids circular imports if we are not careful.
-    # celery_app.send_task is safer for decoupling.
-    celery_app.send_task("ai.generate_application", args=[job_id], queue="ai_queue")
-    return {"status": "started"}
-
-@app.get("/settings")
-def get_settings():
+def trigger_generation(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        # Pass user_id to task so it can use correct profile
+        celery_app.send_task("ai.generate_application", args=[job_id, current_user.id], queue="ai_queue")
+        return {"status": "started"}
+    finally:
+        db.close()
+
+@app.get("/settings")
+def get_settings(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         if not profile:
-            profile = UserProfile(id=1, cv_data={"experience": [], "projects": [], "education": ""}, job_urls=[])
+            profile = UserProfile(
+                user_id=current_user.id,
+                cv_data={"experience": [], "projects": [], "education": ""}, 
+                job_urls=[]
+            )
             db.add(profile)
             db.commit()
             db.refresh(profile)
@@ -185,12 +325,12 @@ def get_settings():
         db.close()
 
 @app.post("/settings")
-def save_settings(settings: SettingsData):
+def save_settings(settings: SettingsData, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         if not profile:
-            profile = UserProfile(id=1)
+            profile = UserProfile(user_id=current_user.id)
             db.add(profile)
         
         profile.role = settings.role
@@ -207,10 +347,10 @@ def save_settings(settings: SettingsData):
         db.close()
 
 @app.delete("/settings")
-def delete_settings():
+def delete_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         if profile:
             db.delete(profile)
             db.commit()
@@ -225,11 +365,11 @@ def delete_settings():
         db.close()
 
 @app.get("/jobs/{job_id}/download")
-def download_application_pdf(job_id: str):
+def download_application_pdf(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         
         if not job or not job.application_draft:
             raise HTTPException(status_code=404, detail="Kein Anschreiben gefunden")
@@ -322,7 +462,7 @@ def download_application_pdf(job_id: str):
         db.close()
 
 @app.post("/settings/upload-cv")
-async def upload_cv(file: UploadFile = File(...)):
+async def upload_cv(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Nur PDF Dateien erlaubt.")
 
@@ -339,9 +479,9 @@ async def upload_cv(file: UploadFile = File(...)):
 
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         if not profile:
-            profile = UserProfile(id=1)
+            profile = UserProfile(user_id=current_user.id)
             db.add(profile)
         
         profile.role = parsed_data.get("role", profile.role)
@@ -361,7 +501,7 @@ async def upload_cv(file: UploadFile = File(...)):
         db.close()
 
 @app.get("/reset")
-def reset_db():
+def reset_db(current_user: User = Depends(get_current_admin_user)):
     from sqlalchemy import text
     db = SessionLocal()
     try:
