@@ -56,7 +56,7 @@ trigger: manual
 
 5. KOMPONENTEN-REGELN & LAYOUT:
    - Theme Toggle: 
-     - Position: Fixiert unten links (`fixed bottom-4 left-4`) oder Sidebar-Footer.
+     - Position: Fixiert unten rechts (`fixed bottom-4 left-4`) oder Sidebar-Footer.
      - Verhalten: Umschaltbar (Light/Dark/System).
    - Buttons: 
      - Subtile Animation beim Klick (`active:scale-95`).
