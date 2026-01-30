@@ -364,6 +364,40 @@ def delete_settings(current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+@app.delete("/jobs")
+def delete_all_jobs(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        deleted_count = db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        db.commit()
+        return {"status": "deleted", "count": deleted_count}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Löschen der Jobs: {e}")
+        raise HTTPException(status_code=500, detail="Datenbankfehler")
+    finally:
+        db.close()
+
+@app.delete("/user/reset")
+def reset_user_data(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        jobs_deleted = db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile_deleted = False
+        if profile:
+            db.delete(profile)
+            profile_deleted = True
+        db.commit()
+        return {"status": "reset complete", "jobs_deleted": jobs_deleted, "profile_deleted": profile_deleted}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Reset der Benutzerdaten: {e}")
+        raise HTTPException(status_code=500, detail="Datenbankfehler")
+    finally:
+        db.close()
+
+
 @app.get("/jobs/{job_id}/download")
 def download_application_pdf(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()

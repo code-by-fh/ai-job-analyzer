@@ -235,8 +235,8 @@ export default function Home() {
       {/* FILTER & SORT */}
       <div className="flex justify-end gap-2 text-sm text-slate-500">
         <span className="self-center mr-2">Sort by:</span>
-        <button onClick={() => setSortBy('score')} className={`px-3 py-1 rounded-lg transition-colors ${sortBy === 'score' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}>Relevance</button>
-        <button onClick={() => setSortBy('date')} className={`px-3 py-1 rounded-lg transition-colors ${sortBy === 'date' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}>Newest</button>
+        <button onClick={() => setSortBy('score')} className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${sortBy === 'score' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}>Relevance</button>
+        <button onClick={() => setSortBy('date')} className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${sortBy === 'date' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}>Newest</button>
       </div>
 
       {/* JOB LIST */}
@@ -266,16 +266,30 @@ export default function Home() {
               <div className={`absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${isExpanded ? 'opacity-100' : ''}`} />
 
               <div className="p-6 sm:p-8 flex flex-col sm:flex-row gap-8 relative z-10">
-                {/* Match Score Indicator */}
+                {/* Match Score Indicator - Enhanced */}
                 <div className="flex-shrink-0 pt-1">
                   <div className={`
-                        w-16 h-16 rounded-2xl flex flex-col items-center justify-center border-2 
-                        bg-slate-50 dark:bg-slate-950/50 backdrop-blur-sm
+                        relative w-20 h-20 rounded-2xl flex flex-col items-center justify-center border-2 
+                        backdrop-blur-sm transition-all duration-300 group-hover:scale-105
                         ${scoreClass}
-                        shadow-sm
+                        ${job.match_score >= 80
+                      ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/20 dark:to-teal-500/20 shadow-lg shadow-emerald-500/20 dark:shadow-emerald-500/40'
+                      : job.match_score >= 50
+                        ? 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-500/20 dark:to-orange-500/20 shadow-lg shadow-amber-500/20 dark:shadow-amber-500/40'
+                        : 'bg-gradient-to-br from-rose-50 to-pink-50 dark:from-rose-500/20 dark:to-pink-500/20 shadow-lg shadow-rose-500/20 dark:shadow-rose-500/40'
+                    }
                    `}>
-                    <span className="text-lg font-bold">{Math.round(job.match_score)}</span>
-                    <span className="text-[10px] lowercase font-medium opacity-70">% match</span>
+                    <span className="text-2xl font-black tracking-tight">{Math.round(job.match_score)}</span>
+                    <span className="text-[9px] uppercase font-bold opacity-80 tracking-wider">match</span>
+                    {/* Glow ring effect */}
+                    <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                      style={{
+                        boxShadow: job.match_score >= 80
+                          ? '0 0 20px rgba(16, 185, 129, 0.4)'
+                          : job.match_score >= 50
+                            ? '0 0 20px rgba(245, 158, 11, 0.4)'
+                            : '0 0 20px rgba(244, 63, 94, 0.4)'
+                      }} />
                   </div>
                 </div>
 
@@ -317,9 +331,9 @@ export default function Home() {
                       onClick={() => handleGenerate(job)}
                       disabled={isGenerating}
                       className={`
-                        px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2
+                        px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer
                         ${job.application_draft
-                          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20'
+                          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
                           : 'bg-indigo-600 text-white hover:bg-indigo-500 dark:shadow-[0_0_15px_rgba(99,102,241,0.4)] border border-transparent'}
                         disabled:opacity-50 disabled:cursor-not-allowed
                       `}
@@ -328,7 +342,7 @@ export default function Home() {
                     </button>
 
                     <button onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                      className="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-medium transition-colors"
+                      className="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-medium transition-colors cursor-pointer"
                     >
                       {isExpanded ? 'Close Details' : 'View Details'}
                     </button>

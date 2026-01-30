@@ -195,7 +195,29 @@ export default function Settings() {
     setTimeout(() => setStatus(''), 3000);
   };
 
-  const handleDeleteProfile = async () => {
+  const handleDeleteJobs = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!confirm("Are you sure? This will delete all your crawled jobs permanently.")) return;
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      alert(`${data.count || 0} jobs deleted.`);
+      window.location.href = "/";
+    } catch (e) {
+      alert("Error deleting jobs.");
+    }
+  };
+
+  const handleDeleteProfile = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!confirm("Are you sure? This will delete your profile and CV data permanently.")) return;
 
     try {
@@ -214,11 +236,15 @@ export default function Settings() {
     }
   };
 
-  const handleFactoryReset = async () => {
+  const handleFactoryReset = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!confirm("⚠️ WARNING: This will delete ALL jobs and your entire profile. Everything. Sure?")) return;
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reset`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
+        method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       setFormData({
@@ -424,6 +450,13 @@ export default function Settings() {
           <section className="bg-rose-50 dark:bg-rose-500/5 rounded-2xl border border-rose-100 dark:border-rose-500/10 p-6">
             <h2 className="font-bold text-rose-700 dark:text-rose-400 mb-4">Danger Zone</h2>
             <div className="space-y-3">
+              <button
+                type="button"
+                onClick={handleDeleteJobs}
+                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition"
+              >
+                Delete All Jobs
+              </button>
               <button
                 type="button"
                 onClick={handleDeleteProfile}
