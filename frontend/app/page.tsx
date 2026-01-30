@@ -351,51 +351,64 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
-                    {/* BUTTONS */}
-                    {job.url && (
-                      <a href={job.url} target="_blank" rel="noopener noreferrer"
-                        className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  {/* BUTTON CONTAINER - Modern Responsive Layout */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-4 border-t border-slate-100 dark:border-slate-800/30 mt-2">
+                    {/* PRIMARY ACTIONS GROUP */}
+                    <div className="flex flex-wrap items-center gap-2 flex-1">
+                      {job.url && (
+                        <a href={job.url} target="_blank" rel="noopener noreferrer"
+                          className="group/apply relative min-w-[160px] px-4 py-2.5 bg-white/80 dark:bg-slate-800/40 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-semibold hover:bg-white dark:hover:bg-slate-800/60 hover:border-slate-300 dark:hover:border-slate-600/80 hover:shadow-lg dark:hover:shadow-slate-900/50 transition-all duration-300 cursor-pointer flex items-center justify-center gap-2 overflow-hidden active:scale-95"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-r from-slate-50/50 to-transparent dark:from-slate-700/20 dark:to-transparent opacity-0 group-hover/apply:opacity-100 transition-opacity duration-300" />
+                          <span className="relative text-sm group-hover/apply:rotate-45 transition-transform duration-300">↗</span>
+                          <span className="relative">Apply Source</span>
+                        </a>
+                      )}
+
+                      <button
+                        onClick={() => handleGenerate(job)}
+                        disabled={isGenerating}
+                        className={`
+                          group/generate relative min-w-[200px] px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer overflow-hidden
+                          ${job.application_draft
+                            ? 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-500/15 dark:to-teal-500/15 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-300/60 dark:border-emerald-500/30 hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/25 dark:hover:shadow-emerald-500/30 active:scale-95'
+                            : 'bg-gradient-to-r from-indigo-600 to-indigo-500 dark:from-indigo-600 dark:to-purple-600 text-white border-2 border-indigo-500/50 dark:border-indigo-400/30 hover:from-indigo-500 hover:to-indigo-400 dark:hover:from-indigo-500 dark:hover:to-purple-500 shadow-lg shadow-indigo-500/30 dark:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:shadow-xl hover:shadow-indigo-500/40 dark:hover:shadow-[0_0_30px_rgba(99,102,241,0.6)] active:scale-95'}
+                          disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 disabled:hover:shadow-lg
+                        `}
                       >
-                        ↗  Apply Source
-                      </a>
-                    )}
+                        <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover/generate:opacity-100 transition-opacity duration-300" />
+                        <span className="relative text-base">
+                          {isGenerating ? <span className="animate-spin">↻</span> : job.application_draft ? '✓' : '⚡'}
+                        </span>
+                        <span className="relative">{isGenerating ? 'Processing...' : job.application_draft ? 'View Application' : 'Generate Application'}</span>
+                      </button>
+                    </div>
 
-                    <button
-                      onClick={() => handleGenerate(job)}
-                      disabled={isGenerating}
-                      className={`
-                        px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer
-                        ${job.application_draft
-                          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
-                          : 'bg-indigo-600 text-white hover:bg-indigo-500 dark:shadow-[0_0_15px_rgba(99,102,241,0.4)] border border-transparent'}
-                        disabled:opacity-50 disabled:cursor-not-allowed
-                      `}
-                    >
-                      {isGenerating ? <span className="animate-spin">↻ Processing...</span> : job.application_draft ? '✓ View Application' : '⚡ Generate Application'}
-                    </button>
+                    {/* SECONDARY ACTIONS GROUP */}
+                    <div className="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:dark:border-slate-800/50 sm:pl-3">
+                      <button
+                        onClick={() => handleToggleFavorite(job.id, job.is_favorite || false)}
+                        className="px-3 py-2 rounded-lg text-xl transition-all duration-200 hover:scale-110 hover:bg-amber-50 dark:hover:bg-amber-500/10 cursor-pointer active:scale-95"
+                        title={job.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        {job.is_favorite ? '⭐' : '☆'}
+                      </button>
 
-                    <button
-                      onClick={() => handleToggleFavorite(job.id, job.is_favorite || false)}
-                      className="px-3 py-2 rounded-lg text-lg transition-all hover:scale-110 cursor-pointer"
-                      title={job.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      {job.is_favorite ? '⭐' : '☆'}
-                    </button>
+                      <button
+                        onClick={() => handleDeleteJob(job.id)}
+                        className="px-3 py-2 rounded-lg text-lg text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:scale-110 transition-all duration-200 cursor-pointer active:scale-95"
+                        title="Delete job"
+                      >
+                        🗑️
+                      </button>
 
-                    <button
-                      onClick={() => handleDeleteJob(job.id)}
-                      className="px-3 py-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all cursor-pointer"
-                      title="Delete job"
-                    >
-                      🗑️
-                    </button>
-
-                    <button onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                      className="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-medium transition-colors cursor-pointer"
-                    >
-                      {isExpanded ? 'Close Details' : 'View Details'}
-                    </button>
+                      <button onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                        className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm font-medium transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer active:scale-95 flex items-center gap-1.5"
+                      >
+                        <span>{isExpanded ? 'Close Details' : 'View Details'}</span>
+                        <span className={`text-xs transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
