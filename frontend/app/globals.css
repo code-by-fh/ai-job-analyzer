@@ -1,26 +1,97 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Configure Dark Mode to use 'class' strategy via variant override if needed, 
+   but usually v4 detects 'dark' class if configured or standard. 
+   Actually v4 uses media by default, let's force class strategy via standard way 
+   OR rely on the fact that we have the class 'dark' on html. 
+   
+   In v4, simply having the class might not trigger 'dark:' unless we specify the variant.
+   But let's trust standard behavior or use specific syntax if it fails.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-slate-950: #020617;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 transition-colors duration-300;
+  }
+
+  /* Dark Mode Override */
+  .dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  /* Typography Defaults */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply tracking-tight font-bold;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-slate-800 hover:bg-slate-700;
+  }
+
+  /* Selection Color */
+  ::selection {
+    @apply bg-indigo-500/30 text-indigo-900;
+  }
+
+  .dark ::selection {
+    @apply bg-indigo-500/30 text-indigo-100;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Utility / Glassmorphism Helpers */
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-sm;
+  }
+
+  .dark .glass-panel {
+    @apply bg-slate-900/40 backdrop-blur-xl border border-white/5 shadow-none;
+  }
+
+  .glass-card {
+    @apply bg-white border border-slate-200 shadow-sm;
+  }
+
+  .dark .glass-card {
+    @apply bg-slate-900/60 border-slate-800 backdrop-blur-md shadow-none;
+  }
+
+  /* Text Gradients */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600;
+  }
+
+  .dark .text-gradient {
+    @apply bg-gradient-to-r from-indigo-400 to-purple-400;
+  }
 }

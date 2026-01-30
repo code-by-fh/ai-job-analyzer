@@ -23,50 +23,50 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
             });
 
             if (res.ok) {
-                setStatus('Passwort erfolgreich geändert! ✅');
+                setStatus('Password updated! ✅');
                 setCurrentPassword('');
                 setNewPassword('');
             } else {
                 const data = await res.json();
-                setStatus(`Fehler: ${data.detail || 'Konnte Passwort nicht ändern'}`);
+                setStatus(`Error: ${data.detail || 'Failed'}`);
             }
         } catch (e) {
-            setStatus('Netzwerkfehler');
+            setStatus('Network Error');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
+        <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
             <div>
                 <input
                     type="password"
-                    placeholder="Aktuelles Passwort"
+                    placeholder="Current Password"
                     value={currentPassword}
                     onChange={e => setCurrentPassword(e.target.value)}
-                    className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
                     required
                 />
             </div>
             <div>
                 <input
                     type="password"
-                    placeholder="Neues Passwort"
+                    placeholder="New Password"
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
                     required
                 />
             </div>
             <button
                 type="submit"
                 disabled={loading || !currentPassword || !newPassword}
-                className="bg-slate-800 text-white px-4 py-2 rounded text-sm font-bold hover:bg-black transition disabled:opacity-50"
+                className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition disabled:opacity-50"
             >
-                {loading ? '...' : 'Passwort ändern'}
+                {loading ? 'Updating...' : 'Update Password'}
             </button>
-            {status && <p className={`text-xs mt-2 ${status.includes('Fehler') ? 'text-red-500' : 'text-green-600'}`}>{status}</p>}
+            {status && <p className={`text-xs mt-2 font-medium ${status.includes('Error') ? 'text-rose-500' : 'text-emerald-500'}`}>{status}</p>}
         </form>
     );
 }

@@ -51,15 +51,15 @@ export default function AdminUsersPage() {
                 setNewPassword('');
                 fetchUsers();
             } else {
-                alert('Fehler beim Erstellen');
+                alert('Error creating user');
             }
         } catch (e) {
-            alert('Fehler');
+            alert('Error');
         }
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm('Wirklich löschen?')) return;
+        if (!confirm('Are you certain?')) return;
         try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${id}`, {
                 method: 'DELETE',
@@ -69,52 +69,68 @@ export default function AdminUsersPage() {
         } catch (e) { console.error(e); }
     };
 
-    if (!user || !user.is_admin) return <div className="p-8 text-center">Checking Permissions...</div>;
+    if (!user || !user.is_admin) return <div className="p-8 text-center text-slate-500 animate-pulse">Verifiying Clearance...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto p-8 text-gray-800">
-            <h1 className="text-2xl font-bold mb-6">User Management</h1>
-            <button onClick={() => router.push('/')} className="mb-4 text-indigo-600 hover:underline">← Zurück zum Dashboard</button>
+        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
+                <div>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">User Management</h1>
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">Admin Control Panel</p>
+                </div>
+            </div>
 
-            <div className="bg-white p-6 rounded-xl shadow mb-8">
-                <h2 className="font-bold mb-4">Neuen User anlegen</h2>
-                <form onSubmit={handleCreate} className="flex gap-4">
+            {/* CREATE USER CARD */}
+            <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <h2 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <span>➕</span> Create New User
+                </h2>
+                <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-4">
                     <input
-                        className="border p-2 rounded flex-1"
+                        className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                         placeholder="Username"
                         value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                        required
                     />
                     <input
-                        className="border p-2 rounded flex-1"
+                        className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                         type="password"
                         placeholder="Password"
                         value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                        required
                     />
-                    <button className="bg-indigo-600 text-white px-4 py-2 rounded">Anlegen</button>
+                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95">
+                        Create User
+                    </button>
                 </form>
             </div>
 
-            <div className="bg-white rounded-xl shadow overflow-hidden">
-                <table className="w-full">
-                    <thead className="bg-gray-50 text-left text-gray-600">
+            {/* USER LIST */}
+            <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-bold">
                         <tr>
-                            <th className="p-4">ID</th>
-                            <th className="p-4">Username</th>
-                            <th className="p-4">Role</th>
-                            <th className="p-4">Action</th>
+                            <th className="p-5">ID</th>
+                            <th className="p-5">Identity</th>
+                            <th className="p-5">Clearance</th>
+                            <th className="p-5 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {users.map(u => (
-                            <tr key={u.id} className="border-t">
-                                <td className="p-4">{u.id}</td>
-                                <td className="p-4 font-bold">{u.username}</td>
-                                <td className="p-4">
-                                    {u.is_admin ? <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">Admin</span> : <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs">User</span>}
+                            <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition">
+                                <td className="p-5 text-slate-400 font-mono text-sm">#{u.id}</td>
+                                <td className="p-5 font-bold text-slate-900 dark:text-white">{u.username}</td>
+                                <td className="p-5">
+                                    {u.is_admin 
+                                        ? <span className="bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-bold border border-indigo-200 dark:border-indigo-500/30">ADMIN</span> 
+                                        : <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-700">USER</span>}
                                 </td>
-                                <td className="p-4">
+                                <td className="p-5 text-right">
                                     {!u.is_admin && (
-                                        <button onClick={() => handleDelete(u.id)} className="text-red-500 hover:text-red-700 font-medium text-sm">Löschen</button>
+                                        <button onClick={() => handleDelete(u.id)} className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                                            Delete
+                                        </button>
                                     )}
                                 </td>
                             </tr>

@@ -19,18 +19,24 @@ export const metadata: Metadata = {
   description: "Ai Job Agent",
 };
 
+import DashboardShell from "./components/DashboardShell";
+
+// ... (imports remain the same, simplified in replace block logic if I can, but better to be safe)
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          {children}
+          <DashboardShell>
+            {children}
+          </DashboardShell>
         </AuthProvider>
       </body>
     </html>
