@@ -127,7 +127,7 @@ logger.info(f"Allowed origins: {allowed_origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"]
 )
 
@@ -303,6 +303,41 @@ def trigger_generation(job_id: str, current_user: User = Depends(get_current_use
         # Pass user_id to task so it can use correct profile
         celery_app.send_task("ai.generate_application", args=[job_id, current_user.id], queue="ai_queue")
         return {"status": "started"}
+    finally:
+        db.close()
+
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        db.delete(job)
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting job: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        db.close()
+
+@app.patch("/jobs/{job_id}/favorite")
+def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job.is_favorite = not job.is_favorite
+        db.commit()
+        db.refresh(job)
+        return {"status": "updated", "is_favorite": job.is_favorite}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error toggling favorite: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
     finally:
         db.close()
 

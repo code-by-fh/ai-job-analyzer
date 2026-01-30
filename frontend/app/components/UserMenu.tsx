@@ -100,7 +100,7 @@ export default function UserMenu() {
                                 setOpen(false);
                                 logout();
                             }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                            className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors cursor-pointer"
                         >
                             <span>🚪</span> Abmelden
                         </button>

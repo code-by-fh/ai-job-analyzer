@@ -17,6 +17,7 @@ interface Job {
   application_draft?: string;
   created_at?: string;
   status?: string;
+  is_favorite?: boolean;
 }
 
 export default function Home() {
@@ -136,6 +137,39 @@ export default function Home() {
       });
     } catch (e) {
       setPendingIds(prev => prev.filter(id => id !== job.id));
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    if (!confirm('Möchten Sie diesen Job wirklich löschen?')) return;
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setJobs(prev => prev.filter(job => job.id !== jobId));
+      }
+    } catch (e) {
+      console.error('Error deleting job:', e);
+    }
+  };
+
+  const handleToggleFavorite = async (jobId: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/favorite`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(prev => prev.map(job =>
+          job.id === jobId ? { ...job, is_favorite: data.is_favorite } : job
+        ));
+      }
+    } catch (e) {
+      console.error('Error toggling favorite:', e);
     }
   };
 
@@ -339,6 +373,22 @@ export default function Home() {
                       `}
                     >
                       {isGenerating ? <span className="animate-spin">↻ Processing...</span> : job.application_draft ? '✓ View Application' : '⚡ Generate Application'}
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleFavorite(job.id, job.is_favorite || false)}
+                      className="px-3 py-2 rounded-lg text-lg transition-all hover:scale-110 cursor-pointer"
+                      title={job.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      {job.is_favorite ? '⭐' : '☆'}
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteJob(job.id)}
+                      className="px-3 py-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all cursor-pointer"
+                      title="Delete job"
+                    >
+                      🗑️
                     </button>
 
                     <button onClick={() => setExpandedJobId(isExpanded ? null : job.id)}

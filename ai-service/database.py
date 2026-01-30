@@ -33,6 +33,7 @@ class JobEntry(Base):
     status = Column(String, default="OPEN") 
     generation_error = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_favorite = Column(Boolean, default=False)
 
 class UserProfile(Base):
     __tablename__ = "user_settings"
