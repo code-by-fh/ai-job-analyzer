@@ -375,14 +375,14 @@ export default function Settings() {
                   accept=".pdf"
                   onChange={handleFileUpload}
                   disabled={uploading}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                  id="pdf-upload-input"
                 />
-                <button
-                  disabled={uploading}
-                  className="w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
+                <div
+                  className={`w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}
                 >
                   {uploading ? 'Analyzing...' : '📂 Select PDF'}
-                </button>
+                </div>
               </div>
             </div>
             {/* Decorative Circle */}
