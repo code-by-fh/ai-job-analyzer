@@ -4,7 +4,7 @@ import logging
 import io
 import asyncio
 from datetime import date
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Depends, status
@@ -21,6 +21,7 @@ import markdown
 from xhtml2pdf import pisa
 from io import BytesIO
 from sqlalchemy.orm import Session
+import requests
 
 from celery_config import celery_app
 from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User, JobPlatform, PlatformCreate, PlatformUpdate, PlatformResponse
@@ -559,9 +560,9 @@ def trigger_platform_crawl(platform_id: int, current_user: User = Depends(get_cu
             raise HTTPException(status_code=404, detail="Platform not found")
 
         # Trigger scraper-service
-        import requests
         from sqlalchemy import func
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8080")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+        logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
         try:
             resp = requests.post(
                 f"{SCRAPER_URL}/search",

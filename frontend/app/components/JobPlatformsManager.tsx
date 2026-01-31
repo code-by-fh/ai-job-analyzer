@@ -19,6 +19,8 @@ interface JobPlatformsManagerProps {
 
 export default function JobPlatformsManager({ token, user }: JobPlatformsManagerProps) {
     const [platforms, setPlatforms] = useState<Platform[]>([]);
+    const [activeJobs, setActiveJobs] = useState<any[]>([]);
+    const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
@@ -40,9 +42,40 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
         }
     };
 
+    const fetchCrawlStatus = async () => {
+        if (!user?.id) return;
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/crawl-status?user_id=${user.id}`);
+            const data = await res.json();
+            if (data.jobs) {
+                const active = data.jobs.filter((j: any) =>
+                    j.status !== 'completed' && !(j.total > 0 && j.analysis_completed >= j.total)
+                );
+                setActiveJobs(active);
+
+                // Clear pendingUrls that are now active in activeJobs
+                setPendingUrls(prev => {
+                    const next = new Set(prev);
+                    active.forEach((j: any) => next.delete(j.platform));
+                    return next;
+                });
+            }
+        } catch (e) {
+            console.error("Failed to fetch crawl status", e);
+        }
+    };
+
     useEffect(() => {
         fetchPlatforms();
     }, [token]);
+
+    useEffect(() => {
+        if (user?.id) {
+            fetchCrawlStatus();
+            const interval = setInterval(fetchCrawlStatus, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [user?.id]);
 
     const addPlatform = async () => {
         if (!newUrl) return;
@@ -83,21 +116,33 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
         }
     };
 
-    const triggerCrawl = async (id: number) => {
+    const triggerCrawl = async (platform: Platform) => {
+        setPendingUrls(prev => new Set(prev).add(platform.url));
         setStatus('Starting Crawl...');
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}/crawl`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}/crawl`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 setStatus('Crawl dispatched! 🕵️‍♂️');
+                fetchCrawlStatus(); // Try to update faster
                 fetchPlatforms();
             } else {
                 setStatus('Crawl failed ❌');
+                setPendingUrls(prev => {
+                    const next = new Set(prev);
+                    next.delete(platform.url);
+                    return next;
+                });
             }
         } catch (e) {
             setStatus('Error ❌');
+            setPendingUrls(prev => {
+                const next = new Set(prev);
+                next.delete(platform.url);
+                return next;
+            });
         }
         setTimeout(() => setStatus(''), 3000);
     };
@@ -131,67 +176,78 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
             </div>
 
             <div className="space-y-4">
-                {platforms.map((p) => (
-                    <div key={p.id} className="group relative bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 rounded-xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/5">
-                        <div className="flex items-start justify-between gap-4">
-                            <div className="flex gap-3 items-center min-w-0">
-                                <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700 p-1.5 flex-shrink-0">
-                                    {p.favicon_url ? (
-                                        <img src={p.favicon_url} alt="" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                                    ) : (
-                                        <span className="text-lg">🌐</span>
-                                    )}
+                {platforms.map((p) => {
+                    const isBusy = activeJobs.some(job => job.platform === p.url) || pendingUrls.has(p.url);
+                    return (
+                        <div key={p.id} className="group relative bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 rounded-xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="flex gap-3 items-center min-w-0">
+                                    <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700 p-1.5 flex-shrink-0">
+                                        {p.favicon_url ? (
+                                            <img src={p.favicon_url} alt="" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                                        ) : (
+                                            <span className="text-lg">🌐</span>
+                                        )}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
+                                        <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{p.url}</div>
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <div className="font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
-                                    <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{p.url}</div>
-                                </div>
-                            </div>
-                            <div className="flex gap-1">
-                                <button
-                                    onClick={() => triggerCrawl(p.id)}
-                                    className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition"
-                                    title="Scan now"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                </button>
-                                <button
-                                    onClick={() => removePlatform(p.id)}
-                                    className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition"
-                                    title="Remove"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800/50">
-                            <div className="flex items-center gap-4">
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Interval</span>
-                                    <select
-                                        value={p.crawl_interval_minutes}
-                                        onChange={(e) => updateInterval(p.id, parseInt(e.target.value))}
-                                        className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 border-none p-0 focus:ring-0 cursor-pointer"
+                                <div className="flex gap-1">
+                                    <button
+                                        onClick={() => triggerCrawl(p)}
+                                        disabled={isBusy}
+                                        className={`p-2 rounded-lg transition ${isBusy ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
+                                        title={isBusy ? "Crawl in progress..." : "Scan now"}
                                     >
-                                        <option value={60}>Every Hour</option>
-                                        <option value={360}>Every 6 Hours</option>
-                                        <option value={720}>Every 12 Hours</option>
-                                        <option value={1440}>Every 24 Hours</option>
-                                        <option value={10080}>Every Week</option>
-                                    </select>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Jobs found</span>
-                                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
+                                        {isBusy ? (
+                                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                        ) : (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => removePlatform(p.id)}
+                                        className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                                        title="Remove"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
                                 </div>
                             </div>
-                            <div className="text-[10px] text-slate-400 italic">
-                                {p.last_crawl_at ? `Last: ${new Date(p.last_crawl_at).toLocaleDateString()}` : 'Never scanned'}
+
+                            <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800/50">
+                                <div className="flex items-center gap-4">
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Interval</span>
+                                        <select
+                                            value={p.crawl_interval_minutes}
+                                            onChange={(e) => updateInterval(p.id, parseInt(e.target.value))}
+                                            className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 border-none p-0 focus:ring-0 cursor-pointer"
+                                        >
+                                            <option value={60}>Every Hour</option>
+                                            <option value={360}>Every 6 Hours</option>
+                                            <option value={720}>Every 12 Hours</option>
+                                            <option value={1440}>Every 24 Hours</option>
+                                            <option value={10080}>Every Week</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Jobs found</span>
+                                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-slate-400 italic">
+                                    {p.last_crawl_at ? `Last: ${new Date(p.last_crawl_at).toLocaleDateString()}` : 'Never scanned'}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
 
                 <div className="flex gap-2 p-2 bg-slate-50/50 dark:bg-slate-950/20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl mt-4">
                     <input

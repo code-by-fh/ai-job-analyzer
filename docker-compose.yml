@@ -11,11 +11,15 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    container_name: database
+    hostname: database
 
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
+    container_name: redis
+    hostname: redis
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -25,8 +29,10 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    container_name: rabbitmq
+    hostname: rabbitmq
 
-  scraper-api:
+  scraper-service:
     build: ./scraper-service
     command: uvicorn api:app --host 0.0.0.0 --port 8000
     ports:
@@ -38,6 +44,8 @@ services:
     depends_on:
       - rabbitmq
       - redis
+    container_name: scraper-service
+    hostname: scraper-service
 
   scraper-worker:
     build: ./scraper-service
@@ -50,6 +58,8 @@ services:
     depends_on:
       - rabbitmq
       - redis
+    container_name: scraper-worker
+    hostname: scraper-worker
 
   ai-api:
     build: ./ai-service
@@ -59,10 +69,13 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SCRAPER_SERVICE_URL=http://scraper-api:8000
+      - SCRAPER_SERVICE_URL=http://scraper-service:8000
       - PYTHONUNBUFFERED=1
     depends_on:
       - database
+      - scraper-service
+    container_name: ai-api
+    hostname: ai-api
     volumes:
       - ./ai-service:/app
       - /app/__pycache__
@@ -74,7 +87,7 @@ services:
       - SERVICE_MODE=worker
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SCRAPER_SERVICE_URL=http://scraper-api:8000
+      - SCRAPER_SERVICE_URL=http://scraper-service:8000
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
@@ -82,6 +95,9 @@ services:
       - database
       - rabbitmq
       - redis
+      - scraper-service
+    container_name: ai-worker
+    hostname: ai-worker
     volumes:
       - ./ai-service:/app
       - /app/__pycache__
@@ -91,7 +107,7 @@ services:
     command: celery -A celery_app beat --loglevel=info
     environment:
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
-      - SCRAPER_SERVICE_URL=http://scraper-api:8000
+      - SCRAPER_SERVICE_URL=http://scraper-service:8000
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
@@ -100,6 +116,9 @@ services:
       - rabbitmq
       - redis
       - ai-worker
+      - scraper-service
+    container_name: ai-beat
+    hostname: ai-beat
     volumes:
       - ./ai-service:/app
       - /app/__pycache__

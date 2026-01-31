@@ -73,7 +73,7 @@ export default function AdminUsersPage() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900 dark:text-white">User Management</h1>
                     <p className="text-slate-500 dark:text-slate-400 mt-1">Admin Control Panel</p>
@@ -99,7 +99,7 @@ export default function AdminUsersPage() {
                         value={newPassword} onChange={e => setNewPassword(e.target.value)}
                         required
                     />
-                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95">
+                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95 cursor-pointer">
                         Create User
                     </button>
                 </form>
@@ -122,13 +122,13 @@ export default function AdminUsersPage() {
                                 <td className="p-5 text-slate-400 font-mono text-sm">#{u.id}</td>
                                 <td className="p-5 font-bold text-slate-900 dark:text-white">{u.username}</td>
                                 <td className="p-5">
-                                    {u.is_admin 
-                                        ? <span className="bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-bold border border-indigo-200 dark:border-indigo-500/30">ADMIN</span> 
+                                    {u.is_admin
+                                        ? <span className="bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-bold border border-indigo-200 dark:border-indigo-500/30">ADMIN</span>
                                         : <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-700">USER</span>}
                                 </td>
                                 <td className="p-5 text-right">
                                     {!u.is_admin && (
-                                        <button onClick={() => handleDelete(u.id)} className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                                        <button onClick={() => handleDelete(u.id)} className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer">
                                             Delete
                                         </button>
                                     )}

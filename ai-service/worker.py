@@ -357,7 +357,7 @@ def check_periodic_crawls_task():
         ).all()
 
         triggered_count = 0
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8080")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
 
         for p in platforms:
             is_due = False
