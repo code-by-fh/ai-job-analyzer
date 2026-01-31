@@ -34,6 +34,9 @@ class JobEntry(Base):
     generation_error = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_favorite = Column(Boolean, default=False)
+    platform_id = Column(Integer, ForeignKey("job_platforms.id"), nullable=True)
+    
+    platform = relationship("JobPlatform", back_populates="jobs")
 
 class UserProfile(Base):
     __tablename__ = "user_settings"
@@ -46,6 +49,21 @@ class UserProfile(Base):
     preferences = Column(Text, default="")
     cv_data = Column(JSON, default={}) 
     job_urls = Column(JSON, default=[])
+
+class JobPlatform(Base):
+    __tablename__ = "job_platforms"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    url = Column(String, index=True)
+    name = Column(String)
+    favicon_url = Column(String, nullable=True)
+    crawl_interval_minutes = Column(Integer, default=1440) # Default: 24h
+    last_crawl_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+    jobs = relationship("JobEntry", back_populates="platform")
 
 class ExperienceItem(BaseModel):
     company: str
@@ -71,3 +89,24 @@ class SettingsData(BaseModel):
     preferences: str
     cv_data: CVDataModel
     job_urls: List[str] = []
+
+class PlatformCreate(BaseModel):
+    url: str
+    crawl_interval_minutes: int = 1440
+
+class PlatformUpdate(BaseModel):
+    crawl_interval_minutes: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class PlatformResponse(BaseModel):
+    id: int
+    url: str
+    name: str
+    favicon_url: Optional[str] = None
+    crawl_interval_minutes: int
+    last_crawl_at: Optional[str] = None
+    is_active: bool
+    job_count: int = 0
+
+    class Config:
+        orm_mode = True

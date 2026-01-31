@@ -59,6 +59,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SCRAPER_SERVICE_URL=http://scraper-api:8000
       - PYTHONUNBUFFERED=1
     depends_on:
       - database
@@ -73,6 +74,7 @@ services:
       - SERVICE_MODE=worker
       - DATABASE_URL=postgresql://user:password@database:5432/jobdb
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SCRAPER_SERVICE_URL=http://scraper-api:8000
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
@@ -80,6 +82,24 @@ services:
       - database
       - rabbitmq
       - redis
+    volumes:
+      - ./ai-service:/app
+      - /app/__pycache__
+
+  ai-beat:
+    build: ./ai-service
+    command: celery -A celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:password@database:5432/jobdb
+      - SCRAPER_SERVICE_URL=http://scraper-api:8000
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - database
+      - rabbitmq
+      - redis
+      - ai-worker
     volumes:
       - ./ai-service:/app
       - /app/__pycache__

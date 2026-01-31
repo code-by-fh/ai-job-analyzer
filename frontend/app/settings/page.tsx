@@ -5,6 +5,7 @@ import DynamicList from '../components/DynamicList';
 import { useAuth } from '../components/AuthProvider';
 import { useRouter } from 'next/navigation';
 import PasswordChangeForm from '../components/PasswordChangeForm';
+import JobPlatformsManager from '../components/JobPlatformsManager';
 
 export default function Settings() {
   const { user, token, isAuthenticated } = useAuth();
@@ -416,30 +417,7 @@ export default function Settings() {
           </div>
 
           {/* CRAWLER CONFIG */}
-          <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-bold text-slate-900 dark:text-white">📡 Job Sources</h2>
-              <button
-                onClick={handleCrawlAll}
-                disabled={crawling || formData.job_urls.length === 0}
-                className="text-xs bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-              >
-                {crawling ? 'Crawling...' : 'Scan Now'}
-              </button>
-            </div>
-            <div className="space-y-3">
-              {formData.job_urls.map((url, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <input value={url} onChange={(e) => handleUrlChange(idx, e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
-                  <button onClick={() => removeUrl(idx)} className="text-slate-400 hover:text-rose-500 p-2 transition">✕</button>
-                </div>
-              ))}
-              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/50">
-                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} className="flex-1 bg-transparent border-none text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-0 px-0" placeholder="Add URL..." onKeyDown={(e) => e.key === 'Enter' && addUrl()} />
-                <button onClick={addUrl} className="text-indigo-600 dark:text-indigo-400 font-bold px-2">+</button>
-              </div>
-            </div>
-          </section>
+          <JobPlatformsManager token={token} user={user} />
 
           {/* SECURITY & DANGER */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
@@ -453,21 +431,21 @@ export default function Settings() {
               <button
                 type="button"
                 onClick={handleDeleteJobs}
-                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition"
+                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
                 Delete All Jobs
               </button>
               <button
                 type="button"
                 onClick={handleDeleteProfile}
-                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition"
+                className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
                 Delete Profile Only
               </button>
               <button
                 type="button"
                 onClick={handleFactoryReset}
-                className="w-full px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition"
+                className="w-full px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition cursor-pointer"
               >
                 Factory Reset (All Data)
               </button>

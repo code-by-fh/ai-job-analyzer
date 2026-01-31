@@ -68,6 +68,7 @@ class JobSearch(BaseModel):
     query: str
     location: str
     user_id: int = 1 # Default to 1 (Admin) if not provided
+    platform_id: Optional[int] = None
 
 @app.post("/search")
 async def search_jobs(search: JobSearch):
@@ -90,7 +91,7 @@ async def search_jobs(search: JobSearch):
     r.sadd(f"user:{search.user_id}:active_crawls", job_id)
     
     workflow = chain(
-        celery_app.signature('scraper.fetch_links', args=[search.query, search.user_id, job_id], queue='scraper_queue'),
+        celery_app.signature('scraper.fetch_links', args=[search.query, search.user_id, job_id, search.platform_id], queue='scraper_queue'),
         celery_app.signature('ai.filter_urls', queue='ai_queue'),
         celery_app.signature('scraper.schedule_crawls', queue='scraper_queue')
     )

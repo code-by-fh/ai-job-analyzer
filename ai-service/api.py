@@ -23,7 +23,7 @@ from io import BytesIO
 from sqlalchemy.orm import Session
 
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User, JobPlatform, PlatformCreate, PlatformUpdate, PlatformResponse
 from auth import (
     create_access_token,
     get_current_user,
@@ -431,6 +431,158 @@ def reset_user_data(current_user: User = Depends(get_current_user)):
         db.rollback()
         logger.error(f"Fehler beim Reset der Benutzerdaten: {e}")
         raise HTTPException(status_code=500, detail="Datenbankfehler")
+    finally:
+        db.close()
+
+@app.get("/platforms", response_model=List[PlatformResponse])
+def get_platforms(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        # Subquery to count jobs per platform
+        job_counts = db.query(
+            JobEntry.platform_id, 
+            func.count(JobEntry.id).label('job_count')
+        ).filter(JobEntry.user_id == current_user.id).group_by(JobEntry.platform_id).subquery()
+
+        platforms_query = db.query(
+            JobPlatform,
+            func.coalesce(job_counts.c.job_count, 0).label('job_count')
+        ).outerjoin(
+            job_counts, JobPlatform.id == job_counts.c.platform_id
+        ).filter(JobPlatform.user_id == current_user.id).all()
+
+        result = []
+        for p, count in platforms_query:
+            result.append({
+                "id": p.id,
+                "url": p.url,
+                "name": p.name,
+                "favicon_url": p.favicon_url,
+                "crawl_interval_minutes": p.crawl_interval_minutes,
+                "last_crawl_at": p.last_crawl_at.isoformat() if p.last_crawl_at else None,
+                "is_active": p.is_active,
+                "job_count": count
+            })
+        return result
+    finally:
+        db.close()
+
+@app.post("/platforms", response_model=PlatformResponse)
+def create_platform(platform: PlatformCreate, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        # Check for duplicates
+        existing = db.query(JobPlatform).filter(
+            JobPlatform.user_id == current_user.id,
+            JobPlatform.url == platform.url
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Platform URL already exists")
+
+        # Basic name extraction from URL
+        from urllib.parse import urlparse
+        domain = urlparse(platform.url).netloc
+        name = domain.replace("www.", "")
+
+        # Favicon URL (using Google's service)
+        favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
+
+        db_platform = JobPlatform(
+            user_id=current_user.id,
+            url=platform.url,
+            name=name,
+            favicon_url=favicon_url,
+            crawl_interval_minutes=platform.crawl_interval_minutes
+        )
+        db.add(db_platform)
+        db.commit()
+        db.refresh(db_platform)
+        return {**db_platform.__dict__, "job_count": 0}
+    finally:
+        db.close()
+
+@app.patch("/platforms/{platform_id}", response_model=PlatformResponse)
+def update_platform(platform_id: int, platform_update: PlatformUpdate, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        db_platform = db.query(JobPlatform).filter(
+            JobPlatform.id == platform_id,
+            JobPlatform.user_id == current_user.id
+        ).first()
+        if not db_platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        if platform_update.crawl_interval_minutes is not None:
+            db_platform.crawl_interval_minutes = platform_update.crawl_interval_minutes
+        if platform_update.is_active is not None:
+            db_platform.is_active = platform_update.is_active
+
+        db.commit()
+        db.refresh(db_platform)
+        
+        # Get job count
+        job_count = db.query(JobEntry).filter(JobEntry.platform_id == db_platform.id).count()
+        return {**db_platform.__dict__, "job_count": job_count}
+    finally:
+        db.close()
+
+@app.delete("/platforms/{platform_id}")
+def delete_platform(platform_id: int, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        db_platform = db.query(JobPlatform).filter(
+            JobPlatform.id == platform_id,
+            JobPlatform.user_id == current_user.id
+        ).first()
+        if not db_platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        # Set platform_id to NULL in jobs
+        db.query(JobEntry).filter(JobEntry.platform_id == platform_id).update({"platform_id": None})
+        
+        db.delete(db_platform)
+        db.commit()
+        return {"status": "deleted"}
+    finally:
+        db.close()
+
+@app.post("/platforms/{platform_id}/crawl")
+def trigger_platform_crawl(platform_id: int, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        db_platform = db.query(JobPlatform).filter(
+            JobPlatform.id == platform_id,
+            JobPlatform.user_id == current_user.id
+        ).first()
+        if not db_platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        # Trigger scraper-service
+        import requests
+        from sqlalchemy import func
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8080")
+        try:
+            resp = requests.post(
+                f"{SCRAPER_URL}/search",
+                json={
+                    "query": db_platform.url,
+                    "location": "Remote", 
+                    "user_id": current_user.id,
+                    "platform_id": db_platform.id 
+                },
+                timeout=5
+            )
+            resp.raise_for_status()
+            
+            # Update last_crawl_at
+            db_platform.last_crawl_at = func.now()
+            db.commit()
+            
+            return resp.json()
+        except Exception as e:
+            logger.error(f"Failed to trigger scraper: {e}")
+            raise HTTPException(status_code=500, detail="Failed to trigger crawler service")
     finally:
         db.close()
 

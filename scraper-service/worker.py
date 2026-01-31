@@ -83,7 +83,7 @@ def get_clean_content(html):
 
 
 @celery_app.task(name="scraper.fetch_links")
-def fetch_links_task(start_url, user_id=1, job_id=None):
+def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
     logger.info(f"🔗 [TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})")
     
     r = redis.from_url(REDIS_URL)
@@ -117,7 +117,7 @@ def fetch_links_task(start_url, user_id=1, job_id=None):
         all_links.add(full_url)
         
     logger.info(f"Found {len(all_links)} internal links on {start_url}")
-    return [start_url, list(all_links), user_id, job_id]
+    return [start_url, list(all_links), user_id, job_id, platform_id]
 
 @celery_app.task(name="scraper.schedule_crawls")
 def schedule_crawls_task(args):
@@ -126,9 +126,11 @@ def schedule_crawls_task(args):
         return
     
     job_id = None
+    platform_id = None
     if len(args) >= 3:
         filtered_links, user_id = args[0], args[1]
         job_id = args[2] if len(args) > 2 else None
+        platform_id = args[3] if len(args) > 3 else None
     else:
         filtered_links, user_id = args
     
@@ -172,12 +174,12 @@ def schedule_crawls_task(args):
         }))
     
     for link in filtered_links:
-        celery_app.send_task('scraper.scrape_detail', args=[link, user_id, job_id], queue='scraper_queue')
+        celery_app.send_task('scraper.scrape_detail', args=[link, user_id, job_id, platform_id], queue='scraper_queue')
     
     logger.info(f"All {len(filtered_links)} tasks scheduled.")
 
 @celery_app.task(name="scraper.scrape_detail")
-def scrape_job_detail_task(url, user_id=1, job_id=None):
+def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     logger.info(f"🕵️ [TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
     
     try:
@@ -209,7 +211,8 @@ def scrape_job_detail_task(url, user_id=1, job_id=None):
             "description": content[:4000],
             "url": url,
             "user_id": user_id,
-            "crawl_job_id": job_id
+            "crawl_job_id": job_id,
+            "platform_id": platform_id
         }
         
         celery_app.send_task("ai.analyze_job", args=[job_data], queue="ai_queue")

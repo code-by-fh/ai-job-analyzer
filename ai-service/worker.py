@@ -49,12 +49,20 @@ def filter_urls_task(args):
     try:
         user_id = 1
         job_id = None
-        if len(args) == 4:
+        if len(args) == 5:
+            base_url, urls_list, user_id, job_id, platform_id = args
+        elif len(args) == 4:
             base_url, urls_list, user_id, job_id = args
+            platform_id = None
         elif len(args) == 3:
             base_url, urls_list, user_id = args
+            job_id = None
+            platform_id = None
         else:
              base_url, urls_list = args
+             user_id = 1
+             job_id = None
+             platform_id = None
     except ValueError:
         logger.error(f"Invalid args unpacking in filter_urls: {args}")
         return []
@@ -77,7 +85,7 @@ def filter_urls_task(args):
         content = response.choices[0].message.content.strip().replace("```json", "").replace("```", "")
         result_urls = json.loads(content)
         logger.info(f"Filter result: {len(result_urls)} relevant URLs found.")
-        return [result_urls, user_id, job_id] if job_id else [result_urls, user_id]
+        return [result_urls, user_id, job_id, platform_id]
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         return []
@@ -154,7 +162,8 @@ def analyze_job_task(job_data):
             reasoning=data.get("reason_de", ""),
             application_draft=None,
             status="OPEN",
-            user_id=user_id
+            user_id=user_id,
+            platform_id=job_data.get('platform_id')
         )
         
         db.add(db_job)
@@ -326,5 +335,68 @@ def generate_application_task(job_id, user_id=None):
                 }))
         except Exception as db_e:
             logger.error(f"Failed to save error status to DB: {db_e}")
+    finally:
+        db.close()
+
+
+@celery_app.task(name="ai.check_periodic_crawls")
+def check_periodic_crawls_task():
+    logger.info("⏰ [TASK] Checking for platforms due for periodic crawl...")
+    db = SessionLocal()
+    try:
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import or_
+        from database import JobPlatform
+        import requests
+
+        now = datetime.now(timezone.utc)
+        
+        # Load platforms that are active and either never crawled or interval passed
+        platforms = db.query(JobPlatform).filter(
+            JobPlatform.is_active == True
+        ).all()
+
+        triggered_count = 0
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8080")
+
+        for p in platforms:
+            is_due = False
+            if not p.last_crawl_at:
+                is_due = True
+            else:
+                # Calculate if interval passed
+                diff = now - p.last_crawl_at.replace(tzinfo=timezone.utc)
+                if diff.total_seconds() / 60 >= p.crawl_interval_minutes:
+                    is_due = True
+            
+            if is_due:
+                logger.info(f"🚀 Platform {p.name} (ID: {p.id}) is due for crawl. Triggering...")
+                try:
+                    resp = requests.post(
+                        f"{SCRAPER_URL}/search",
+                        json={
+                            "query": p.url,
+                            "location": "Remote",
+                            "user_id": p.user_id,
+                            "platform_id": p.id
+                        },
+                        timeout=5
+                    )
+                    if resp.status_code == 200:
+                        p.last_crawl_at = now
+                        triggered_count += 1
+                    else:
+                        logger.error(f"Failed to trigger crawl for {p.name}: {resp.status_code}")
+                except Exception as e:
+                    logger.error(f"Error triggering periodic crawl for {p.name}: {e}")
+
+        if triggered_count > 0:
+            db.commit()
+            logger.info(f"✅ Triggered {triggered_count} periodic crawls.")
+        else:
+            logger.info("No platforms due for crawl.")
+
+    except Exception as e:
+        logger.error(f"Error in check_periodic_crawls_task: {e}")
     finally:
         db.close()
