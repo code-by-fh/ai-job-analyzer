@@ -314,6 +314,8 @@ def get_jobs(
             query = query.filter(JobEntry.is_favorite == True)
         elif filter_type == "no_favorite":
             query = query.filter(JobEntry.is_favorite == False)
+        elif filter_type == "applications":
+            query = query.filter(JobEntry.application_draft.isnot(None))
             
         # Sorting (always by match_score desc)
         query = query.order_by(JobEntry.match_score.desc())
