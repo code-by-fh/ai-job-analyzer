@@ -644,6 +644,9 @@ def trigger_platform_crawl(platform_id: int, current_user: User = Depends(get_cu
         ).first()
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
+        
+        if not db_platform.is_active:
+            raise HTTPException(status_code=400, detail="Platform is deactivated")
 
         # Trigger scraper-service
         from sqlalchemy import func

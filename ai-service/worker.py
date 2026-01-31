@@ -457,9 +457,9 @@ def generate_application_task(job_id, user_id=None):
         db.close()
 
 
-@celery_app.task(name="ai.check_periodic_crawls")
-def check_periodic_crawls_task():
-    logger.info("⏰ [TASK] Checking for platforms due for periodic crawl...")
+@celery_app.task(name="check_platforms_for_crawl")
+def check_platforms_for_crawl():
+    logger.info("⏰ Checking platforms for scheduled crawls...")
     db = SessionLocal()
     try:
         from datetime import datetime, timedelta, timezone
