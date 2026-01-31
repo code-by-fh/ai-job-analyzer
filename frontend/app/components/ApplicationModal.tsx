@@ -16,12 +16,13 @@ interface Props {
 export default function ApplicationModal({ isOpen, onClose, content, jobId, currentStatus, onStatusUpdate, token }: Props) {
   const { t } = useLanguage();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
-    alert(t('copiedToClipboard'));
+    setSuccessMessage(t('copiedToClipboard'));
   };
 
   const handleDownload = async () => {
@@ -59,6 +60,16 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
         onConfirm={() => setErrorMessage(null)}
         title={t('error')}
         message={errorMessage || ''}
+        confirmText="OK"
+        isDestructive={false}
+      />
+
+      <ConfirmModal
+        isOpen={!!successMessage}
+        onClose={() => setSuccessMessage(null)}
+        onConfirm={() => setSuccessMessage(null)}
+        title={t('success')}
+        message={successMessage || ''}
         confirmText="OK"
         isDestructive={false}
       />
