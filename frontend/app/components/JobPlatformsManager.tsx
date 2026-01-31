@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageProvider';
+import ConfirmModal from './ConfirmModal';
 
 interface Platform {
     id: number;
@@ -26,6 +27,9 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
     const [loading, setLoading] = useState(true);
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
+
+    // Confirm Modal
+    const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
 
     const fetchPlatforms = async () => {
         if (!token) return;
@@ -105,17 +109,23 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
         setTimeout(() => setStatus(''), 3000);
     };
 
-    const removePlatform = async (id: number) => {
-        if (!confirm(t('areYouCertain'))) return;
+    const removePlatform = (id: number) => {
+        setPlatformToRemove(id);
+    };
+
+    const finalizeRemovePlatform = async () => {
+        if (!platformToRemove) return;
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             fetchPlatforms();
         } catch (e) {
-            alert(t('error'));
+            setStatus(`${t('error')} removing platform`);
+            setTimeout(() => setStatus(''), 3000);
         }
+        setPlatformToRemove(null);
     };
 
     const triggerCrawl = async (platform: Platform) => {
@@ -169,6 +179,16 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
 
     return (
         <section id="platforms-manager" className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <ConfirmModal
+                isOpen={!!platformToRemove}
+                onClose={() => setPlatformToRemove(null)}
+                onConfirm={finalizeRemovePlatform}
+                title={t('removePlatform')}
+                message={t('areYouCertain')}
+                confirmText={t('remove')}
+                isDestructive
+            />
+
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h2 className="font-bold text-slate-900 dark:text-white">{t('jobPlatforms')}</h2>
@@ -261,7 +281,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                     />
                     <button
                         onClick={addPlatform}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold transition shadow-lg shadow-indigo-500/20"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold transition shadow-lg shadow-indigo-500/20 cursor-pointer"
                     >+</button>
                 </div>
             </div>

@@ -7,6 +7,7 @@ import { useLanguage } from '../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
 import PasswordChangeForm from '../components/PasswordChangeForm';
 import JobPlatformsManager from '../components/JobPlatformsManager';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function Settings() {
   const { user, token, isAuthenticated } = useAuth();
@@ -31,6 +32,14 @@ export default function Settings() {
   const [uploading, setUploading] = useState(false);
   const [newUrl, setNewUrl] = useState('');
   const [crawling, setCrawling] = useState(false);
+
+  // Confirm Modal State
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'DELETE_JOBS' | 'DELETE_PROFILE' | 'FACTORY_RESET';
+    title: string;
+    message: string;
+    action: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     const t = localStorage.getItem('token');
@@ -198,31 +207,22 @@ export default function Settings() {
     setTimeout(() => setStatus(''), 3000);
   };
 
-  const handleDeleteJobs = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!confirm(t('deleteJobsConfirm'))) return;
-
+  // --- ACTIONS ---
+  const executeDeleteJobs = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      alert(`${data.count || 0} jobs deleted.`);
-      window.location.href = "/";
+      setStatus(`${data.count || 0} jobs deleted.`);
+      setTimeout(() => window.location.href = "/", 1000);
     } catch (e) {
-      alert(t('error'));
+      setStatus(t('error'));
     }
   };
 
-  const handleDeleteProfile = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!confirm(t('deleteProfileConfirm'))) return;
-
+  const executeDeleteProfile = async () => {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'DELETE',
@@ -233,18 +233,13 @@ export default function Settings() {
         cv_data: { experience: [], projects: [], education: '' },
         job_urls: []
       });
-      alert(t('saved'));
+      setStatus(t('saved'));
     } catch (e) {
-      alert(t('error'));
+      setStatus(t('error'));
     }
   };
 
-  const handleFactoryReset = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!confirm(t('factoryResetConfirm'))) return;
-
+  const executeFactoryReset = async () => {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
         method: 'DELETE',
@@ -255,17 +250,60 @@ export default function Settings() {
         cv_data: { experience: [], projects: [], education: '' },
         job_urls: []
       });
-      alert(t('saved'));
-      window.location.href = "/";
+      setStatus(t('saved'));
+      setTimeout(() => window.location.href = "/", 1000);
     } catch (e) {
-      alert(t('error'));
+      setStatus(t('error'));
     }
+  };
+
+  // --- HANDLERS (Open Modals) ---
+  const requestDeleteJobs = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setConfirmAction({
+      type: 'DELETE_JOBS',
+      title: t('deleteAllJobs'),
+      message: t('deleteJobsConfirm'),
+      action: executeDeleteJobs
+    });
+  };
+
+  const requestDeleteProfile = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setConfirmAction({
+      type: 'DELETE_PROFILE',
+      title: t('deleteProfileOnly'),
+      message: t('deleteProfileConfirm'),
+      action: executeDeleteProfile
+    });
+  };
+
+  const requestFactoryReset = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setConfirmAction({
+      type: 'FACTORY_RESET',
+      title: t('factoryReset'),
+      message: t('factoryResetConfirm'),
+      action: executeFactoryReset
+    });
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">{t('loadingProfile')}</div>;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+      <ConfirmModal
+        isOpen={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={() => {
+          if (confirmAction) confirmAction.action();
+        }}
+        title={confirmAction?.title || ''}
+        message={confirmAction?.message || ''}
+        confirmText={t('confirm')}
+        isDestructive
+      />
 
       {/* PAGE HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
@@ -432,21 +470,21 @@ export default function Settings() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={handleDeleteJobs}
+                onClick={requestDeleteJobs}
                 className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
                 {t('deleteAllJobs')}
               </button>
               <button
                 type="button"
-                onClick={handleDeleteProfile}
+                onClick={requestDeleteProfile}
                 className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
                 {t('deleteProfileOnly')}
               </button>
               <button
                 type="button"
-                onClick={handleFactoryReset}
+                onClick={requestFactoryReset}
                 className="w-full px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition cursor-pointer"
               >
                 {t('factoryReset')}

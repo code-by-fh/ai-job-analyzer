@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function AdminUsersPage() {
     const { user, token, isAuthenticated } = useAuth();
@@ -13,6 +14,10 @@ export default function AdminUsersPage() {
     // Create Form
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
+    const [status, setStatus] = useState('');
+
+    // Confirm Modal
+    const [userToDelete, setUserToDelete] = useState<number | null>(null);
 
     useEffect(() => {
         if (!isAuthenticated) return;
@@ -52,29 +57,50 @@ export default function AdminUsersPage() {
                 setNewUsername('');
                 setNewPassword('');
                 fetchUsers();
+                setStatus(t('userCreated') || 'User created successfully');
             } else {
-                alert(t('errorCreatingUser'));
+                setStatus(t('errorCreatingUser'));
             }
         } catch (e) {
-            alert(t('error'));
+            setStatus(t('error'));
         }
+        setTimeout(() => setStatus(''), 3000);
     };
 
-    const handleDelete = async (id: number) => {
-        if (!confirm(t('areYouCertain'))) return;
+    const handleDelete = (id: number) => {
+        setUserToDelete(id);
+    };
+
+    const executeDelete = async () => {
+        if (!userToDelete) return;
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${id}`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userToDelete}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             fetchUsers();
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            setStatus(t('error') || 'Error deleting user');
+            setTimeout(() => setStatus(''), 3000);
+        }
+        setUserToDelete(null);
     };
 
     if (!user || !user.is_admin) return <div className="p-8 text-center text-slate-500 animate-pulse">{t('verifyingClearance')}</div>;
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <ConfirmModal
+                isOpen={!!userToDelete}
+                onClose={() => setUserToDelete(null)}
+                onConfirm={executeDelete}
+                title={t('deleteUser') || 'Delete User'}
+                message={t('areYouCertain')}
+                confirmText={t('delete')}
+                isDestructive
+            />
+
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('userManagement')}</h1>
@@ -84,9 +110,13 @@ export default function AdminUsersPage() {
 
             {/* CREATE USER CARD */}
             <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                <h2 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                    <span>➕</span> {t('createNewUser')}
-                </h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>➕</span> {t('createNewUser')}
+                    </h2>
+                    {status && <span className={`text-sm font-bold ${status.includes('error') ? 'text-rose-500' : 'text-emerald-500'}`}>{status}</span>}
+                </div>
+
                 <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-4">
                     <input
                         className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"

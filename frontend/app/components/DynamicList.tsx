@@ -1,5 +1,7 @@
-import React from 'react';
+"use client";
+import React, { useState } from 'react';
 import { useLanguage } from './LanguageProvider';
+import ConfirmModal from './ConfirmModal';
 
 interface DynamicListProps {
   title: string;
@@ -12,8 +14,31 @@ interface DynamicListProps {
 
 export default function DynamicList({ title, items, onAdd, onRemove, onChange, fields }: DynamicListProps) {
   const { t } = useLanguage();
+  const [indexToRemove, setIndexToRemove] = useState<number | null>(null);
+
+  const handleRemoveClick = (index: number) => {
+    setIndexToRemove(index);
+  };
+
+  const confirmRemove = () => {
+    if (indexToRemove !== null) {
+      onRemove(indexToRemove);
+      setIndexToRemove(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      <ConfirmModal
+        isOpen={indexToRemove !== null}
+        onClose={() => setIndexToRemove(null)}
+        onConfirm={confirmRemove}
+        title={t('removeEntry') || 'Remove Entry'}
+        message={t('areYouCertain') || 'Are you sure you want to remove this item?'}
+        confirmText={t('remove') || 'Remove'}
+        isDestructive
+      />
+
       <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-2">
         <h3 className="font-bold text-slate-800 dark:text-white text-lg">{title}</h3>
         <button
@@ -37,7 +62,7 @@ export default function DynamicList({ title, items, onAdd, onRemove, onChange, f
           {/* DELETE BUTTON */}
           <button
             type="button"
-            onClick={() => onRemove(index)}
+            onClick={() => handleRemoveClick(index)}
             className="absolute top-3 right-3 p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
             title={t('removeEntry')}
           >

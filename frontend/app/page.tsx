@@ -8,6 +8,7 @@ import { useAuth } from './components/AuthProvider';
 import { useLanguage } from './components/LanguageProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import JobStatusBadge, { JobStatus } from './components/JobStatusBadge';
+import ConfirmModal from './components/ConfirmModal';
 
 // --- TYPEN ---
 interface Job {
@@ -43,6 +44,9 @@ export default function Home() {
   const [modalContent, setModalContent] = useState('');
   const [modalJobId, setModalJobId] = useState('');
   const [modalJob, setModalJob] = useState<Job | null>(null);
+
+  // Confirm Modal
+  const [jobToDelete, setJobToDelete] = useState<string | null>(null);
 
   const [isCrawling, setIsCrawling] = useState(false);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
@@ -303,26 +307,31 @@ export default function Home() {
     }
   };
 
-  const handleDeleteJob = async (e: React.MouseEvent, jobId: string) => {
+  const handleDeleteJob = (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
-    if (!confirm(t('deleteConfirm'))) return;
+    setJobToDelete(jobId);
+  };
+
+  const confirmDeleteJob = async () => {
+    if (!jobToDelete) return;
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobToDelete}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
-        setJobs(prev => prev.filter(job => job.id !== jobId));
+        setJobs(prev => prev.filter(job => job.id !== jobToDelete));
       } else {
         const data = await res.json().catch(() => ({}));
         console.error('Delete failed:', res.status, data);
-        alert(`Löschen fehlgeschlagen: ${data.detail || res.statusText}`);
+        setGlobalError(`Löschen fehlgeschlagen: ${data.detail || res.statusText}`);
       }
     } catch (e) {
       console.error('Error deleting job:', e);
-      alert('Netzwerkfehler beim Löschen.');
+      setGlobalError('Netzwerkfehler beim Löschen.');
     }
+    setJobToDelete(null);
   };
 
   const handleToggleFavorite = async (jobId: string, currentStatus: boolean) => {
@@ -359,11 +368,11 @@ export default function Home() {
       } else {
         const errorData = await res.json().catch(() => ({}));
         console.error('Failed to update status:', res.status, errorData);
-        alert(`Fehler beim Aktualisieren: ${res.status} ${errorData.detail || ''}`);
+        setGlobalError(`Fehler beim Aktualisieren: ${res.status} ${errorData.detail || ''}`);
       }
     } catch (e) {
       console.error('Error updating status:', e);
-      alert('Netzwerkfehler beim Aktualisieren des Status');
+      setGlobalError('Netzwerkfehler beim Aktualisieren des Status');
     }
   };
 
@@ -415,6 +424,17 @@ export default function Home() {
         onStatusUpdate={handleUpdateStatus}
       />
 
+      <ConfirmModal
+        isOpen={!!jobToDelete}
+        onClose={() => setJobToDelete(null)}
+        onConfirm={confirmDeleteJob}
+        title={t('deleteJob')}
+        message={t('deleteConfirm')}
+        confirmText={t('delete')}
+        cancelText={t('cancel')}
+        isDestructive={true}
+      />
+
       {/* DASHBOARD HEADER & SEARCH */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800/50">
         <div>
@@ -435,7 +455,7 @@ export default function Home() {
                 rounded-xl px-4 py-3 
                 transition-all duration-300
                 focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:dark:shadow-[0_0_20px_rgba(99,102,241,0.2)]
-             `}>
+              `}>
             <span className="text-slate-400 mr-3">⚡</span>
             <input
               className="w-full bg-transparent focus:outline-none text-slate-900 dark:text-white placeholder:text-slate-400"
@@ -450,7 +470,7 @@ export default function Home() {
             onClick={startSearch}
             disabled={isCrawling}
             className={`
-                  h-[50px] px-6 rounded-xl font-bold text-white shadow-lg transition-all duration-300 cursor-pointer
+                  h-[50px] px-6 rounded-xl font-bold text-white shadow-lg transition-all duration-300
                   ${isCrawling
                 ? 'bg-slate-300 dark:bg-slate-800 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-indigo-500/30'
