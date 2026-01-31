@@ -114,10 +114,6 @@ export default function LoginPage() {
                     >
                         {t('initializeSession')}
                     </button>
-
-                    <div className="text-center pt-2">
-                        <span className="text-[10px] text-slate-400">{t('defaultCredentials')}</span>
-                    </div>
                 </form>
             </div>
         </div>

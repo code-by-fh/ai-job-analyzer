@@ -264,6 +264,18 @@ async def delete_user(
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
              raise HTTPException(status_code=404, detail="User not found")
+        
+        # Delete dependent data first to avoid IntegrityError
+        # 1. Delete Jobs (depend on User and Platform)
+        db.query(JobEntry).filter(JobEntry.user_id == user_id).delete()
+        
+        # 2. Delete Profile (depends on User)
+        db.query(UserProfile).filter(UserProfile.user_id == user_id).delete()
+
+        # 3. Delete Platforms (depend on User)
+        # Note: Jobs referring to these platforms are already deleted above
+        db.query(JobPlatform).filter(JobPlatform.user_id == user_id).delete()
+
         db.delete(user)
         db.commit()
         return {"status": "deleted"}

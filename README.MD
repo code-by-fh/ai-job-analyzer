@@ -2,7 +2,7 @@
 
 The **AI Job Agent** is an intelligent application for automating the job search and application process. It combines web scraping, AI-powered analysis, and modern process management to help users efficiently find suitable job offers, evaluate them, and apply to them.
 
-![AI Job Agent Dashboard](https://via.placeholder.com/800x400?text=AI+Job+Agent+Dashboard)
+![AI Job Agent Dashboard](docs/images/dashboard.png)
 
 ## 🚀 Features
 
@@ -11,6 +11,12 @@ The **AI Job Agent** is an intelligent application for automating the job search
 *   **Application Generation**: Automatically creates personalized cover letters and CV adaptations for specific positions.
 *   **Application Process Management**: Track the status of your applications, save notes, and organize your job search in one place.
 *   **Modern UI**: An appealing, user-friendly interface in Dark Mode with Glassmorphism effects for a pleasant user experience.
+
+### 📸 Screenshots
+
+| Login | Dashboard | Settings |
+|:---:|:---:|:---:|
+| ![Login](docs/images/login.png) | ![Settings](docs/images/settings.png) |![Admin](docs/images/admin.png) |
 
 ## 🏗️ Architecture & Technology Stack
 

@@ -90,12 +90,11 @@ export const translations = {
 
         // Login
         systemAccess: "System Access",
-        identity: "Identity",
-        secureKey: "Secure Key",
-        initializeSession: "Initialize Session",
+        identity: "Username",
+        secureKey: "Password",
+        initializeSession: "Login",
         authFailed: "Authentication failed.",
         systemUnreachable: "System unreachable.",
-        defaultCredentials: "Default: admin / admin",
 
         // Settings
         profileConfiguration: "Profile Configuration",
@@ -305,12 +304,11 @@ export const translations = {
 
         // Login
         systemAccess: "System-Zugang",
-        identity: "Identität",
-        secureKey: "Sicherheitsschlüssel",
-        initializeSession: "Sitzung initialisieren",
+        identity: "Benutzername",
+        secureKey: "Passwort",
+        initializeSession: "Login",
         authFailed: "Authentifizierung fehlgeschlagen.",
         systemUnreachable: "System nicht erreichbar.",
-        defaultCredentials: "Standard: admin / admin",
 
         // Settings
         profileConfiguration: "Profil-Konfiguration",

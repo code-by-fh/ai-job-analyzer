@@ -99,7 +99,11 @@ export default function Home() {
         setJobs(data);
         setOffset(limit);
       } else {
-        setJobs(prev => [...prev, ...data]);
+        setJobs(prev => {
+          // Prevent duplicates when appending
+          const newIds = new Set(data.map((d: Job) => d.id));
+          return [...prev.filter(p => !newIds.has(p.id)), ...data];
+        });
         setOffset(prev => prev + limit);
       }
 
@@ -284,7 +288,13 @@ export default function Home() {
           if (filterType === 'no_favorite' && data.job.is_favorite) shouldAdd = false;
 
           if (shouldAdd) {
-            setJobs(prevJobs => [data.job, ...prevJobs]);
+            setJobs(prevJobs => {
+              // Check if job already exists to avoid duplicates
+              if (prevJobs.some(j => j.id === data.job.id)) {
+                return prevJobs;
+              }
+              return [data.job, ...prevJobs];
+            });
           }
 
           // Update jobs_saved counter and remove from analyzing_jobs for the crawl job
