@@ -19,6 +19,7 @@ interface Job {
   created_at?: string;
   status?: string;
   is_favorite?: boolean;
+  generation_error?: string;
 }
 
 export default function Home() {
@@ -529,17 +530,25 @@ export default function Home() {
                         disabled={isGenerating}
                         className={`
                           group/generate relative min-w-[200px] px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer overflow-hidden
-                          ${job.application_draft
-                            ? 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-500/15 dark:to-teal-500/15 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-300/60 dark:border-emerald-500/30 hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/25 dark:hover:shadow-emerald-500/30 active:scale-95'
-                            : 'bg-gradient-to-r from-indigo-600 to-indigo-500 dark:from-indigo-600 dark:to-purple-600 text-white border-2 border-indigo-500/50 dark:border-indigo-400/30 hover:from-indigo-500 hover:to-indigo-400 dark:hover:from-indigo-500 dark:hover:to-purple-500 shadow-lg shadow-indigo-500/30 dark:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:shadow-xl hover:shadow-indigo-500/40 dark:hover:shadow-[0_0_30px_rgba(99,102,241,0.6)] active:scale-95'}
+                          ${job.status === 'FAILED'
+                            ? 'bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-500/15 dark:to-pink-500/15 text-rose-700 dark:text-rose-400 border-2 border-rose-300/60 dark:border-rose-500/30 hover:border-rose-400 dark:hover:border-rose-500/50 hover:shadow-lg hover:shadow-rose-500/25 dark:hover:shadow-rose-500/30 active:scale-95'
+                            : job.application_draft
+                              ? 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-500/15 dark:to-teal-500/15 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-300/60 dark:border-emerald-500/30 hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/25 dark:hover:shadow-emerald-500/30 active:scale-95'
+                              : 'bg-gradient-to-r from-indigo-600 to-indigo-500 dark:from-indigo-600 dark:to-purple-600 text-white border-2 border-indigo-500/50 dark:border-indigo-400/30 hover:from-indigo-500 hover:to-indigo-400 dark:hover:from-indigo-500 dark:hover:to-purple-500 shadow-lg shadow-indigo-500/30 dark:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:shadow-xl hover:shadow-indigo-500/40 dark:hover:shadow-[0_0_30px_rgba(99,102,241,0.6)] active:scale-95'}
                           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 disabled:hover:shadow-lg
                         `}
                       >
                         <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover/generate:opacity-100 transition-opacity duration-300" />
                         <span className="relative text-base">
-                          {isGenerating ? <span className="animate-spin">↻</span> : job.application_draft ? '✓' : '⚡'}
+                          {isGenerating ? <span className="animate-spin">↻</span> :
+                            job.status === 'FAILED' ? '⚠️' :
+                              job.application_draft ? '✓' : '⚡'}
                         </span>
-                        <span className="relative">{isGenerating ? 'Processing...' : job.application_draft ? 'View Application' : 'Generate Application'}</span>
+                        <span className="relative">
+                          {isGenerating ? 'Processing...' :
+                            job.status === 'FAILED' ? 'Failed - Retry' :
+                              job.application_draft ? 'View Application' : 'Generate Application'}
+                        </span>
                       </button>
                     </div>
 

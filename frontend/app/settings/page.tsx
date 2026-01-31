@@ -272,7 +272,7 @@ export default function Settings() {
         </div>
         <div className="flex items-center gap-4">
           {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse">{status}</span>}
-          <button onClick={handleSubmit} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95">
+          <button onClick={handleSubmit} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
             Save Changes
           </button>
         </div>

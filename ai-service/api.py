@@ -300,6 +300,8 @@ def trigger_generation(job_id: str, current_user: User = Depends(get_current_use
         job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        job.status = "GENERATING"
+        db.commit()
         # Pass user_id to task so it can use correct profile
         celery_app.send_task("ai.generate_application", args=[job_id, current_user.id], queue="ai_queue")
         return {"status": "started"}

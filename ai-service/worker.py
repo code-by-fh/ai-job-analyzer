@@ -248,12 +248,22 @@ def generate_application_task(job_id, user_id=None):
             error_msg = "Profil unvollständig. Bitte in den Einstellungen Lebenslauf hinterlegen."
             logger.error(f"Application generation failed: {error_msg}")
             
+            job.status = "FAILED"
+            job.generation_error = error_msg
+            db.commit()
+
+            r.publish("job_updates", json.dumps({
+                "type": "job_update",
+                "job_id": job.id,
+                "status": "FAILED",
+                "error": error_msg,
+                "user_id": job.user_id
+            }))
+            
             r.publish("job_updates", json.dumps({
                 "type": "global_error",
                 "message": error_msg
             }))
-            
-            r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
         
         logger.info(f"Daten geladen. Job: {job.title}, User: {profile.role}")
@@ -282,6 +292,7 @@ def generate_application_task(job_id, user_id=None):
         logger.info("Antwort von OpenAI erhalten (Anschreiben).")
         
         job.application_draft = response.choices[0].message.content
+        job.status = "COMPLETED"
         db.commit()
         logger.info(f"Anschreiben für Job {job_id} in DB gespeichert.")
         
@@ -297,5 +308,23 @@ def generate_application_task(job_id, user_id=None):
     except Exception as e:
         logger.error(f"CRASH BEI GENERIERUNG für Job {job_id}: {e}", exc_info=True)
         db.rollback()
+        
+        # Try to set status to FAILED in DB
+        try:
+            job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.generation_error = str(e)
+                db.commit()
+                
+                r.publish("job_updates", json.dumps({
+                    "type": "job_update",
+                    "job_id": job.id,
+                    "status": "FAILED",
+                    "error": str(e),
+                    "user_id": job.user_id
+                }))
+        except Exception as db_e:
+            logger.error(f"Failed to save error status to DB: {db_e}")
     finally:
         db.close()
