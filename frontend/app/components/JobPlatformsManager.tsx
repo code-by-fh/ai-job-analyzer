@@ -281,13 +281,13 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                         <select
                                             value={p.crawl_interval_minutes}
                                             onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
-                                            className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 border-none p-0 focus:ring-0 cursor-pointer"
+                                            className="bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 cursor-pointer"
                                         >
-                                            <option value={60}>{t('everyHour')}</option>
-                                            <option value={360}>{t('every6Hours')}</option>
-                                            <option value={720}>{t('every12Hours')}</option>
-                                            <option value={1440}>{t('every24Hours')}</option>
-                                            <option value={10080}>{t('everyWeek')}</option>
+                                            <option value={60} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyHour')}</option>
+                                            <option value={360} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every6Hours')}</option>
+                                            <option value={720} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every12Hours')}</option>
+                                            <option value={1440} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every24Hours')}</option>
+                                            <option value={10080} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyWeek')}</option>
                                         </select>
                                     </div>
 

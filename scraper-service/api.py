@@ -61,6 +61,30 @@ def cleanup_stale_jobs():
     
     logger.info(f"✅ Cleanup complete. Removed {total_removed} stale jobs.")
 
+def cleanup_crawl_job(job_id, user_id, reason="error"):
+    """
+    Cleanup all Redis data for a crawl job.
+    Called on error or cancellation.
+    """
+    try:
+        logger.info(f"🧹 Cleaning up crawl job {job_id} (reason: {reason})")
+        
+        r.delete(f"crawl_job:{job_id}")
+        r.delete(f"crawl_job:{job_id}:all_job_titles")
+        r.srem(f"user:{user_id}:active_crawls", job_id)
+        r.delete("system:crawling")
+        
+        r.publish("job_updates", json.dumps({
+            "type": "crawl_job_failed" if reason == "error" else "crawl_job_cancelled",
+            "job_id": job_id,
+            "user_id": user_id,
+            "reason": reason
+        }))
+        
+        logger.info(f"✅ Cleanup complete for job {job_id}")
+    except Exception as e:
+        logger.error(f"Error during cleanup of job {job_id}: {e}")
+
 # Cleanup on startup
 cleanup_stale_jobs()
 
@@ -127,3 +151,30 @@ async def get_crawl_status(user_id: int):
             })
     
     return {"jobs": jobs}
+
+class CancelCrawlRequest(BaseModel):
+    job_id: str
+    user_id: int
+
+@app.post("/cancel-crawl")
+async def cancel_crawl(request: CancelCrawlRequest):
+    logger.info(f"Cancelling crawl job {request.job_id} for user {request.user_id}")
+    
+    job_data = r.hgetall(f"crawl_job:{request.job_id}")
+    if not job_data:
+        return {"status": "error", "message": "Job not found"}
+    
+    stored_user_id = int(job_data.get(b"user_id", 0))
+    if stored_user_id != request.user_id:
+        return {"status": "error", "message": "Unauthorized"}
+    
+    try:
+        celery_app.control.revoke(request.job_id, terminate=True, signal='SIGKILL')
+        
+        cleanup_crawl_job(request.job_id, request.user_id, reason="cancelled")
+        
+        logger.info(f"Successfully cancelled crawl job {request.job_id}")
+        return {"status": "success", "message": "Crawl job cancelled"}
+    except Exception as e:
+        logger.error(f"Error cancelling job {request.job_id}: {e}")
+        return {"status": "error", "message": str(e)}

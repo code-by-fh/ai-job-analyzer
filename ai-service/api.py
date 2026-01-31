@@ -172,7 +172,7 @@ def parse_cv_with_ai(cv_text):
 
     try:
         response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free",
+            model="deepseek/deepseek-v3.2",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0
         )
@@ -597,7 +597,18 @@ def update_platform(platform_id: int, platform_update: PlatformUpdate, current_u
         
         # Get job count
         job_count = db.query(JobEntry).filter(JobEntry.platform_id == db_platform.id).count()
-        return {**db_platform.__dict__, "job_count": job_count}
+        
+        return {
+            "id": db_platform.id,
+            "url": db_platform.url,
+            "name": db_platform.name,
+            "favicon_url": db_platform.favicon_url,
+            "crawl_interval_minutes": db_platform.crawl_interval_minutes,
+            "last_crawl_at": db_platform.last_crawl_at.isoformat() if db_platform.last_crawl_at else None,
+            "is_active": db_platform.is_active,
+            "is_notification_enabled": db_platform.is_notification_enabled,
+            "job_count": job_count
+        }
     finally:
         db.close()
 

@@ -78,6 +78,8 @@ export const translations = {
         jobsRatedAndSaved: "{count} {jobs} rated and saved.",
         job: "job",
         jobs: "jobs",
+        cancelCrawl: "Cancel crawl",
+        cancelCrawlConfirm: "Are you sure you want to cancel this crawl job?",
 
         // Application Modal
         applicationPreview: "Application Preview",
@@ -296,6 +298,8 @@ export const translations = {
         jobsRatedAndSaved: "{count} {jobs} wurden bewertet und gespeichert.",
         job: "Job wurde",
         jobs: "Jobs wurden",
+        cancelCrawl: "Crawl abbrechen",
+        cancelCrawlConfirm: "Möchten Sie diesen Crawl-Job wirklich abbrechen?",
 
         // Application Modal
         applicationPreview: "Anschreiben Vorschau",

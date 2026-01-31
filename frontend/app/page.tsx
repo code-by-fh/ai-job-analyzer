@@ -54,6 +54,7 @@ export default function Home() {
 
   // Confirm Modal
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
+  const [crawlToCancel, setCrawlToCancel] = useState<string | null>(null);
 
   const [isCrawling, setIsCrawling] = useState(false);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
@@ -458,6 +459,40 @@ export default function Home() {
     }
   };
 
+  const handleCancelCrawl = (crawlJobId: string) => {
+    setCrawlToCancel(crawlJobId);
+  };
+
+  const confirmCancelCrawl = async () => {
+    if (!crawlToCancel || !user?.id) return;
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/cancel-crawl`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: crawlToCancel, user_id: user.id })
+      });
+
+      if (res.ok) {
+        setActiveCrawls(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(crawlToCancel);
+          if (newMap.size === 0) {
+            setIsCrawling(false);
+          }
+          return newMap;
+        });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setGlobalError(`Failed to cancel: ${data.message || res.statusText}`);
+      }
+    } catch (e) {
+      console.error('Error cancelling crawl:', e);
+      setGlobalError('Network error while cancelling crawl');
+    }
+    setCrawlToCancel(null);
+  };
+
   const handleUpdateStatus = async (jobId: string, newStatus: JobStatus) => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/update-status`, {
@@ -558,6 +593,17 @@ export default function Home() {
         isDestructive={true}
       />
 
+      <ConfirmModal
+        isOpen={!!crawlToCancel}
+        onClose={() => setCrawlToCancel(null)}
+        onConfirm={confirmCancelCrawl}
+        title={t('cancelCrawl')}
+        message={t('cancelCrawlConfirm')}
+        confirmText={t('confirm')}
+        cancelText={t('cancel')}
+        isDestructive={true}
+      />
+
       {/* DASHBOARD HEADER & SEARCH */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800/50">
         <div>
@@ -622,7 +668,7 @@ export default function Home() {
 
       {/* CRAWL STATUS */}
       {activeCrawls.size > 0 && (
-        <CrawlStatus jobs={Array.from(activeCrawls.values())} />
+        <CrawlStatus jobs={Array.from(activeCrawls.values())} onCancel={handleCancelCrawl} />
       )}
 
       {/* FILTER & SORT */}

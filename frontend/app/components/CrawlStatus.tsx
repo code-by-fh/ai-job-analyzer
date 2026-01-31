@@ -7,20 +7,22 @@ export interface CrawlJob {
     total: number;
     scraping_completed: number;
     analysis_completed: number;
-    jobs_saved?: number;  // Number of jobs that have been saved (new_job events received)
+    jobs_saved?: number;
     status: string;
     started_at?: string;
     current_job_title?: string;
     show_success?: boolean;
-    analyzing_jobs?: string[];  // List of job titles currently being analyzed
-    all_job_titles?: string[];  // List of all job titles that have been analyzed
+    analyzing_jobs?: string[];
+    all_job_titles?: string[];
 }
 
 interface CrawlStatusProps {
     jobs: CrawlJob[];
+    onCancel?: (jobId: string) => void;
 }
 
-export default function CrawlStatus({ jobs }: CrawlStatusProps) {
+
+export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
     const { t } = useLanguage();
     if (jobs.length === 0) return null;
 
@@ -53,8 +55,21 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                     </p>
                                 </div>
                             </div>
-                            <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                                ID: {job.job_id.slice(0, 8)}
+                            <div className="flex items-center gap-2">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                                    ID: {job.job_id.slice(0, 8)}
+                                </div>
+                                {onCancel && !job.show_success && (
+                                    <button
+                                        onClick={() => onCancel(job.job_id)}
+                                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors cursor-pointer"
+                                        title={t('cancelCrawl')}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                )}
                             </div>
                         </div>
 

@@ -128,10 +128,11 @@ def filter_urls_task(args):
     if not args: 
         logger.warning("filter_urls_task called with empty args")
         return []
-        
+    
+    job_id = None
+    user_id = 1
+    
     try:
-        user_id = 1
-        job_id = None
         if len(args) == 5:
             base_url, urls_list, user_id, job_id, platform_id = args
         elif len(args) == 4:
@@ -139,12 +140,9 @@ def filter_urls_task(args):
             platform_id = None
         elif len(args) == 3:
             base_url, urls_list, user_id = args
-            job_id = None
             platform_id = None
         else:
              base_url, urls_list = args
-             user_id = 1
-             job_id = None
              platform_id = None
     except ValueError:
         logger.error(f"Invalid args unpacking in filter_urls: {args}")
@@ -158,7 +156,7 @@ def filter_urls_task(args):
         Beispiel-Output: ["https://firma.de/jobs/entwickler-123", "https://firma.de/career/marketing-manager"]
         """
         response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free",
+            model="deepseek/deepseek-v3.2",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Basis: {base_url}. Liste: {json.dumps(urls_list)}"}
@@ -171,6 +169,13 @@ def filter_urls_task(args):
         return [result_urls, user_id, job_id, platform_id]
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
+        if job_id:
+            import requests
+            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+            try:
+                requests.post(f"{SCRAPER_URL}/cancel-crawl", json={"job_id": job_id, "user_id": user_id}, timeout=5)
+            except Exception as cleanup_e:
+                logger.error(f"Failed to trigger cleanup for job {job_id}: {cleanup_e}")
         return []
 
 @celery_app.task(name="ai.analyze_job")
@@ -224,7 +229,7 @@ def analyze_job_task(job_data):
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
         response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free", 
+            model="deepseek/deepseek-v3.2", 
             messages=[
                 {"role": "system", "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }"}, 
                 {"role": "user", "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}"}
@@ -332,6 +337,15 @@ def analyze_job_task(job_data):
     except Exception as e:
         logger.error(f"Analyze Error for Job {job_id}: {e}", exc_info=True)
         db.rollback()
+        
+        crawl_job_id = job_data.get('crawl_job_id')
+        if crawl_job_id:
+            try:
+                import requests
+                SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+                requests.post(f"{SCRAPER_URL}/cancel-crawl", json={"job_id": crawl_job_id, "user_id": user_id}, timeout=5)
+            except Exception as cleanup_e:
+                logger.error(f"Failed to trigger cleanup for job {crawl_job_id}: {cleanup_e}")
     finally:
         db.close()
 
@@ -398,7 +412,7 @@ def generate_application_task(job_id, user_id=None):
 
         logger.info("⏳ Sende Anfrage an OpenAI für Anschreiben...")
         response = client.chat.completions.create(
-            model="tngtech/deepseek-r1t2-chimera:free", 
+            model="deepseek/deepseek-v3.2", 
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.7
         )
