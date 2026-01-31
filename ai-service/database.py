@@ -32,6 +32,7 @@ class JobEntry(Base):
     url = Column(String, nullable=True)
     status = Column(String, default="OPEN") 
     generation_error = Column(String, nullable=True)
+    notification_sent = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_favorite = Column(Boolean, default=False)
     platform_id = Column(Integer, ForeignKey("job_platforms.id"), nullable=True)
@@ -49,6 +50,13 @@ class UserProfile(Base):
     preferences = Column(Text, default="")
     cv_data = Column(JSON, default={}) 
     job_urls = Column(JSON, default=[])
+    
+    # Notification Settings
+    gmail_address = Column(String, nullable=True)
+    gmail_app_password = Column(String, nullable=True)
+    pushover_user_key = Column(String, nullable=True)
+    pushover_api_token = Column(String, nullable=True)
+    active_notification_service = Column(String, default="NONE") # NONE, GMAIL, PUSHOVER
 
 class JobPlatform(Base):
     __tablename__ = "job_platforms"
@@ -60,6 +68,7 @@ class JobPlatform(Base):
     crawl_interval_minutes = Column(Integer, default=1440) # Default: 24h
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
+    is_notification_enabled = Column(Boolean, default=False) # New field
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -89,6 +98,12 @@ class SettingsData(BaseModel):
     preferences: str
     cv_data: CVDataModel
     job_urls: List[str] = []
+    
+    gmail_address: Optional[str] = None
+    gmail_app_password: Optional[str] = None
+    pushover_user_key: Optional[str] = None
+    pushover_api_token: Optional[str] = None
+    active_notification_service: str = "NONE"
 
 class PlatformCreate(BaseModel):
     url: str
@@ -97,6 +112,7 @@ class PlatformCreate(BaseModel):
 class PlatformUpdate(BaseModel):
     crawl_interval_minutes: Optional[int] = None
     is_active: Optional[bool] = None
+    is_notification_enabled: Optional[bool] = None
 
 class PlatformResponse(BaseModel):
     id: int
@@ -106,6 +122,7 @@ class PlatformResponse(BaseModel):
     crawl_interval_minutes: int
     last_crawl_at: Optional[str] = None
     is_active: bool
+    is_notification_enabled: bool = False
     job_count: int = 0
 
     class Config:

@@ -100,6 +100,8 @@ export const translations = {
         profileConfiguration: "Profile Configuration",
         profileSubtitle: "Manage your professional identity and search preferences",
         saveChanges: "Save Changes",
+        tryAgain: "Try Again",
+        notifications: "Notifications",
         saving: "Saving...",
         saved: "Saved! ✅",
         error: "Error ❌",
@@ -197,6 +199,8 @@ export const translations = {
         addPlatformPlaceholder: "Add new platform URL (e.g. LinkedIn, Indeed...)",
         invalidUrl: "Invalid URL format",
         invalidUrlProtocol: "URL must start with http:// or https://",
+        notificationsEnabled: "Notifications Enabled",
+        notificationsDisabled: "Notifications Disabled",
 
         // Filters
         all: "All",
@@ -314,6 +318,8 @@ export const translations = {
         profileConfiguration: "Profil-Konfiguration",
         profileSubtitle: "Verwalte deine berufliche Identität und Sucheinstellungen",
         saveChanges: "Änderungen speichern",
+        tryAgain: "Erneut versuchen",
+        notifications: "Benachrichtigungen",
         saving: "Speichert...",
         saved: "Gespeichert! ✅",
         error: "Fehler ❌",
@@ -411,6 +417,8 @@ export const translations = {
         addPlatformPlaceholder: "Neue Plattform-URL hinzufügen (z.B. LinkedIn, Indeed...)",
         invalidUrl: "Ungültiges URL-Format",
         invalidUrlProtocol: "URL muss mit http:// oder https:// beginnen",
+        notificationsEnabled: "Benachrichtigungen aktiviert",
+        notificationsDisabled: "Benachrichtigungen deaktiviert",
 
         // Filters
         all: "Alle",

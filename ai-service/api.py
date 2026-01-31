@@ -442,6 +442,13 @@ def save_settings(settings: SettingsData, current_user: User = Depends(get_curre
         profile.cv_data = settings.cv_data.dict()
         profile.job_urls = settings.job_urls
         
+        # Save Notification Settings
+        profile.gmail_address = settings.gmail_address
+        profile.gmail_app_password = settings.gmail_app_password
+        profile.pushover_user_key = settings.pushover_user_key
+        profile.pushover_api_token = settings.pushover_api_token
+        profile.active_notification_service = settings.active_notification_service
+        
         db.commit()
         return {"status": "saved"}
     finally:
@@ -526,6 +533,7 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                 "crawl_interval_minutes": p.crawl_interval_minutes,
                 "last_crawl_at": p.last_crawl_at.isoformat() if p.last_crawl_at else None,
                 "is_active": p.is_active,
+                "is_notification_enabled": p.is_notification_enabled,
                 "job_count": count
             })
         return result
@@ -581,6 +589,8 @@ def update_platform(platform_id: int, platform_update: PlatformUpdate, current_u
             db_platform.crawl_interval_minutes = platform_update.crawl_interval_minutes
         if platform_update.is_active is not None:
             db_platform.is_active = platform_update.is_active
+        if platform_update.is_notification_enabled is not None:
+            db_platform.is_notification_enabled = platform_update.is_notification_enabled
 
         db.commit()
         db.refresh(db_platform)

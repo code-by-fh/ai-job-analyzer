@@ -12,6 +12,7 @@ interface Platform {
     last_crawl_at: string | null;
     is_active: boolean;
     job_count: number;
+    is_notification_enabled: boolean;
 }
 
 interface JobPlatformsManagerProps {
@@ -172,20 +173,29 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
         setTimeout(() => setStatus(''), 3000);
     };
 
-    const updateInterval = async (id: number, interval: number) => {
+    const updatePlatform = async (id: number, data: any) => {
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ crawl_interval_minutes: interval })
+                body: JSON.stringify(data)
             });
-            fetchPlatforms();
+            if (res.ok) {
+                fetchPlatforms();
+            } else {
+                console.error("Update platform failed with status:", res.status);
+            }
         } catch (e) {
-            console.error("Update interval failed", e);
+            console.error("Update platform failed", e);
         }
+    };
+
+    const toggleNotification = async (platform: Platform) => {
+        const newValue = !platform.is_notification_enabled;
+        await updatePlatform(platform.id, { is_notification_enabled: newValue });
     };
 
     if (loading) return <div className="text-slate-500 text-sm animate-pulse">{t('loading')}</div>;
@@ -231,6 +241,15 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                 </div>
                                 <div className="flex gap-1">
                                     <button
+                                        onClick={() => toggleNotification(p)}
+                                        className={`p-2 rounded-lg transition-all cursor-pointer ${p.is_notification_enabled
+                                            ? 'text-amber-500 bg-amber-50 dark:bg-amber-500/10'
+                                            : 'text-slate-300 dark:text-slate-700 hover:text-slate-400'}`}
+                                        title={p.is_notification_enabled ? t('notificationsEnabled') : t('notificationsDisabled')}
+                                    >
+                                        <svg className="w-4 h-4" fill={p.is_notification_enabled ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                                    </button>
+                                    <button
                                         onClick={() => triggerCrawl(p)}
                                         disabled={isBusy}
                                         className={`p-2 rounded-lg transition ${isBusy ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
@@ -261,7 +280,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                         <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Interval</span>
                                         <select
                                             value={p.crawl_interval_minutes}
-                                            onChange={(e) => updateInterval(p.id, parseInt(e.target.value))}
+                                            onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
                                             className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 border-none p-0 focus:ring-0 cursor-pointer"
                                         >
                                             <option value={60}>{t('everyHour')}</option>
@@ -271,6 +290,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                             <option value={10080}>{t('everyWeek')}</option>
                                         </select>
                                     </div>
+
                                     <div className="flex flex-col">
                                         <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">{t('jobsFound')}</span>
                                         <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>

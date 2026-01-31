@@ -7,7 +7,12 @@ from openai import OpenAI
 from pypdf import PdfReader
 import redis
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, JobPlatform
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
 
 # Logging Setup
 logging.basicConfig(
@@ -39,6 +44,84 @@ def format_cv_for_prompt(cv_json):
         
     text += f"\nAUSBILDUNG:\n{cv_json.get('education', '')}"
     return text
+
+def send_notification(job, profile):
+    """
+    Sends notification via configured service (Gmail or Pushover).
+    Returns True if sent successfully, False otherwise.
+    """
+    service = profile.active_notification_service
+    if not service or service == "NONE":
+        return False
+
+    try:
+        if service == "GMAIL":
+            if not profile.gmail_address or not profile.gmail_app_password:
+                logger.warning("Gmail notification enabled but credentials missing.")
+                return False
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"New Job Match: {job.title} at {job.company} ({int(job.match_score)}%)"
+            msg["From"] = profile.gmail_address
+            msg["To"] = profile.gmail_address
+
+            # Simple HTML Body
+            html = f"""
+            <html>
+              <body>
+                <h2>New Job Found!</h2>
+                <p><b>Title:</b> {job.title}</p>
+                <p><b>Company:</b> {job.company}</p>
+                <p><b>Match Score:</b> {int(job.match_score)}%</p>
+                <hr>
+                <h3>Reasoning:</h3>
+                <p>{job.reasoning}</p>
+                <hr>
+                <p>
+                  <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3000')}">View in App</a> | 
+                  <a href="{job.url}">Original Job Post</a>
+                </p>
+              </body>
+            </html>
+            """
+            part = MIMEText(html, "html")
+            msg.attach(part)
+
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+                server.login(profile.gmail_address, profile.gmail_app_password)
+                server.sendmail(profile.gmail_address, profile.gmail_address, msg.as_string())
+            
+            logger.info(f"📧 Email notification sent for job {job.id}")
+            return True
+
+        elif service == "PUSHOVER":
+            if not profile.pushover_user_key or not profile.pushover_api_token:
+                logger.warning("Pushover notification enabled but credentials missing.")
+                return False
+            
+            payload = {
+                "token": profile.pushover_api_token,
+                "user": profile.pushover_user_key,
+                "title": f"New Match: {job.title}",
+                "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
+                "url": os.getenv('FRONTEND_URL', 'http://localhost:3000'),
+                "url_title": "Open App"
+            }
+            
+            resp = requests.post("https://api.pushover.net/1/messages.json", data=payload, timeout=10)
+            if resp.status_code == 200:
+                logger.info(f"📱 Pushover notification sent for job {job.id}")
+                return True
+            else:
+                logger.error(f"Pushover Error: {resp.text}")
+                return False
+                
+    except Exception as e:
+        logger.error(f"Notification Failed: {e}")
+        return False
+    
+    return False
 
 @celery_app.task(name="ai.filter_urls")
 def filter_urls_task(args):
@@ -204,6 +287,27 @@ def analyze_job_task(job_data):
                 "job_title": job_title,
                 "jobs_saved": jobs_saved
             }))
+
+        # --- NOTIFICATION LOGIC ---
+        try:
+            # Re-fetch job to ensure attached to session if needed (though db_job should be valid)
+            # Check platform settings
+            if db_job.platform_id:
+                platform = db.query(JobPlatform).filter(JobPlatform.id == db_job.platform_id).first()
+                if platform and platform.is_notification_enabled and not db_job.notification_sent:
+                    # Fetch profile (already fetched earlier as 'profile', but ensure it's the one with settings)
+                    # Note: earlier 'profile' might be UserProfile or fallback. 
+                    # We need the user's settings profile specifically.
+                    settings_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                    
+                    if settings_profile:
+                        sent = send_notification(db_job, settings_profile)
+                        if sent:
+                            db_job.notification_sent = True
+                            db.commit()
+        except Exception as notif_e:
+            logger.error(f"Error in notification logic: {notif_e}")
+        # --------------------------
         
         # Handle crawl job completion
         if crawl_job_id:
