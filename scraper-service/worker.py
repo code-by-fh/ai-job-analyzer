@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_html_with_browser(url):
-    logger.info(f"🌐 Launching browser for URL: {url}")
+    logger.info(f"Launching browser for URL: {url}")
     start_time = time.time()
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -46,10 +46,10 @@ def get_html_with_browser(url):
             
             content = page.content()
             duration = time.time() - start_time
-            logger.info(f"✅ Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s")
+            logger.info(f"Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s")
             return content
         except Exception as e:
-            logger.error(f"❌ Playwright Error fetching {url}: {e}", exc_info=True)
+            logger.error(f"Playwright Error fetching {url}: {e}", exc_info=True)
             return None
         finally:
             browser.close()
@@ -84,7 +84,7 @@ def get_clean_content(html):
 
 @celery_app.task(name="scraper.fetch_links")
 def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
-    logger.info(f"🔗 [TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})")
+    logger.info(f"[TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})")
     
     r = redis.from_url(REDIS_URL)
     
@@ -151,7 +151,7 @@ def schedule_crawls_task(args):
         r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
         return
 
-    logger.info(f"🗓️ Scheduling {len(filtered_links)} detailed crawls for User {user_id}...")
+    logger.info(f"Scheduling {len(filtered_links)} detailed crawls for User {user_id}...")
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
     
     if job_id:
@@ -180,7 +180,7 @@ def schedule_crawls_task(args):
 
 @celery_app.task(name="scraper.scrape_detail")
 def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
-    logger.info(f"🕵️ [TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
+    logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
     
     try:
         html = get_html_with_browser(url)

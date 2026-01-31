@@ -162,7 +162,7 @@ export default function Home() {
     const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log('[WebSocket] Received:', data);
+
 
       if (data.type === "crawl_job_started") {
         if (data.user_id === user?.id) {
@@ -204,15 +204,11 @@ export default function Home() {
             if (existing) {
               const analyzingJobs = existing.analyzing_jobs || [];
               const allJobTitles = existing.all_job_titles || [];
-              console.log('[DEBUG] job_analysis_started:', {
-                job_title: data.job_title,
-                existing_all_job_titles: allJobTitles,
-                will_add: !allJobTitles.includes(data.job_title)
-              });
+
               const newAllJobTitles = allJobTitles.includes(data.job_title)
                 ? allJobTitles
                 : [...allJobTitles, data.job_title];
-              console.log('[DEBUG] Updated all_job_titles:', newAllJobTitles);
+
               return new Map(prev).set(data.job_id, {
                 ...existing,
                 current_job_title: data.job_title,

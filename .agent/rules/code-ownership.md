@@ -10,3 +10,4 @@ trigger: always_on
 - Wenn unklar ist, ob eine Änderung erlaubt ist: STOPPEN und nachfragen
 - KEINE Kommentare im Code (außer sie tragen zu übersichtlichkeit bei)
 - KEINE Emojis außer in README.md
+- KEINE console.log
