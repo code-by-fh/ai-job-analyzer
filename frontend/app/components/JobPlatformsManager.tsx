@@ -85,6 +85,19 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
 
     const addPlatform = async () => {
         if (!newUrl) return;
+
+        try {
+            const parsed = new URL(newUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                setStatus(t('invalidUrlProtocol'));
+                setTimeout(() => setStatus(''), 3000);
+                return;
+            }
+        } catch (_) {
+            setStatus(t('invalidUrl'));
+            setTimeout(() => setStatus(''), 3000);
+            return;
+        }
         setStatus(t('adding'));
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {

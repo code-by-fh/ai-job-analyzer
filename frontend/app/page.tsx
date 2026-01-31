@@ -357,6 +357,20 @@ export default function Home() {
 
   const startSearch = async () => {
     if (!query) return;
+
+    try {
+      const parsed = new URL(query);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        setGlobalError(t('invalidUrlProtocol'));
+        setTimeout(() => setGlobalError(null), 3000);
+        return;
+      }
+    } catch (_) {
+      setGlobalError(t('invalidUrl'));
+      setTimeout(() => setGlobalError(null), 3000);
+      return;
+    }
+
     setIsCrawling(true);
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {

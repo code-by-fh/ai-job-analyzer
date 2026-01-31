@@ -37,7 +37,7 @@ export const translations = {
         // Home Page
         jobIntelligence: "Job Intelligence",
         opportunitiesDetected: "Opportunities detected",
-        searchPlaceholder: "Analyze new market target...",
+        searchPlaceholder: "Analyze new job platform...",
         scan: "SCAN",
         systemWaiting: "System waiting for input.",
         sortBy: "Sort by:",
@@ -196,6 +196,8 @@ export const translations = {
         neverScanned: "Never scanned",
         lastScanned: "Last: {date}",
         addPlatformPlaceholder: "Add new platform URL (e.g. LinkedIn, Indeed...)",
+        invalidUrl: "Invalid URL format",
+        invalidUrlProtocol: "URL must start with http:// or https://",
 
         // Filters
         all: "All",
@@ -249,7 +251,7 @@ export const translations = {
         // Home Page
         jobIntelligence: "Job Intelligence",
         opportunitiesDetected: "Gefundene Stellenanzeigen",
-        searchPlaceholder: "Neuen Zielmarkt analysieren...",
+        searchPlaceholder: "Neue Jobplattform analysieren...",
         scan: "SCAN",
         systemWaiting: "System wartet auf Eingabe.",
         sortBy: "Sortieren nach:",
@@ -408,6 +410,8 @@ export const translations = {
         neverScanned: "Noch nie gescannt",
         lastScanned: "Zuletzt: {date}",
         addPlatformPlaceholder: "Neue Plattform-URL hinzufügen (z.B. LinkedIn, Indeed...)",
+        invalidUrl: "Ungültiges URL-Format",
+        invalidUrlProtocol: "URL muss mit http:// oder https:// beginnen",
 
         // Filters
         all: "Alle",
