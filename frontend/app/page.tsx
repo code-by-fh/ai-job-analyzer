@@ -147,7 +147,7 @@ export default function Home() {
       if (data.jobs && data.jobs.length > 0) {
         const jobsMap = new Map<string, CrawlJob>();
         data.jobs.forEach((job: CrawlJob) => {
-          if (job.status !== 'completed' && !(job.analysis_completed >= job.total && job.total > 0)) {
+          if (job.status !== 'completed') {
             jobsMap.set(job.job_id, job);
           }
         });
