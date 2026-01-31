@@ -414,10 +414,10 @@ export default function Settings() {
               onRemove={removeExp}
               onChange={handleExpChange}
               fields={[
-                { name: 'company', placeholder: 'Company' },
-                { name: 'role', placeholder: 'Role' },
-                { name: 'duration', placeholder: 'Duration' },
-                { name: 'description', placeholder: 'Description...', type: 'textarea' }
+                { name: 'company', placeholder: t('company') },
+                { name: 'role', placeholder: t('role') },
+                { name: 'duration', placeholder: t('duration') },
+                { name: 'description', placeholder: t('description'), type: 'textarea' }
               ]}
             />
           </section>
@@ -430,9 +430,9 @@ export default function Settings() {
               onRemove={removeProj}
               onChange={handleProjChange}
               fields={[
-                { name: 'name', placeholder: 'Project Name' },
-                { name: 'tech_stack', placeholder: 'Tech Stack' },
-                { name: 'description', placeholder: 'Description...', type: 'textarea' }
+                { name: 'name', placeholder: t('projectName') },
+                { name: 'tech_stack', placeholder: t('techStack') },
+                { name: 'description', placeholder: t('description'), type: 'textarea' }
               ]}
             />
           </section>

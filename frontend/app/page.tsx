@@ -590,6 +590,7 @@ export default function Home() {
         jobId={modalJobId}
         currentStatus={modalJob?.status || 'OPEN'}
         onStatusUpdate={handleUpdateStatus}
+        token={token}
       />
 
       <ConfirmModal

@@ -141,6 +141,14 @@ export const translations = {
         minUnit: "m",
         now: "now",
 
+        // Experience & Projects Fields
+        company: "Company",
+        role: "Role",
+        duration: "Duration",
+        description: "Description",
+        projectName: "Project Name",
+        techStack: "Tech Stack",
+
         // Admin
         userManagement: "User Management",
         adminControlPanel: "Admin Control Panel",
@@ -361,6 +369,14 @@ export const translations = {
         hourUnit: "Std",
         minUnit: "Min",
         now: "jetzt",
+
+        // Experience & Projects Fields
+        company: "Firma",
+        role: "Rolle",
+        duration: "Zeitraum",
+        description: "Beschreibung",
+        projectName: "Projektname",
+        techStack: "Tech Stack",
 
         // Admin
         userManagement: "Benutzerverwaltung",
