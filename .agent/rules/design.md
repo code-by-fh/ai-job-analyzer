@@ -18,32 +18,25 @@ trigger: manual
    - Components: Shadcn/ui Stil (Radix Primitives).
 
 3. FARBPALETTE & KLASSEN (Harmonisiertes Mapping):
-
    A. OBERFLÄCHEN & HINTERGRÜNDE (Light -> Dark):
    - App Background: `bg-slate-50` -> `dark:bg-slate-950` (Ein sehr dunkles, kühles Blau-Grau).
    - Card Surface: `bg-white border border-slate-200 shadow-sm` -> `dark:bg-slate-900/40 dark:border-slate-800 dark:backdrop-blur-md` (Glas-Effekt).
    - Sidebar/Panel: `bg-slate-50/80` -> `dark:bg-slate-950/80` (jeweils mit Blur).
-
    B. TYPOGRAFIE & KONTRAST:
    - Headings (H1-H3): `text-slate-900 tracking-tight` -> `dark:text-slate-50`.
    - Body Text: `text-slate-600` -> `dark:text-slate-400` (Vermeide zu hartes Weiß im Dark Mode für Fließtext).
    - Muted/Meta: `text-slate-400` -> `dark:text-slate-500`.
-
    C. SEMANTISCHE STATUS-FARBEN (The "Glassy Chip" Look):
    *Anstatt massiver Hintergründe nutzen wir im Dark Mode transparente Flächen mit farbigen Rändern.*
-
    - Primary (Brand/Action):
      - Light: `bg-indigo-600 text-white hover:bg-indigo-700`
      - Dark: `dark:bg-indigo-600 dark:text-white dark:hover:bg-indigo-500 dark:shadow-[0_0_15px_rgba(99,102,241,0.3)]` (Glow!)
-
    - "Deep Thinking" (AI Processing):
      - Light: `bg-amber-50 text-amber-700 border border-amber-200`
      - Dark: `dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20 animate-pulse`
-
    - "Active/Running" (Crawler):
      - Light: `bg-emerald-50 text-emerald-700 border border-emerald-200`
      - Dark: `dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20` (Plus `shadow-emerald-500/10`)
-
    - "Error/Stopped":
      - Light: `bg-rose-50 text-rose-700 border border-rose-200`
      - Dark: `dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20`
