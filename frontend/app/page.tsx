@@ -567,7 +567,7 @@ export default function Home() {
             onClick={startSearch}
             disabled={isCrawling}
             className={`
-                  h-[50px] px-6 rounded-xl font-bold text-white shadow-lg transition-all duration-300
+                  h-[50px] px-6 rounded-xl font-bold text-white shadow-lg transition-all duration-300 cursor-pointer
                   ${isCrawling
                 ? 'bg-slate-300 dark:bg-slate-800 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-indigo-500/30'
@@ -597,19 +597,19 @@ export default function Home() {
         <div className="flex bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
           <button
             onClick={() => setFilterType('all')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${filterType === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all cursor-pointer ${filterType === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
           >
             {t('all')}
           </button>
           <button
             onClick={() => setFilterType('favorite')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${filterType === 'favorite' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all cursor-pointer ${filterType === 'favorite' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
           >
             {t('favorites')}
           </button>
           <button
             onClick={() => setFilterType('no_favorite')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${filterType === 'no_favorite' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all cursor-pointer ${filterType === 'no_favorite' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
           >
             {t('noFavorites')}
           </button>
