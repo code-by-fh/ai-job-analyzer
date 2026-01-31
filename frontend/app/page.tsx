@@ -377,6 +377,7 @@ export default function Home() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, location: 'Remote', user_id: user?.id })
       });
+      setQuery('');
     } catch (e) {
       setIsCrawling(false);
     }
