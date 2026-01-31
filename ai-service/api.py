@@ -329,17 +329,22 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
 class StatusUpdateRequest(BaseModel):
     status: str
 
-@app.patch("/jobs/{job_id}/status")
+@app.patch("/jobs/{job_id}/update-status")
 def update_job_status(job_id: str, request: StatusUpdateRequest, current_user: User = Depends(get_current_user)):
+    logger.info(f"Updating status for job {job_id} to {request.status} for user {current_user.username}")
     db = SessionLocal()
     try:
         job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
         if not job:
+            logger.warning(f"Job {job_id} not found for user {current_user.username}")
             raise HTTPException(status_code=404, detail="Job not found")
         job.status = request.status
         db.commit()
         db.refresh(job)
+        logger.info(f"Status updated successfully for job {job_id}")
         return {"status": "updated", "new_status": job.status}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error updating status: {e}")
