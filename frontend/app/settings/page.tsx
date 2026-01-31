@@ -449,6 +449,9 @@ export default function Settings() {
             />
           </section>
 
+          {/* JOB PLATFORMS */}
+          <JobPlatformsManager token={token} user={user} />
+
           {/* NOTIFICATION SETTINGS */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
@@ -575,9 +578,6 @@ export default function Settings() {
             {/* Decorative Circle */}
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
           </div>
-
-          {/* CRAWLER CONFIG */}
-          <JobPlatformsManager token={token} user={user} />
 
           {/* SECURITY & DANGER */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">

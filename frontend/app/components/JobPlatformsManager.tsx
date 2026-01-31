@@ -274,30 +274,38 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                 </div>
                             </div>
 
-                            <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800/50">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Interval</span>
-                                        <select
-                                            value={p.crawl_interval_minutes}
-                                            onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
-                                            className="bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 cursor-pointer"
-                                        >
-                                            <option value={60} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyHour')}</option>
-                                            <option value={360} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every6Hours')}</option>
-                                            <option value={720} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every12Hours')}</option>
-                                            <option value={1440} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every24Hours')}</option>
-                                            <option value={10080} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyWeek')}</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">{t('jobsFound')}</span>
-                                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
-                                    </div>
+                            <div className="mt-4 grid grid-cols-3 gap-4 pt-3 border-t border-slate-200 dark:border-slate-800/50">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">Interval</span>
+                                    <select
+                                        value={p.crawl_interval_minutes}
+                                        onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
+                                        className="bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 cursor-pointer"
+                                    >
+                                        <option value={60} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyHour')}</option>
+                                        <option value={360} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every6Hours')}</option>
+                                        <option value={720} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every12Hours')}</option>
+                                        <option value={1440} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every24Hours')}</option>
+                                        <option value={10080} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyWeek')}</option>
+                                    </select>
                                 </div>
-                                <div className="text-[10px] text-slate-400 italic">
-                                    {p.last_crawl_at ? t('lastScanned', { date: new Date(p.last_crawl_at).toLocaleDateString() }) : t('neverScanned')}
+
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">{t('jobsFound')}</span>
+                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
+                                </div>
+
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">{t('lastScan')}</span>
+                                    <span className="text-xs text-slate-600 dark:text-slate-400">
+                                        {p.last_crawl_at ? (() => {
+                                            const date = new Date(p.last_crawl_at);
+                                            const day = String(date.getDate()).padStart(2, '0');
+                                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                                            const year = date.getFullYear();
+                                            return `${day}.${month}.${year}`;
+                                        })() : t('neverScanned')}
+                                    </span>
                                 </div>
                             </div>
                         </div>
