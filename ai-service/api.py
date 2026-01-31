@@ -287,10 +287,30 @@ async def get_system_status():
     return {"crawling": bool(is_crawling)}
 
 @app.get("/jobs")
-def get_jobs(current_user: User = Depends(get_current_user)):
+def get_jobs(
+    current_user: User = Depends(get_current_user),
+    limit: Optional[int] = None,
+    offset: int = 0,
+    filter_type: Optional[str] = None
+):
     db = SessionLocal()
     try:
-        return db.query(JobEntry).filter(JobEntry.user_id == current_user.id).order_by(JobEntry.match_score.desc()).all()
+        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        
+        # Filtering
+        if filter_type == "favorite":
+            query = query.filter(JobEntry.is_favorite == True)
+        elif filter_type == "no_favorite":
+            query = query.filter(JobEntry.is_favorite == False)
+            
+        # Sorting (always by match_score desc)
+        query = query.order_by(JobEntry.match_score.desc())
+        
+        # Pagination (Backward Compatibility: if limit is None, return all)
+        if limit is not None:
+            query = query.offset(offset).limit(limit)
+            
+        return query.all()
     finally:
         db.close()
 

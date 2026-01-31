@@ -20,8 +20,8 @@ export default function JobStatusBadge({ status, onStatusChange, isReadOnly = fa
     const getStatusConfig = (s: string) => {
         const isLarge = size === 'large';
         const base = `border font-bold uppercase tracking-wider transition-all duration-300 backdrop-blur-md shadow-sm flex items-center justify-center gap-2 ${isLarge
-                ? 'text-[11px] px-4 h-[42px] min-w-[140px] rounded-xl'
-                : 'text-[10px] px-2.5 py-1 rounded-lg'
+            ? 'text-[11px] px-4 h-[42px] min-w-[140px] rounded-xl w-full sm:w-auto'
+            : 'text-[10px] px-2.5 py-1 rounded-lg'
             }`;
         switch (s) {
             case 'OPEN':
@@ -111,7 +111,7 @@ export default function JobStatusBadge({ status, onStatusChange, isReadOnly = fa
     }
 
     return (
-        <div className={`relative ${size === 'large' ? 'flex-shrink-0' : ''}`}>
+        <div className={`relative ${size === 'large' ? 'flex-shrink-0 w-full sm:w-auto' : ''}`}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`flex items-center justify-center gap-2 rounded-lg shadow-sm ring-1 ring-inset ring-transparent hover:ring-indigo-500/30 active:scale-95 cursor-pointer ${config.className} ${config.color}`}

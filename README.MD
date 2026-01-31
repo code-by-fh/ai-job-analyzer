@@ -1,179 +1,110 @@
+# AI Job Agent
 
-## 1. Overview
+The **AI Job Agent** is an intelligent application for automating the job search and application process. It combines web scraping, AI-powered analysis, and modern process management to help users efficiently find suitable job offers, evaluate them, and apply to them.
 
-The system follows an **Event-Driven Microservices Architecture**.
-It is designed for scalability, fault tolerance, and real-time observability. We utilize a **Hybrid Messaging Pattern**:
+![AI Job Agent Dashboard](https://via.placeholder.com/800x400?text=AI+Job+Agent+Dashboard)
 
-* **RabbitMQ** acts as the Message Broker for secure task transport (Persistence, Routing, ACKs).
-* **Redis** acts as the Result Backend and cache for fast status retrieval.
+## 🚀 Features
 
-The workflow relies on **Celery Chains** (Baton Pass pattern) to handle complex dependencies (Scraping -> Filtering -> Crawling -> Analysis) without blocking processes.
+*   **Automated Job Search (Scraping)**: Searches various job platforms for relevant job ads based on defined criteria.
+*   **AI Analysis & Matching**: Analyzes job descriptions using LLMs (Large Language Models), compares them with the user profile, and calculates a matching score.
+*   **Application Generation**: Automatically creates personalized cover letters and CV adaptations for specific positions.
+*   **Application Process Management**: Track the status of your applications, save notes, and organize your job search in one place.
+*   **Modern UI**: An appealing, user-friendly interface in Dark Mode with Glassmorphism effects for a pleasant user experience.
 
-## 2. Getting Started (First Run)
+## 🏗️ Architecture & Technology Stack
 
-When launching the application for the first time:
+The application is based on a modern microservices architecture, ensuring scalability and maintainability.
 
-1.  **Start the Stack:** Run `docker-compose up -d`.
-2.  **Access the App:** Open `http://localhost:3000`.
-3.  **Default Admin Login:**
-    *   **Username:** `admin`
-    *   **Password:** `admin`
-4.  **Create Users:**
-    *   Log in as Admin.
-    *   Navigate to the **Admin Dashboard** (via the header).
-    *   Create new accounts for individual users.
-5.  **Data Isolation:**
-    *   Each user has their own **Profile Settings** and **Job List**.
-    *   Jobs crawled by User A are NOT visible to User B.
-    *   Only Admins can manage user accounts.
+### Backend Services
+*   **Scraper Service**: A FastAPI-based service responsible for crawling job boards. It uses `Playwright` for rendering dynamic websites and `Celery` for asynchronous task processing.
+*   **AI Service**: A FastAPI service that provides the interface to OpenAI. It handles the analysis of job ads and text generation. `Celery` is also used here for background tasks.
 
-## 2. System Components
+### Frontend
+*   **Tech Stack**: [Next.js 16](https://nextjs.org/), [React 19](https://react.dev/), [Tailwind CSS 4](https://tailwindcss.com/).
+*   The frontend communicates with the backend services via REST APIs and offers a reactive user interface.
 
-The system consists of 8 Docker containers:
-
-| Container | Type | Technology | Function |
-| --- | --- | --- | --- |
-| **frontend** | UI | Next.js (React) | User interface for searching, viewing results, and managing profile settings. |
-| **scraper-api** | API | FastAPI | Accepts search requests and initiates the Celery workflow. |
-| **scraper-worker** | Worker | Celery (Python) | Handles IO-bound tasks (fetching links, downloading HTML). **Using Headless Browser (Playwright) & Proxy-ready**. |
-| **ai-api** | API | FastAPI | Serves jobs and user settings from the DB to the frontend. |
-| **ai-worker** | Worker | Celery (Python) | Handles CPU-bound tasks (LLM filtering & analysis). |
-| **rabbitmq** | Broker | RabbitMQ | Manages queues (`scraper_queue`, `ai_queue`) and message routing. |
-| **redis** | Backend | Redis | Temporarily stores task results for Celery. |
-| **database** | DB | PostgreSQL | Stores persistent job data and user profiles. |
-
----
-
-## 3. Data Flow (Workflow)
-
-The core of the system is a **Celery Chain**. Tasks are not executed synchronously but are pushed as messages into RabbitMQ queues.
-
-### Sequence Diagram
+### Infrastructure & Data Storage
+*   **PostgreSQL**: Relational database for storing jobs, applications, and user data.
+*   **Redis**: In-memory data store, used as a message broker and result backend for Celery.
+*   **RabbitMQ**: Message broker for robust communication between microservices.
+*   **Docker & Docker Compose**: Containerization of all services for easy deployment and development.
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant API as Scraper API
-    participant RMQ as RabbitMQ
-    participant Worker_S as Scraper Worker
-    participant Worker_AI as AI Worker
-    participant DB as PostgreSQL
-
-    User->>API: POST /search (URL)
-    API->>RMQ: Publish Task "fetch_links" (scraper_queue)
-    API-->>User: 200 OK "Job queued"
+graph TD
+    User[User (Browser)] -->|HTTP| Frontend[Frontend (Next.js)]
+    Frontend -->|REST| ScraperAPI[Scraper Service API]
+    Frontend -->|REST| AIAPI[AI Service API]
     
-    loop Async Workflow (The Chain)
-        RMQ->>Worker_S: Consume "fetch_links"
-        Worker_S->>RMQ: Publish Result -> Next Task "filter_urls" (ai_queue)
-        
-        RMQ->>Worker_AI: Consume "filter_urls"
-        Worker_AI->>Worker_AI: LLM Call
-        Worker_AI->>RMQ: Publish Result -> Next Task "schedule_crawls" (scraper_queue)
-        
-        RMQ->>Worker_S: Consume "schedule_crawls"
-        
-        par Fan Out (Massive Parallelism)
-            Worker_S->>RMQ: Publish 50x "scrape_detail" (scraper_queue)
-        end
+    subgraph "Scraper Service"
+        ScraperAPI -->|Task| RabbitMQ
+        ScraperWorker[Scraper Worker] -->|Consume| RabbitMQ
+        ScraperWorker -->|Store| DB[(PostgreSQL)]
     end
-
-    loop Detail Processing
-        RMQ->>Worker_S: Consume "scrape_detail"
-        Worker_S->>RMQ: Publish "analyze_job" (ai_queue)
-        
-        RMQ->>Worker_AI: Consume "analyze_job"
-        Worker_AI->>DB: Fetch User Profile
-        Worker_AI->>Worker_AI: LLM Analysis
-        Worker_AI->>DB: INSERT Job Result
+    
+    subgraph "AI Service"
+        AIAPI -->|Task| RabbitMQ
+        AIWorker[AI Worker] -->|Consume| RabbitMQ
+        AIWorker -->|Query/Store| DB
+        AIWorker -->|API Call| OpenAI[OpenAI API]
+    end
+    
+    subgraph "Infrastructure"
+        RabbitMQ
+        Redis
+        DB
     end
 ```
 
-## 4. User Management & Security
+## 🛠️ Installation & Usage
 
-The system implements a full Multi-User Architecture:
+### Prerequisites
+*   [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/) must be installed.
+*   An OpenAI API Key.
 
-*   **Authentication:** JWT (JSON Web Tokens) with `Bcrypt` password hashing.
-*   **Roles:**
-    *   **Admin:** Can create/delete users and reset the system.
-    *   **User:** Can search jobs, manage their own profile, and generate applications.
-*   **Data Isolation:** All resources (Jobs, Settings, CVs) are scoped to the `user_id`.
+### Setup
 
-## 5. Database Schema (PostgreSQL)
+1.  **Clone Repository**:
+    ```bash
+    git clone <repository-url>
+    cd ai-job-agent
+    ```
 
-### Table: `users`
+2.  **Configure Environment Variables**:
+    Create a `.env` file in the main directory (see `.env.example`) and enter your OpenAI API Key:
+    ```env
+    OPENAI_API_KEY=sk-YourApiKey...
+    POSTGRES_USER=user
+    POSTGRES_PASSWORD=password
+    POSTGRES_DB=jobdb
+    ```
 
-| Column | Type | Description |
-| --- | --- | --- |
-| `id` | INTEGER (PK) | Unique User ID. |
-| `username` | VARCHAR | Login Name (Unique). |
-| `hashed_password` | VARCHAR | Bcrypt hash. |
-| `is_admin` | BOOLEAN | Role flag. |
+3.  **Start Application**:
+    Start all services with Docker Compose:
+    ```bash
+    docker-compose up -d --build
+    ```
+    This builds the containers for Frontend, Scraper Service, and AI Service, and starts the database and message broker.
 
-### Table: `jobs`
+### Access
+After starting, the services are available at the following addresses:
 
-Stores the found and analyzed job postings.
+*   **Frontend**: [http://localhost:3000](http://localhost:3000)
+*   **AI Service API Docs**: [http://localhost:8002/docs](http://localhost:8002/docs)
+*   **Scraper Service API Docs**: [http://localhost:8001/docs](http://localhost:8001/docs)
 
-| Column | Type | Description |
-| --- | --- | --- |
-| `id` | VARCHAR (PK) | UUID v5 (generated from URL + UserID). |
-| `user_id` | INTEGER (FK) | Owner of the job. |
-| `title` | VARCHAR | Job title. |
-| `company` | VARCHAR | Company name (Domain). |
-| `description` | TEXT | Cleaned content as Markdown. |
-| `match_score` | FLOAT | 0.0 to 100.0 (Personalized AI Rating). |
-| `reasoning` | TEXT | AI reasoning for the score. |
+### Usage
 
-### Table: `user_settings`
+1.  Open the dashboard at `http://localhost:3000`.
+2.  Navigate to "Job Search" and start a new crawl process for desired keywords and locations.
+3.  The found jobs will appear in the overview. Click on a job to view details.
+4.  Let the AI perform an analysis to see how well the job fits your profile.
+5.  Generate a draft for your cover letter with one click.
 
-Stores the user's search profile for personalized analysis.
+## 🤝 Development
 
-| Column | Type | Description |
-| --- | --- | --- |
-| `id` | INTEGER (PK) | Primary Key. |
-| `user_id` | INTEGER (FK) | Link to `users` table. |
-| `role` | VARCHAR | Target role (e.g., "Backend Dev"). |
-| `skills` | VARCHAR | Tech Stack (e.g., "Python, AWS"). |
-| `min_salary` | VARCHAR | Salary expectations. |
-| `location` | VARCHAR | Location/Remote preference. |
-| `preferences` | TEXT | Free text for dislikes or specific wishes. |
+For local development, the services can also be started individually.
 
----
-
----
-
-## 6. Scalability & Production Readiness
-
-1. **RabbitMQ Reliability:**
-* Messages are persistent. If a worker crashes, the task is not lost (Re-Queueing).
-* Real-time monitoring via Management Dashboard (`http://localhost:15672`).
-
-
-2. **Concurrency & Thread Safety:**
-* **NullPool:** Workers use `NullPool` for database connections to guarantee fork-safety during multiprocessing.
-* **Isolation:** Every task opens a fresh, isolated database connection.
-
-
-3. **Horizontal Scaling:**
-* Scraper and AI Workers are decoupled.
-* Worker containers can be scaled up easily under load: `docker-compose up --scale ai-worker=5`.
-
-4. **Observability & Logging:**
-* **Structured Logging:** All services use a standardized `%(asctime)s - %(name)s - %(levelname)s - %(message)s` format.
-* **Traceability:** Tasks log their unique IDs, URL targets, and execution status (Task Started -> LLM Call -> DB Save).
-* **Debugging:** `scraper-worker` includes detailed Playwright logs for browser interactions (Launch -> Navigate -> Wait -> Extract).
-
----
-
----
-
-## 7. Tech Stack
-
-* **Frontend:** Next.js 14, Tailwind CSS, TypeScript.
-* **Backend API:** FastAPI (Python 3.9).
-* **Async Task Queue:** Celery 5.x.
-* **Message Broker:** RabbitMQ 3 (Management Plugin enabled).
-* **Result Backend:** Redis (Alpine).
-* **Database:** PostgreSQL 15 (SQLAlchemy ORM).
-* **AI:** OpenRouter API (OpenAI / DeepSeek Models).
-* **HTML Parsing:** Playwright (Headless Browser) + BeautifulSoup4 + Markdownify.
+*   **Frontend**: `cd frontend && npm install && npm run dev`
+*   **Backend**: Create a Python virtual environment, install requirements, and start services via Uvicorn.
+*   However, it is recommended to use Docker for the infrastructure (DB, Redis, RabbitMQ).

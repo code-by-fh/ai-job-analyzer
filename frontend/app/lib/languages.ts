@@ -197,6 +197,18 @@ export const translations = {
         lastScanned: "Last: {date}",
         addPlatformPlaceholder: "Add new platform URL (e.g. LinkedIn, Indeed...)",
 
+        // Filters
+        all: "All",
+        favorites: "Favorites",
+        noFavorites: "No Favorites",
+        confirm: "Confirm",
+        cancel: "Cancel",
+
+        // Missing keys from reports
+        removePlatform: "Remove platform",
+        userCreated: "User created! ✅",
+        deleteUser: "Delete User",
+
         // Dynamic List
         addItem: "Add Item",
         noEntries: "No entries yet.",
@@ -396,6 +408,18 @@ export const translations = {
         neverScanned: "Noch nie gescannt",
         lastScanned: "Zuletzt: {date}",
         addPlatformPlaceholder: "Neue Plattform-URL hinzufügen (z.B. LinkedIn, Indeed...)",
+
+        // Filters
+        all: "Alle",
+        favorites: "Favoriten",
+        noFavorites: "Keine Favoriten",
+        confirm: "Bestätigen",
+        cancel: "Abbrechen",
+
+        // Missing keys from reports
+        removePlatform: "Plattform entfernen",
+        userCreated: "Benutzer erstellt! ✅",
+        deleteUser: "Benutzer löschen",
 
         // Dynamic List
         addItem: "Eintrag hinzufügen",
