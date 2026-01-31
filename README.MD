@@ -32,21 +32,21 @@ The application is based on a modern microservices architecture, ensuring scalab
 
 ```mermaid
 graph TD
-    User[User (Browser)] -->|HTTP| Frontend[Frontend (Next.js)]
-    Frontend -->|REST| ScraperAPI[Scraper Service API]
-    Frontend -->|REST| AIAPI[AI Service API]
+    User["User (Browser)"] -->|HTTP| Frontend["Frontend (Next.js)"]
+    Frontend -->|REST| ScraperAPI["Scraper Service API"]
+    Frontend -->|REST| AIAPI["AI Service API"]
     
     subgraph "Scraper Service"
         ScraperAPI -->|Task| RabbitMQ
-        ScraperWorker[Scraper Worker] -->|Consume| RabbitMQ
-        ScraperWorker -->|Store| DB[(PostgreSQL)]
+        ScraperWorker["Scraper Worker"] -->|Consume| RabbitMQ
+        ScraperWorker -->|Store| DB[("PostgreSQL")]
     end
     
     subgraph "AI Service"
         AIAPI -->|Task| RabbitMQ
-        AIWorker[AI Worker] -->|Consume| RabbitMQ
+        AIWorker["AI Worker"] -->|Consume| RabbitMQ
         AIWorker -->|Query/Store| DB
-        AIWorker -->|API Call| OpenAI[OpenAI API]
+        AIWorker -->|API Call| OpenAI["OpenAI API"]
     end
     
     subgraph "Infrastructure"
