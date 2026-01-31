@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useLanguage } from './LanguageProvider';
 
 interface Platform {
     id: number;
@@ -18,6 +19,7 @@ interface JobPlatformsManagerProps {
 }
 
 export default function JobPlatformsManager({ token, user }: JobPlatformsManagerProps) {
+    const { t } = useLanguage();
     const [platforms, setPlatforms] = useState<Platform[]>([]);
     const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
@@ -79,7 +81,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
 
     const addPlatform = async () => {
         if (!newUrl) return;
-        setStatus('Adding...');
+        setStatus(t('adding'));
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {
                 method: 'POST',
@@ -92,19 +94,19 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
             if (res.ok) {
                 setNewUrl('');
                 fetchPlatforms();
-                setStatus('Platform added! ✅');
+                setStatus(t('platformAdded'));
             } else {
                 const err = await res.json();
-                setStatus(`Error: ${err.detail || 'Failed to add'} ❌`);
+                setStatus(`${t('error')}: ${err.detail || 'Failed to add'} ❌`);
             }
         } catch (e) {
-            setStatus('Error ❌');
+            setStatus(t('error'));
         }
         setTimeout(() => setStatus(''), 3000);
     };
 
     const removePlatform = async (id: number) => {
-        if (!confirm("Are you sure?")) return;
+        if (!confirm(t('areYouCertain'))) return;
         try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
                 method: 'DELETE',
@@ -112,24 +114,24 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
             });
             fetchPlatforms();
         } catch (e) {
-            alert("Delete failed");
+            alert(t('error'));
         }
     };
 
     const triggerCrawl = async (platform: Platform) => {
         setPendingUrls(prev => new Set(prev).add(platform.url));
-        setStatus('Starting Crawl...');
+        setStatus(t('startingCrawler'));
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}/crawl`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                setStatus('Crawl dispatched! 🕵️‍♂️');
+                setStatus(t('crawlJobsDispatched'));
                 fetchCrawlStatus(); // Try to update faster
                 fetchPlatforms();
             } else {
-                setStatus('Crawl failed ❌');
+                setStatus(t('error'));
                 setPendingUrls(prev => {
                     const next = new Set(prev);
                     next.delete(platform.url);
@@ -137,7 +139,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                 });
             }
         } catch (e) {
-            setStatus('Error ❌');
+            setStatus(t('error'));
             setPendingUrls(prev => {
                 const next = new Set(prev);
                 next.delete(platform.url);
@@ -163,14 +165,14 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
         }
     };
 
-    if (loading) return <div className="text-slate-500 text-sm animate-pulse">Loading platforms...</div>;
+    if (loading) return <div className="text-slate-500 text-sm animate-pulse">{t('loading')}</div>;
 
     return (
-        <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <section id="platforms-manager" className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="font-bold text-slate-900 dark:text-white">📡 Job Platforms</h2>
-                    <p className="text-xs text-slate-500 mt-1">Manage URLs and automated scan intervals</p>
+                    <h2 className="font-bold text-slate-900 dark:text-white">{t('jobPlatforms')}</h2>
+                    <p className="text-xs text-slate-500 mt-1">{t('platformsSubtitle')}</p>
                 </div>
                 {status && <span className="text-[10px] font-bold text-indigo-500 animate-pulse">{status}</span>}
             </div>
@@ -199,7 +201,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                         onClick={() => triggerCrawl(p)}
                                         disabled={isBusy}
                                         className={`p-2 rounded-lg transition ${isBusy ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
-                                        title={isBusy ? "Crawl in progress..." : "Scan now"}
+                                        title={isBusy ? t('crawlInProgress') : t('scanNow')}
                                     >
                                         {isBusy ? (
                                             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -213,7 +215,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                     <button
                                         onClick={() => removePlatform(p.id)}
                                         className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
-                                        title="Remove"
+                                        title={t('remove')}
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
@@ -229,20 +231,20 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                             onChange={(e) => updateInterval(p.id, parseInt(e.target.value))}
                                             className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 border-none p-0 focus:ring-0 cursor-pointer"
                                         >
-                                            <option value={60}>Every Hour</option>
-                                            <option value={360}>Every 6 Hours</option>
-                                            <option value={720}>Every 12 Hours</option>
-                                            <option value={1440}>Every 24 Hours</option>
-                                            <option value={10080}>Every Week</option>
+                                            <option value={60}>{t('everyHour')}</option>
+                                            <option value={360}>{t('every6Hours')}</option>
+                                            <option value={720}>{t('every12Hours')}</option>
+                                            <option value={1440}>{t('every24Hours')}</option>
+                                            <option value={10080}>{t('everyWeek')}</option>
                                         </select>
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Jobs found</span>
+                                        <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">{t('jobsFound')}</span>
                                         <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
                                     </div>
                                 </div>
                                 <div className="text-[10px] text-slate-400 italic">
-                                    {p.last_crawl_at ? `Last: ${new Date(p.last_crawl_at).toLocaleDateString()}` : 'Never scanned'}
+                                    {p.last_crawl_at ? t('lastScanned', { date: new Date(p.last_crawl_at).toLocaleDateString() }) : t('neverScanned')}
                                 </div>
                             </div>
                         </div>
@@ -254,7 +256,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                         value={newUrl}
                         onChange={(e) => setNewUrl(e.target.value)}
                         className="flex-1 bg-transparent border-none text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-0 px-2"
-                        placeholder="Add new platform URL (e.g. LinkedIn, Indeed...)"
+                        placeholder={t('addPlatformPlaceholder')}
                         onKeyDown={(e) => e.key === 'Enter' && addPlatform()}
                     />
                     <button

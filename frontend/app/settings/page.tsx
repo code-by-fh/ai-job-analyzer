@@ -3,12 +3,14 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import DynamicList from '../components/DynamicList';
 import { useAuth } from '../components/AuthProvider';
+import { useLanguage } from '../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
 import PasswordChangeForm from '../components/PasswordChangeForm';
 import JobPlatformsManager from '../components/JobPlatformsManager';
 
 export default function Settings() {
   const { user, token, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
 
   const [formData, setFormData] = useState({
@@ -64,7 +66,7 @@ export default function Settings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('Saving...');
+    setStatus(t('saving'));
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'POST',
@@ -74,10 +76,10 @@ export default function Settings() {
         },
         body: JSON.stringify(formData)
       });
-      setStatus('Saved! ✅');
+      setStatus(t('saved'));
       setTimeout(() => setStatus(''), 2000);
     } catch (e) {
-      setStatus('Error ❌');
+      setStatus(t('error'));
     }
   };
 
@@ -86,7 +88,7 @@ export default function Settings() {
 
     const file = e.target.files[0];
     setUploading(true);
-    setStatus("Analyzing PDF... (takes 10-20s)");
+    setStatus(t('analyzingPdf'));
 
     const uploadData = new FormData();
     uploadData.append("file", file);
@@ -98,7 +100,7 @@ export default function Settings() {
         body: uploadData,
       });
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error(t('uploadFailed'));
 
       const result = await res.json();
       const data = result.data;
@@ -113,10 +115,10 @@ export default function Settings() {
         job_urls: formData.job_urls || []
       });
 
-      setStatus("CV imported successfully! 🎉");
+      setStatus(t('importSuccess'));
     } catch (error) {
       console.error(error);
-      setStatus("Import failed ❌");
+      setStatus(t('importFailed'));
     } finally {
       setUploading(false);
     }
@@ -179,7 +181,7 @@ export default function Settings() {
   const handleCrawlAll = async () => {
     if (formData.job_urls.length === 0) return;
     setCrawling(true);
-    setStatus('Starting Crawler...');
+    setStatus(t('startingCrawler'));
 
     for (const url of formData.job_urls) {
       if (!url) continue;
@@ -191,7 +193,7 @@ export default function Settings() {
         });
       } catch (e) { console.error("Crawler error", e); }
     }
-    setStatus('Crawl jobs dispatched! 🕵️‍♂️');
+    setStatus(t('crawlJobsDispatched'));
     setCrawling(false);
     setTimeout(() => setStatus(''), 3000);
   };
@@ -200,7 +202,7 @@ export default function Settings() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!confirm("Are you sure? This will delete all your crawled jobs permanently.")) return;
+    if (!confirm(t('deleteJobsConfirm'))) return;
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`, {
@@ -211,7 +213,7 @@ export default function Settings() {
       alert(`${data.count || 0} jobs deleted.`);
       window.location.href = "/";
     } catch (e) {
-      alert("Error deleting jobs.");
+      alert(t('error'));
     }
   };
 
@@ -219,7 +221,7 @@ export default function Settings() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!confirm("Are you sure? This will delete your profile and CV data permanently.")) return;
+    if (!confirm(t('deleteProfileConfirm'))) return;
 
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
@@ -231,9 +233,9 @@ export default function Settings() {
         cv_data: { experience: [], projects: [], education: '' },
         job_urls: []
       });
-      alert("Profile deleted.");
+      alert(t('saved'));
     } catch (e) {
-      alert("Error deleting profile.");
+      alert(t('error'));
     }
   };
 
@@ -241,7 +243,7 @@ export default function Settings() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!confirm("⚠️ WARNING: This will delete ALL jobs and your entire profile. Everything. Sure?")) return;
+    if (!confirm(t('factoryResetConfirm'))) return;
 
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
@@ -253,14 +255,14 @@ export default function Settings() {
         cv_data: { experience: [], projects: [], education: '' },
         job_urls: []
       });
-      alert("System factory reset complete!");
+      alert(t('saved'));
       window.location.href = "/";
     } catch (e) {
-      alert("Reset failed.");
+      alert(t('error'));
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">Loading Profile...</div>;
+  if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">{t('loadingProfile')}</div>;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -268,13 +270,13 @@ export default function Settings() {
       {/* PAGE HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Profile Configuration</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Manage your professional identity and search preferences</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('profileConfiguration')}</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('profileSubtitle')}</p>
         </div>
         <div className="flex items-center gap-4">
           {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse">{status}</span>}
           <button onClick={handleSubmit} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-            Save Changes
+            {t('saveChanges')}
           </button>
         </div>
       </div>
@@ -287,11 +289,11 @@ export default function Settings() {
           {/* BASIC SETTINGS CARD */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <span>🎯</span> Target Parameters
+              <span>🎯</span> {t('targetParameters')}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Target Role</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('targetRole')}</label>
                 <input
                   name="role"
                   value={formData.role}
@@ -301,7 +303,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Skills (Comma sep.)</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('skillsComma')}</label>
                 <input
                   name="skills"
                   value={formData.skills}
@@ -311,7 +313,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Min Salary</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('minSalary')}</label>
                 <input
                   name="min_salary"
                   value={formData.min_salary}
@@ -320,7 +322,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Location</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('location')}</label>
                 <input
                   name="location"
                   value={formData.location}
@@ -329,7 +331,7 @@ export default function Settings() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Preferences (Natural Language)</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('preferencesNatural')}</label>
                 <textarea
                   name="preferences"
                   value={formData.preferences}
@@ -344,7 +346,7 @@ export default function Settings() {
           {/* EXPERIENCE & PROJECTS (Dynamic List) */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
             <DynamicList
-              title="Experience"
+              title={t('experience')}
               items={formData.cv_data.experience}
               onAdd={addExp}
               onRemove={removeExp}
@@ -360,7 +362,7 @@ export default function Settings() {
 
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
             <DynamicList
-              title="Key Projects"
+              title={t('keyProjects')}
               items={formData.cv_data.projects}
               onAdd={addProj}
               onRemove={removeProj}
@@ -375,7 +377,7 @@ export default function Settings() {
 
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <span>🎓</span> Education
+              <span>🎓</span> {t('education')}
             </h2>
             <textarea
               value={formData.cv_data.education}
@@ -393,8 +395,8 @@ export default function Settings() {
           {/* UPLOAD CARD */}
           <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20">
             <div className="relative z-10">
-              <h2 className="text-xl font-bold mb-2">Upload CV</h2>
-              <p className="text-indigo-100 text-sm mb-6">Drop your PDF to auto-extract skills and experience.</p>
+              <h2 className="text-xl font-bold mb-2">{t('uploadCv')}</h2>
+              <p className="text-indigo-100 text-sm mb-6">{t('dropPdf')}</p>
 
               <div className="relative">
                 <input
@@ -408,7 +410,7 @@ export default function Settings() {
                 <div
                   className={`w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}
                 >
-                  {uploading ? 'Analyzing...' : '📂 Select PDF'}
+                  {uploading ? t('analyzing') : `📂 ${t('selectPdf')}`}
                 </div>
               </div>
             </div>
@@ -421,33 +423,33 @@ export default function Settings() {
 
           {/* SECURITY & DANGER */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <h2 className="font-bold text-slate-900 dark:text-white mb-4">Security</h2>
+            <h2 className="font-bold text-slate-900 dark:text-white mb-4">{t('security')}</h2>
             <PasswordChangeForm token={token} />
           </section>
 
           <section className="bg-rose-50 dark:bg-rose-500/5 rounded-2xl border border-rose-100 dark:border-rose-500/10 p-6">
-            <h2 className="font-bold text-rose-700 dark:text-rose-400 mb-4">Danger Zone</h2>
+            <h2 className="font-bold text-rose-700 dark:text-rose-400 mb-4">{t('dangerZone')}</h2>
             <div className="space-y-3">
               <button
                 type="button"
                 onClick={handleDeleteJobs}
                 className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
-                Delete All Jobs
+                {t('deleteAllJobs')}
               </button>
               <button
                 type="button"
                 onClick={handleDeleteProfile}
                 className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
               >
-                Delete Profile Only
+                {t('deleteProfileOnly')}
               </button>
               <button
                 type="button"
                 onClick={handleFactoryReset}
                 className="w-full px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition cursor-pointer"
               >
-                Factory Reset (All Data)
+                {t('factoryReset')}
               </button>
             </div>
           </section>

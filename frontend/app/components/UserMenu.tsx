@@ -2,13 +2,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from './AuthProvider';
+import { useLanguage } from './LanguageProvider';
 import { useRouter } from 'next/navigation';
 
-export default function UserMenu() {
+export default function UserMenu({ onShowTutorial }: { onShowTutorial?: () => void }) {
     const { user, logout } = useAuth();
     const [open, setOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
+    const { t } = useLanguage();
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -51,7 +53,7 @@ export default function UserMenu() {
                         {user.username}
                     </span>
                     <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-                        {user.is_admin ? 'Admin' : 'Member'}
+                        {user.is_admin ? t('admin') : t('member')}
                     </span>
                 </div>
 
@@ -68,7 +70,7 @@ export default function UserMenu() {
                     overflow-hidden
                 ">
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white/5">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Angemeldet als</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{t('signedInAs')}</p>
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{user.username}</p>
                     </div>
 
@@ -78,7 +80,7 @@ export default function UserMenu() {
                             className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
                             onClick={() => setOpen(false)}
                         >
-                            <span>⚙️</span> Einstellungen
+                            <span>⚙️</span> {t('settings')}
                         </Link>
 
                         {user.is_admin && (
@@ -87,9 +89,19 @@ export default function UserMenu() {
                                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
                                 onClick={() => setOpen(false)}
                             >
-                                <span>🛡️</span> Admin Area
+                                <span>🛡️</span> {t('adminArea')}
                             </Link>
                         )}
+
+                        <button
+                            onClick={() => {
+                                setOpen(false);
+                                onShowTutorial?.();
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                        >
+                            <span>📖</span> {t('showTutorial')}
+                        </button>
                     </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-800 mx-1"></div>
@@ -102,7 +114,7 @@ export default function UserMenu() {
                             }}
                             className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors cursor-pointer"
                         >
-                            <span>🚪</span> Abmelden
+                            <span>🚪</span> {t('signOut')}
                         </button>
                     </div>
                 </div>

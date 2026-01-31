@@ -2,23 +2,47 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import UserMenu from './UserMenu';
 import ThemeToggler from './ThemeToggler';
+import LanguageToggler from './LanguageToggler';
 import { useAuth } from './AuthProvider';
+import { useLanguage } from './LanguageProvider';
+import TutorialModal from './TutorialModal';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const isApplicationsFilter = searchParams.get('filter') === 'applications';
     const isLoginPage = pathname === '/login';
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
     const { user } = useAuth();
+    const { t } = useLanguage();
+
+    // Check for first-time user
+    React.useEffect(() => {
+        const hasSeen = localStorage.getItem('hasSeenTutorial');
+        if (!hasSeen && user) {
+            setShowTutorial(true);
+        }
+    }, [user]);
+
+    const handleCloseTutorial = () => {
+        localStorage.setItem('hasSeenTutorial', 'true');
+        setShowTutorial(false);
+    };
 
     // If it's the login page, render clean layout without dashboard chrome
     if (isLoginPage) {
         return (
             <>
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">{children}</div>
+                {/* Language Toggle - Fixed bottom right (stacked) */}
+                <div className="fixed bottom-16 right-4 z-50">
+                    <LanguageToggler />
+                </div>
                 {/* Theme Toggle - Fixed bottom right */}
                 <div className="fixed bottom-4 right-4 z-50">
                     <ThemeToggler />
@@ -46,16 +70,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     {!sidebarCollapsed && (
                         <div className="min-w-0">
                             <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
-                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">Deep Intelligence</p>
+                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">{t('deepIntelligence')}</p>
                         </div>
                     )}
                 </div>
 
-                <nav className="flex-1 px-4 py-4 space-y-1">
-                    <NavLink href="/" icon="🏠" label="Dashboard" active={pathname === '/'} collapsed={sidebarCollapsed} />
-                    <NavLink href="/settings" icon="⚙️" label="Settings" active={pathname === '/settings'} collapsed={sidebarCollapsed} />
+                <nav id="sidebar-nav" className="flex-1 px-4 py-4 space-y-1">
+                    <NavLink href="/" icon="🏠" label={t('dashboard')} active={pathname === '/' && !isApplicationsFilter} collapsed={sidebarCollapsed} />
+                    <NavLink href="/?filter=applications" icon="📁" label={t('applications')} active={pathname === '/' && isApplicationsFilter} collapsed={sidebarCollapsed} />
+                    <NavLink href="/settings" icon="⚙️" label={t('settings')} active={pathname === '/settings'} collapsed={sidebarCollapsed} />
                     {user?.is_admin && (
-                        <NavLink href="/admin/users" icon="🛡️" label="Admin Users" active={pathname.startsWith('/admin')} collapsed={sidebarCollapsed} />
+                        <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers')} active={pathname.startsWith('/admin')} collapsed={sidebarCollapsed} />
                     )}
                 </nav>
 
@@ -63,12 +88,12 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     {!sidebarCollapsed ? (
                         <div className="flex items-center gap-2">
                             <div className="flex-1">
-                                <UserMenu />
+                                <UserMenu onShowTutorial={() => setShowTutorial(true)} />
                             </div>
                             <button
                                 onClick={() => setSidebarCollapsed(true)}
                                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
-                                title="Collapse Sidebar"
+                                title={t('collapseSidebar')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
@@ -79,7 +104,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                         <button
                             onClick={() => setSidebarCollapsed(false)}
                             className="w-full p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                            title="Expand Sidebar"
+                            title={t('expandSidebar')}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 mx-auto rotate-180">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
@@ -106,13 +131,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             {mobileMenuOpen && (
                 <div className="md:hidden fixed inset-0 z-40 bg-slate-50 dark:bg-slate-950 pt-16 px-6 pb-6 animate-in fade-in slide-in-from-top-10 duration-200">
                     <nav className="flex flex-col space-y-4">
-                        <NavLink href="/" icon="🏠" label="Dashboard" active={pathname === '/'} onClick={() => setMobileMenuOpen(false)} />
-                        <NavLink href="/settings" icon="⚙️" label="Settings" active={pathname === '/settings'} onClick={() => setMobileMenuOpen(false)} />
+                        <NavLink href="/" icon="🏠" label={t('dashboard')} active={pathname === '/' && !isApplicationsFilter} onClick={() => setMobileMenuOpen(false)} />
+                        <NavLink href="/?filter=applications" icon="📁" label={t('applications')} active={pathname === '/' && isApplicationsFilter} onClick={() => setMobileMenuOpen(false)} />
+                        <NavLink href="/settings" icon="⚙️" label={t('settings')} active={pathname === '/settings'} onClick={() => setMobileMenuOpen(false)} />
                         {user?.is_admin && (
-                            <NavLink href="/admin/users" icon="🛡️" label="Admin Users" active={pathname.startsWith('/admin')} onClick={() => setMobileMenuOpen(false)} />
+                            <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers')} active={pathname.startsWith('/admin')} onClick={() => setMobileMenuOpen(false)} />
                         )}
                         <div className="pt-8 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                            <UserMenu />
+                            <UserMenu onShowTutorial={() => setShowTutorial(true)} />
                         </div>
                     </nav>
                 </div>
@@ -125,10 +151,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 </div>
             </main>
 
-            {/* Theme Toggle - Fixed bottom right */}
-            <div className="fixed bottom-4 right-4 z-50">
+            {/* Toggles - Fixed bottom right */}
+            <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 items-end">
+                <LanguageToggler />
                 <ThemeToggler />
             </div>
+
+            {/* Tutorial Modal */}
+            <TutorialModal
+                isOpen={showTutorial}
+                onClose={handleCloseTutorial}
+            />
         </div>
     );
 }

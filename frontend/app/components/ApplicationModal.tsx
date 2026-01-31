@@ -1,26 +1,30 @@
 import ReactMarkdown from 'react-markdown';
+import { useLanguage } from './LanguageProvider';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   content: string;
-  jobId: string; // NEU: Wir brauchen die JobID für den Download Link
+  jobId: string;
+  currentStatus: string;
+  onStatusUpdate: (jobId: string, newStatus: any) => void;
 }
 
 // Update Props oben
-export default function ApplicationModal({ isOpen, onClose, content, jobId }: Props) {
+export default function ApplicationModal({ isOpen, onClose, content, jobId, currentStatus, onStatusUpdate }: Props) {
+  const { t } = useLanguage();
   if (!isOpen) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
-    alert("In die Zwischenablage kopiert!");
+    alert(t('copiedToClipboard'));
   };
 
   // NEU: Download Funktion
   const handleDownload = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/download`);
-      if (!res.ok) throw new Error("Download fehlgeschlagen");
+      if (!res.ok) throw new Error(t('downloadFailed'));
 
       // Blob erstellen und virtuellen Link klicken
       const blob = await res.blob();
@@ -30,9 +34,15 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId }: Pr
       a.download = `Bewerbung.pdf`; // Fallback Name
       document.body.appendChild(a);
       a.click();
+      a.click();
       a.remove();
+
+      // If status is DRAFTED (default for new generation), set to APPLIED
+      if (currentStatus === 'OPEN' || currentStatus === 'DRAFTED' || !currentStatus) {
+        onStatusUpdate(jobId, 'APPLIED');
+      }
     } catch (e) {
-      alert("Fehler beim PDF Download.");
+      alert(t('pdfDownloadError'));
       console.error(e);
     }
   };
@@ -43,7 +53,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId }: Pr
 
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-xl">
-          <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">📝 Anschreiben Vorschau</h3>
+          <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">📝 {t('applicationPreview')}</h3>
           <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-2xl leading-none cursor-pointer transition-colors">&times;</button>
         </div>
 
@@ -57,11 +67,11 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId }: Pr
         {/* Footer */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex gap-3 justify-end bg-slate-50 dark:bg-slate-950/50 rounded-b-xl">
           <button onClick={onClose} className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg font-medium cursor-pointer transition-colors">
-            Schließen
+            {t('close')}
           </button>
 
           <button onClick={handleCopy} className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg font-medium cursor-pointer transition-colors">
-            📋 Text kopieren
+            📋 {t('copyText')}
           </button>
 
           {/* NEU: PDF Button */}
@@ -69,7 +79,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId }: Pr
             onClick={handleDownload}
             className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-500 dark:hover:bg-indigo-500 rounded-lg shadow-sm dark:shadow-indigo-500/30 transition font-medium flex items-center gap-2 cursor-pointer"
           >
-            📄 Als PDF speichern
+            📄 {t('saveAsPdf')}
           </button>
         </div>
       </div>

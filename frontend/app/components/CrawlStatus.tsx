@@ -1,5 +1,5 @@
-"use client";
 import { Loader2, ExternalLink, CheckCircle, Circle, ArrowRight, Pause } from 'lucide-react';
+import { useLanguage } from './LanguageProvider';
 
 export interface CrawlJob {
     job_id: string;
@@ -21,6 +21,7 @@ interface CrawlStatusProps {
 }
 
 export default function CrawlStatus({ jobs }: CrawlStatusProps) {
+    const { t } = useLanguage();
     if (jobs.length === 0) return null;
 
     return (
@@ -45,7 +46,7 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                                        Job Search
+                                        {t('jobSearch')}
                                     </h3>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-mono" title={job.platform}>
                                         {job.platform}
@@ -76,7 +77,7 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                     )}
                                 </div>
                                 <span className={`text-sm ${isSearching ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
-                                    Suche nach Jobs...
+                                    {t('searchingForJobs')}
                                 </span>
                             </div>
 
@@ -96,7 +97,7 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`text-sm ${isFound ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-600'}`}>
-                                        {isFound ? `${job.total} Jobs gefunden` : 'Jobs gefunden'}
+                                        {isFound ? `${job.total} ${t('jobsFound')}` : t('jobsFound')}
                                     </span>
                                     {isFound && (
                                         <span className="text-xs bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold">
@@ -126,11 +127,13 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                 </div>
                                 <div className="flex flex-col">
                                     <span className={`text-sm ${isScraping ? 'font-medium text-indigo-600 dark:text-indigo-400' : isScrapingDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
-                                        {isScraping || isScrapingDone ? `${job.scraping_completed} von ${job.total} Job Details werden verarbeitet` : 'Job Details laden'}
+                                        {isScraping || isScrapingDone
+                                            ? t('processingJobDetails', { count: job.scraping_completed, total: job.total })
+                                            : t('loadJobDetails')}
                                     </span>
                                     {isScraping && (
                                         <span className="text-[10px] text-slate-400">
-                                            Extrahiere Stellenbeschreibungen...
+                                            {t('extractingDescriptions')}
                                         </span>
                                     )}
                                 </div>
@@ -158,10 +161,10 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                 <div className="flex flex-col flex-1">
                                     <span className={`text-sm ${isAnalyzing && !isAnalysisDone ? 'font-medium text-amber-600 dark:text-amber-400' : isAnalysisDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
                                         {isAnalyzing && !isAnalysisDone
-                                            ? `${job.jobs_saved || 0} von ${job.total} Jobs analysiert`
+                                            ? t('analyzingCount', { count: job.jobs_saved || 0, total: job.total })
                                             : isAnalysisDone
-                                                ? `${job.total} von ${job.total} Jobs analysiert`
-                                                : 'Jobs analysieren'
+                                                ? t('analyzingCount', { count: job.total, total: job.total })
+                                                : t('analysis')
                                         }
                                     </span>
                                 </div>
@@ -174,10 +177,13 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                         <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                                         <div>
                                             <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                                                Alle Jobs erfolgreich analysiert!
+                                                {t('allJobsAnalyzed')}
                                             </p>
                                             <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
-                                                {job.total} {job.total === 1 ? 'Job wurde' : 'Jobs wurden'} bewertet und gespeichert.
+                                                {t('jobsRatedAndSaved', {
+                                                    count: job.total,
+                                                    jobs: job.total === 1 ? t('job') : t('jobs')
+                                                })}
                                             </p>
                                         </div>
                                     </div>

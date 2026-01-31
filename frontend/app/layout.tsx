@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { AuthProvider } from "./components/AuthProvider";
+import { LanguageProvider } from "./components/LanguageProvider";
+import DashboardShell from "./components/DashboardShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,10 +21,6 @@ export const metadata: Metadata = {
   description: "Ai Job Agent",
 };
 
-import DashboardShell from "./components/DashboardShell";
-
-// ... (imports remain the same, simplified in replace block logic if I can, but better to be safe)
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,11 +31,13 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          <DashboardShell>
-            {children}
-          </DashboardShell>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <DashboardShell>
+              {children}
+            </DashboardShell>
+          </AuthProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

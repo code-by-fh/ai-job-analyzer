@@ -326,6 +326,27 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+class StatusUpdateRequest(BaseModel):
+    status: str
+
+@app.patch("/jobs/{job_id}/status")
+def update_job_status(job_id: str, request: StatusUpdateRequest, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job.status = request.status
+        db.commit()
+        db.refresh(job)
+        return {"status": "updated", "new_status": job.status}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating status: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        db.close()
+
 @app.patch("/jobs/{job_id}/favorite")
 def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()

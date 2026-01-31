@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from './LanguageProvider';
 
 interface DynamicListProps {
   title: string;
@@ -10,6 +11,7 @@ interface DynamicListProps {
 }
 
 export default function DynamicList({ title, items, onAdd, onRemove, onChange, fields }: DynamicListProps) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-2">
@@ -19,13 +21,13 @@ export default function DynamicList({ title, items, onAdd, onRemove, onChange, f
           onClick={onAdd}
           className="text-xs bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 px-3 py-1.5 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-500/30 font-bold transition-colors flex items-center gap-1 cursor-pointer border border-indigo-100 dark:border-indigo-500/20"
         >
-          <span className="text-lg leading-none">+</span> Add Item
+          <span className="text-lg leading-none">+</span> {t('addItem')}
         </button>
       </div>
 
       {items.length === 0 && (
         <div className="text-center p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50/50 dark:bg-slate-900/20">
-          <p className="text-sm text-slate-400 dark:text-slate-500 italic">No entries yet.</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 italic">{t('noEntries')}</p>
         </div>
       )}
 
@@ -37,7 +39,7 @@ export default function DynamicList({ title, items, onAdd, onRemove, onChange, f
             type="button"
             onClick={() => onRemove(index)}
             className="absolute top-3 right-3 p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
-            title="Remove entry"
+            title={t('removeEntry')}
           >
             {/* SVG Trash Icon */}
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">

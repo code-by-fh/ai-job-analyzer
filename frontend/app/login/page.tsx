@@ -1,12 +1,15 @@
 "use client";
+
 import React, { useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
+import { useLanguage } from '../components/LanguageProvider';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const { login } = useAuth();
+    const { t } = useLanguage();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -27,10 +30,10 @@ export default function LoginPage() {
                 const data = await res.json();
                 login(data.access_token);
             } else {
-                setError('Authentication failed.');
+                setError(t('authFailed'));
             }
         } catch (e) {
-            setError('System unreachable.');
+            setError(t('systemUnreachable'));
         }
     };
 
@@ -55,7 +58,7 @@ export default function LoginPage() {
                         AI
                     </div>
                     <h1 className="text-xl font-bold text-slate-900 dark:text-white">Job Agent</h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">System Access</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{t('systemAccess')}</p>
                 </div>
 
                 {error && (
@@ -66,7 +69,7 @@ export default function LoginPage() {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Identity</label>
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5 ml-1">{t('identity')}</label>
                         <input
                             type="text"
                             value={username}
@@ -79,12 +82,12 @@ export default function LoginPage() {
                                 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 
                                 transition-all
                             "
-                            placeholder="username"
+                            placeholder={t('username')}
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Secure Key</label>
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5 ml-1">{t('secureKey')}</label>
                         <input
                             type="password"
                             value={password}
@@ -109,11 +112,11 @@ export default function LoginPage() {
                             transition-all active:scale-95
                         "
                     >
-                        Initialize Session
+                        {t('initializeSession')}
                     </button>
 
                     <div className="text-center pt-2">
-                        <span className="text-[10px] text-slate-400">Default: admin / admin</span>
+                        <span className="text-[10px] text-slate-400">{t('defaultCredentials')}</span>
                     </div>
                 </form>
             </div>

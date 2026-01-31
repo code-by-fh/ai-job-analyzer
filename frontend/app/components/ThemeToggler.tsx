@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { useLanguage } from './LanguageProvider';
 
 type Theme = 'light' | 'dark';
 
 export default function ThemeToggler() {
     const [isDark, setIsDark] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const { t } = useLanguage();
 
     useEffect(() => {
         setMounted(true);
@@ -45,7 +47,7 @@ export default function ThemeToggler() {
                 shadow-lg hover:shadow-xl
                 hover:scale-105 active:scale-95
             "
-            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            title={isDark ? t('switchLight') : t('switchDark')}
         >
             {/* Track glow effect */}
             <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-300/50 to-orange-400/50 dark:from-indigo-500/50 dark:to-purple-600/50 blur-sm"></div>

@@ -1,7 +1,10 @@
 "use client";
+
 import React, { useState } from 'react';
+import { useLanguage } from './LanguageProvider';
 
 export default function PasswordChangeForm({ token }: { token: string | null }) {
+    const { t } = useLanguage();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [status, setStatus] = useState('');
@@ -23,15 +26,15 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
             });
 
             if (res.ok) {
-                setStatus('Password updated! ✅');
+                setStatus(t('passwordUpdated'));
                 setCurrentPassword('');
                 setNewPassword('');
             } else {
                 const data = await res.json();
-                setStatus(`Error: ${data.detail || 'Failed'}`);
+                setStatus(`${t('error')}: ${data.detail || 'Failed'}`);
             }
         } catch (e) {
-            setStatus('Network Error');
+            setStatus(t('networkError'));
         } finally {
             setLoading(false);
         }
@@ -42,7 +45,7 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
             <div>
                 <input
                     type="password"
-                    placeholder="Current Password"
+                    placeholder={t('currentPassword')}
                     value={currentPassword}
                     onChange={e => setCurrentPassword(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
@@ -52,7 +55,7 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
             <div>
                 <input
                     type="password"
-                    placeholder="New Password"
+                    placeholder={t('newPassword')}
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
@@ -64,7 +67,7 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
                 disabled={loading || !currentPassword || !newPassword}
                 className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition disabled:opacity-50"
             >
-                {loading ? 'Updating...' : 'Update Password'}
+                {loading ? t('updating') : t('updatePassword')}
             </button>
             {status && <p className={`text-xs mt-2 font-medium ${status.includes('Error') ? 'text-rose-500' : 'text-emerald-500'}`}>{status}</p>}
         </form>
