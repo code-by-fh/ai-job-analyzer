@@ -213,6 +213,9 @@ export const translations = {
         invalidUrlProtocol: "URL must start with http:// or https://",
         notificationsEnabled: "Notifications Enabled",
         notificationsDisabled: "Notifications Disabled",
+        platformActive: "Platform active",
+        platformInactive: "Platform inactive",
+        deactivated: "Deactivated",
 
         // Filters
         all: "All",
@@ -443,6 +446,9 @@ export const translations = {
         invalidUrlProtocol: "URL muss mit http:// oder https:// beginnen",
         notificationsEnabled: "Benachrichtigungen aktiviert",
         notificationsDisabled: "Benachrichtigungen deaktiviert",
+        platformActive: "Plattform aktiv",
+        platformInactive: "Plattform inaktiv",
+        deactivated: "Deaktiviert",
 
         // Filters
         all: "Alle",

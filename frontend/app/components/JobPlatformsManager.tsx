@@ -224,7 +224,7 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                 {platforms.map((p) => {
                     const isBusy = activeJobs.some(job => job.platform === p.url) || pendingUrls.has(p.url);
                     return (
-                        <div key={p.id} className="group relative bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 rounded-xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/5">
+                        <div key={p.id} className={`group relative border rounded-xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/5 ${p.is_active ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/60' : 'bg-slate-100/50 dark:bg-slate-900/20 border-slate-300 dark:border-slate-700/40 opacity-60'}`}>
                             <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-3 items-center min-w-0">
                                     <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700 p-1.5 flex-shrink-0">
@@ -235,6 +235,11 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                         )}
                                     </div>
                                     <div className="min-w-0">
+                                        {!p.is_active && (
+                                            <div className="text-[9px] uppercase font-bold text-rose-500 dark:text-rose-400 mb-0.5 tracking-wider">
+                                                {t('deactivated')}
+                                            </div>
+                                        )}
                                         <div className="font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
                                         <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{p.url}</div>
                                     </div>
@@ -243,17 +248,34 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                                     <button
                                         onClick={() => toggleNotification(p)}
                                         className={`p-2 rounded-lg transition-all cursor-pointer ${p.is_notification_enabled
-                                            ? 'text-amber-500 bg-amber-50 dark:bg-amber-500/10'
-                                            : 'text-slate-300 dark:text-slate-700 hover:text-slate-400'}`}
+                                            ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10'
+                                            : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
                                         title={p.is_notification_enabled ? t('notificationsEnabled') : t('notificationsDisabled')}
                                     >
                                         <svg className="w-4 h-4" fill={p.is_notification_enabled ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
                                     </button>
                                     <button
+                                        onClick={() => updatePlatform(p.id, { is_active: !p.is_active })}
+                                        className={`p-2 rounded-lg transition-all cursor-pointer ${p.is_active
+                                            ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                                            : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                        title={p.is_active ? t('platformActive') : t('platformInactive')}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            {p.is_active ? (
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            ) : (
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            )}
+                                        </svg>
+                                    </button>
+                                    <button
                                         onClick={() => triggerCrawl(p)}
-                                        disabled={isBusy}
-                                        className={`p-2 rounded-lg transition ${isBusy ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
-                                        title={isBusy ? t('crawlInProgress') : t('scanNow')}
+                                        disabled={isBusy || !p.is_active}
+                                        className={`p-2 rounded-lg transition ${isBusy || !p.is_active ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
+                                        title={!p.is_active ? t('platformInactive') : (isBusy ? t('crawlInProgress') : t('scanNow'))}
                                     >
                                         {isBusy ? (
                                             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
