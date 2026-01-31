@@ -83,12 +83,21 @@ def get_clean_content(html):
 
 
 @celery_app.task(name="scraper.fetch_links")
-def fetch_links_task(start_url, user_id=1):
-    logger.info(f"🔗 [TASK] Fetching links started for: {start_url} (User: {user_id})")
+def fetch_links_task(start_url, user_id=1, job_id=None):
+    logger.info(f"🔗 [TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})")
     
     r = redis.from_url(REDIS_URL)
+    
+    if job_id:
+        r.hset(f"crawl_job:{job_id}", "status", "fetching_links")
+        r.publish("job_updates", json.dumps({
+            "type": "crawl_job_started",
+            "job_id": job_id,
+            "user_id": user_id,
+            "platform": start_url
+        }))
+    
     r.setex("system:crawling", 600, "true")
-    r.publish("job_updates", json.dumps({"type": "crawl_started", "url": start_url}))
     
     html = get_html_with_browser(start_url)
     if not html:
@@ -108,36 +117,68 @@ def fetch_links_task(start_url, user_id=1):
         all_links.add(full_url)
         
     logger.info(f"Found {len(all_links)} internal links on {start_url}")
-    return [start_url, list(all_links), user_id]
+    return [start_url, list(all_links), user_id, job_id]
 
 @celery_app.task(name="scraper.schedule_crawls")
 def schedule_crawls_task(args):
-    # Expects [filtered_links, user_id]
     if not args or len(args) < 2:
         logger.error("Invalid args for schedule_crawls_task")
         return
-        
-    filtered_links, user_id = args
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    
+    job_id = None
+    if len(args) >= 3:
+        filtered_links, user_id = args[0], args[1]
+        job_id = args[2] if len(args) > 2 else None
+    else:
+        filtered_links, user_id = args
     
     if not filtered_links:
         logger.info("Keine relevanten Links gefunden (filtered_links is empty).")
+        r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+        
+        if job_id:
+            r.hset(f"crawl_job:{job_id}", "status", "completed")
+            r.srem(f"user:{user_id}:active_crawls", job_id)
+            r.publish("job_updates", json.dumps({
+                "type": "crawl_job_completed",
+                "job_id": job_id,
+                "user_id": user_id
+            }))
+        
         r.delete("system:crawling")
         r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
         return
 
     logger.info(f"🗓️ Scheduling {len(filtered_links)} detailed crawls for User {user_id}...")
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    
+    if job_id:
+        r.hset(f"crawl_job:{job_id}", mapping={
+            "total": len(filtered_links),
+            "completed": 0,
+            "status": "crawling"
+        })
+        
+        platform_url = r.hget(f"crawl_job:{job_id}", "platform_url")
+        platform_url = platform_url.decode('utf-8') if platform_url else "Unknown"
+        
+        r.publish("job_updates", json.dumps({
+            "type": "crawl_job_progress",
+            "job_id": job_id,
+            "user_id": user_id,
+            "platform": platform_url,
+            "total": len(filtered_links),
+            "completed": 0
+        }))
     
     for link in filtered_links:
-        celery_app.send_task('scraper.scrape_detail', args=[link, user_id], queue='scraper_queue')
+        celery_app.send_task('scraper.scrape_detail', args=[link, user_id, job_id], queue='scraper_queue')
     
     logger.info(f"All {len(filtered_links)} tasks scheduled.")
-    r.delete("system:crawling")
-    r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
 @celery_app.task(name="scraper.scrape_detail")
-def scrape_job_detail_task(url, user_id=1):
-    logger.info(f"🕵️ [TASK] Scraping Detail for: {url} (User: {user_id})")
+def scrape_job_detail_task(url, user_id=1, job_id=None):
+    logger.info(f"🕵️ [TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
     
     try:
         html = get_html_with_browser(url)
@@ -158,20 +199,39 @@ def scrape_job_detail_task(url, user_id=1):
         # If user_id is different, we might want to allow it.
         # But if ID is same, ai-service will skip!
         # Fix: changing ID to include user_id.
-        job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{url}"))
-        logger.info(f"Extracted Job: '{title}' (ID: {job_id}) from {url}")
+        extracted_job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{url}"))
+        logger.info(f"Extracted Job: '{title}' (ID: {extracted_job_id}) from {url}")
 
         job_data = {
-            "id": job_id,
+            "id": extracted_job_id,
             "title": title,
             "company": urlparse(url).netloc,
             "description": content[:4000],
             "url": url,
-            "user_id": user_id
+            "user_id": user_id,
+            "crawl_job_id": job_id
         }
         
         celery_app.send_task("ai.analyze_job", args=[job_data], queue="ai_queue")
-        logger.info(f"Triggered ai.analyze_job for {job_id}")
+        logger.info(f"Triggered ai.analyze_job for {extracted_job_id}")
+        
+        r = redis.from_url(REDIS_URL)
+        
+        if job_id:
+            scraping_completed = int(r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1))
+            total_bytes = r.hget(f"crawl_job:{job_id}", "total")
+            total = int(total_bytes.decode('utf-8')) if total_bytes else 0
+            platform_bytes = r.hget(f"crawl_job:{job_id}", "platform_url")
+            platform_url = platform_bytes.decode('utf-8') if platform_bytes else "Unknown"
+            
+            r.publish("job_updates", json.dumps({
+                "type": "crawl_job_progress",
+                "job_id": job_id,
+                "user_id": user_id,
+                "platform": platform_url,
+                "total": total,
+                "scraping_completed": scraping_completed
+            }))
         
     except Exception as e:
         logger.error(f"Error in scrape_job_detail_task for {url}: {e}", exc_info=True)

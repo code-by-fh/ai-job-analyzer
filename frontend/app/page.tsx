@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import ApplicationModal from './components/ApplicationModal';
+import CrawlStatus, { CrawlJob } from './components/CrawlStatus';
 import { useAuth } from './components/AuthProvider';
 import { useRouter } from 'next/navigation';
 
@@ -39,6 +40,8 @@ export default function Home() {
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
+  const [activeCrawls, setActiveCrawls] = useState<Map<string, CrawlJob>>(new Map());
+
   // Redirect if not logged in
   useEffect(() => {
     const t = localStorage.getItem('token');
@@ -58,8 +61,34 @@ export default function Home() {
     } catch (e) { console.error("Fehler beim Laden:", e); }
   };
 
+  const fetchCrawlStatus = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/crawl-status?user_id=${user.id}`);
+      const data = await res.json();
+      if (data.jobs && data.jobs.length > 0) {
+        const jobsMap = new Map<string, CrawlJob>();
+        data.jobs.forEach((job: CrawlJob) => {
+          if (job.status !== 'completed' && !(job.analysis_completed >= job.total && job.total > 0)) {
+            jobsMap.set(job.job_id, job);
+          }
+        });
+        setActiveCrawls(jobsMap);
+        setIsCrawling(jobsMap.size > 0);
+      } else {
+        setActiveCrawls(new Map());
+        setIsCrawling(false);
+      }
+    } catch (e) {
+      console.error("Fehler beim Laden des Crawl-Status:", e);
+    }
+  };
+
   useEffect(() => {
-    if (token) fetchJobs();
+    if (token) {
+      fetchJobs();
+      fetchCrawlStatus();
+    }
 
     // Check initial status
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`)
@@ -70,11 +99,102 @@ export default function Home() {
     const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.type === "crawl_started") {
-        setIsCrawling(true);
+      console.log('[WebSocket] Received:', data);
+
+      if (data.type === "crawl_job_started") {
+        if (data.user_id === user?.id) {
+          setActiveCrawls(prev => new Map(prev).set(data.job_id, {
+            job_id: data.job_id,
+            platform: data.platform,
+            total: 0,
+            scraping_completed: 0,
+            analysis_completed: 0,
+            status: 'starting'
+          }));
+          setIsCrawling(true);
+        }
+      }
+      else if (data.type === "crawl_job_progress") {
+        if (data.user_id === user?.id) {
+          setActiveCrawls(prev => {
+            const existing = prev.get(data.job_id);
+            return new Map(prev).set(data.job_id, {
+              job_id: data.job_id,
+              platform: data.platform,
+              total: data.total,
+              scraping_completed: data.scraping_completed,
+              analysis_completed: existing?.analysis_completed || 0,
+              status: 'crawling'
+            });
+          });
+        }
+      }
+      else if (data.type === "job_analysis_started") {
+        if (data.user_id === user?.id) {
+          setActiveCrawls(prev => {
+            const existing = prev.get(data.job_id);
+            if (existing) {
+              const analyzingJobs = existing.analyzing_jobs || [];
+              return new Map(prev).set(data.job_id, {
+                ...existing,
+                current_job_title: data.job_title,
+                analysis_completed: data.analysis_completed,
+                analyzing_jobs: [...analyzingJobs, data.job_title]
+              });
+            }
+            return prev;
+          });
+        }
+      }
+      else if (data.type === "job_analysis_finished") {
+        if (data.user_id === user?.id) {
+          setActiveCrawls(prev => {
+            const existing = prev.get(data.job_id);
+            if (existing) {
+              const analyzingJobs = (existing.analyzing_jobs || []).filter(
+                title => title !== data.job_title
+              );
+              return new Map(prev).set(data.job_id, {
+                ...existing,
+                analyzing_jobs: analyzingJobs
+              });
+            }
+            return prev;
+          });
+        }
+      }
+      else if (data.type === "crawl_job_completed") {
+        if (data.user_id === user?.id) {
+          // First, show success message
+          setActiveCrawls(prev => {
+            const existing = prev.get(data.job_id);
+            if (existing) {
+              return new Map(prev).set(data.job_id, {
+                ...existing,
+                show_success: true
+              });
+            }
+            return prev;
+          });
+
+          // Then remove after 5 seconds
+          setTimeout(() => {
+            setActiveCrawls(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(data.job_id);
+              if (newMap.size === 0) {
+                setIsCrawling(false);
+              }
+              return newMap;
+            });
+          }, 5000);
+
+          if (token) fetchJobs();
+        }
       }
       else if (data.type === "crawl_completed") {
         setIsCrawling(false);
+        setActiveCrawls(new Map());
         if (token) fetchJobs();
       }
       else if (data.type === "new_job") {
@@ -264,6 +384,11 @@ export default function Home() {
         <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-300 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>⚠️ {globalError}</span>
         </div>
+      )}
+
+      {/* CRAWL STATUS */}
+      {activeCrawls.size > 0 && (
+        <CrawlStatus jobs={Array.from(activeCrawls.values())} />
       )}
 
       {/* FILTER & SORT */}

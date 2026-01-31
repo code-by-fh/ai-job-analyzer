@@ -48,7 +48,10 @@ def filter_urls_task(args):
         
     try:
         user_id = 1
-        if len(args) == 3:
+        job_id = None
+        if len(args) == 4:
+            base_url, urls_list, user_id, job_id = args
+        elif len(args) == 3:
             base_url, urls_list, user_id = args
         else:
              base_url, urls_list = args
@@ -74,7 +77,7 @@ def filter_urls_task(args):
         content = response.choices[0].message.content.strip().replace("```json", "").replace("```", "")
         result_urls = json.loads(content)
         logger.info(f"Filter result: {len(result_urls)} relevant URLs found.")
-        return [result_urls, user_id]
+        return [result_urls, user_id, job_id] if job_id else [result_urls, user_id]
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         return []
@@ -88,6 +91,18 @@ def analyze_job_task(job_data):
     
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    
+    # Notify frontend that analysis is starting
+    crawl_job_id = job_data.get('crawl_job_id')
+    if crawl_job_id:
+        analysis_completed = int(r.hincrby(f"crawl_job:{crawl_job_id}", "analysis_completed", 1))
+        r.publish("job_updates", json.dumps({
+            "type": "job_analysis_started",
+            "job_id": crawl_job_id,
+            "user_id": user_id,
+            "job_title": job_title,
+            "analysis_completed": analysis_completed
+        }))
     
     try:
         if db.query(JobEntry).filter(JobEntry.id == job_data['id']).first():
@@ -156,14 +171,50 @@ def analyze_job_task(job_data):
             }
         })
         
+        
         r.publish("job_updates", payload)
         logger.info(f"✅ WebSocket Event 'new_job' published for {db_job.title}")
+        
+        # Increment jobs_saved counter
+        crawl_job_id = job_data.get('crawl_job_id')
+        if crawl_job_id:
+            jobs_saved = int(r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_saved", 1))
+            
+            # Notify that this specific job analysis is finished
+            r.publish("job_updates", json.dumps({
+                "type": "job_analysis_finished",
+                "job_id": crawl_job_id,
+                "user_id": user_id,
+                "job_title": job_title,
+                "jobs_saved": jobs_saved
+            }))
+        
+        # Handle crawl job completion
+        if crawl_job_id:
+            job_hash = r.hgetall(f"crawl_job:{crawl_job_id}")
+            if job_hash:
+                total = int(job_hash.get(b"total", 0))
+                jobs_saved = int(job_hash.get(b"jobs_saved", 0))
+                
+                # Check if all jobs are saved (new_job events sent)
+                if jobs_saved >= total and total > 0:
+                    logger.info(f"All jobs analyzed for crawl {crawl_job_id}. Marking as completed.")
+                    r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
+                    r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
+                    r.delete("system:crawling")
+                    r.publish("job_updates", json.dumps({
+                        "type": "crawl_job_completed",
+                        "job_id": crawl_job_id,
+                        "user_id": user_id
+                    }))
+                    r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
     except Exception as e:
         logger.error(f"Analyze Error for Job {job_id}: {e}", exc_info=True)
         db.rollback()
     finally:
         db.close()
+
 
 @celery_app.task(name="ai.generate_application")
 def generate_application_task(job_id, user_id=None):
