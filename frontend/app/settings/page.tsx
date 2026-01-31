@@ -1,13 +1,12 @@
 "use client";
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import DynamicList from '../components/DynamicList';
-import { useAuth } from '../components/AuthProvider';
-import { useLanguage } from '../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
-import PasswordChangeForm from '../components/PasswordChangeForm';
-import JobPlatformsManager from '../components/JobPlatformsManager';
+import { useEffect, useState } from 'react';
+import { useAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
+import DynamicList from '../components/DynamicList';
+import JobPlatformsManager from '../components/JobPlatformsManager';
+import { useLanguage } from '../components/LanguageProvider';
+import PasswordChangeForm from '../components/PasswordChangeForm';
 
 export default function Settings() {
   const { user, token, isAuthenticated, refreshUser } = useAuth();
@@ -335,12 +334,6 @@ export default function Settings() {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('profileConfiguration')}</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">{t('profileSubtitle')}</p>
         </div>
-        <div className="flex items-center gap-4">
-          {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse">{status}</span>}
-          <button onClick={handleSubmit} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-            {t('saveChanges')}
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -403,6 +396,12 @@ export default function Settings() {
                 />
               </div>
             </div>
+            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
+              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
+              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
+                {t('saveChanges')}
+              </button>
+            </div>
           </section>
 
           {/* EXPERIENCE & PROJECTS (Dynamic List) */}
@@ -420,6 +419,13 @@ export default function Settings() {
                 { name: 'description', placeholder: t('description'), type: 'textarea' }
               ]}
             />
+            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
+              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
+              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
+                {t('saveChanges')}
+              </button>
+            </div>
+
           </section>
 
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
@@ -435,6 +441,12 @@ export default function Settings() {
                 { name: 'description', placeholder: t('description'), type: 'textarea' }
               ]}
             />
+            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
+              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
+              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
+                {t('saveChanges')}
+              </button>
+            </div>
           </section>
 
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
@@ -447,6 +459,12 @@ export default function Settings() {
               className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[120px]"
               placeholder="University, Degree..."
             />
+            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
+              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
+              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
+                {t('saveChanges')}
+              </button>
+            </div>
           </section>
 
           {/* JOB PLATFORMS */}
@@ -545,6 +563,12 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+              <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
+                {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
+                <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
+                  {t('saveChanges')}
+                </button>
+              </div>
             </div>
           </section>
 
