@@ -7,11 +7,13 @@ export interface CrawlJob {
     total: number;
     scraping_completed: number;
     analysis_completed: number;
+    jobs_saved?: number;  // Number of jobs that have been saved (new_job events received)
     status: string;
     started_at?: string;
     current_job_title?: string;
     show_success?: boolean;
     analyzing_jobs?: string[];  // List of job titles currently being analyzed
+    all_job_titles?: string[];  // List of all job titles that have been analyzed
 }
 
 interface CrawlStatusProps {
@@ -156,22 +158,12 @@ export default function CrawlStatus({ jobs }: CrawlStatusProps) {
                                 <div className="flex flex-col flex-1">
                                     <span className={`text-sm ${isAnalyzing && !isAnalysisDone ? 'font-medium text-amber-600 dark:text-amber-400' : isAnalysisDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
                                         {isAnalyzing && !isAnalysisDone
-                                            ? `${job.analysis_completed || 0} von ${job.total} Jobs werden analysiert`
+                                            ? `${job.jobs_saved || 0} von ${job.total} Jobs analysiert`
                                             : isAnalysisDone
                                                 ? `${job.total} von ${job.total} Jobs analysiert`
                                                 : 'Jobs analysieren'
                                         }
                                     </span>
-                                    {job.analyzing_jobs && job.analyzing_jobs.length > 0 && isAnalyzing && !isAnalysisDone && (
-                                        <div className="mt-1 space-y-0.5">
-                                            {job.analyzing_jobs.map((jobTitle, idx) => (
-                                                <div key={idx} className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                                                    <Loader2 className="w-2.5 h-2.5 animate-spin flex-shrink-0" />
-                                                    <span className="truncate">{jobTitle}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 

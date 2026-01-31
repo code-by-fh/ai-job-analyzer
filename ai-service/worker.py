@@ -96,6 +96,12 @@ def analyze_job_task(job_data):
     crawl_job_id = job_data.get('crawl_job_id')
     if crawl_job_id:
         analysis_completed = int(r.hincrby(f"crawl_job:{crawl_job_id}", "analysis_completed", 1))
+        
+        # Add job title to all_job_titles list in Redis
+        r.lpush(f"crawl_job:{crawl_job_id}:all_job_titles", job_title)
+        list_length = r.llen(f"crawl_job:{crawl_job_id}:all_job_titles")
+        logger.info(f"Added '{job_title}' to all_job_titles. List now has {list_length} entries.")
+        
         r.publish("job_updates", json.dumps({
             "type": "job_analysis_started",
             "job_id": crawl_job_id,
@@ -157,6 +163,7 @@ def analyze_job_task(job_data):
 
         payload = json.dumps({
             "type": "new_job",
+            "crawl_job_id": crawl_job_id,
             "job": {
                 "id": db_job.id,
                 "title": db_job.title,

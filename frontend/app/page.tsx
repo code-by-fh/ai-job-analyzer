@@ -103,14 +103,18 @@ export default function Home() {
 
       if (data.type === "crawl_job_started") {
         if (data.user_id === user?.id) {
-          setActiveCrawls(prev => new Map(prev).set(data.job_id, {
-            job_id: data.job_id,
-            platform: data.platform,
-            total: 0,
-            scraping_completed: 0,
-            analysis_completed: 0,
-            status: 'starting'
-          }));
+          setActiveCrawls(prev => {
+            const existing = prev.get(data.job_id);
+            return new Map(prev).set(data.job_id, {
+              ...existing,
+              job_id: data.job_id,
+              platform: data.platform,
+              total: existing?.total || 0,
+              scraping_completed: existing?.scraping_completed || 0,
+              analysis_completed: existing?.analysis_completed || 0,
+              status: 'starting'
+            });
+          });
           setIsCrawling(true);
         }
       }
@@ -119,6 +123,7 @@ export default function Home() {
           setActiveCrawls(prev => {
             const existing = prev.get(data.job_id);
             return new Map(prev).set(data.job_id, {
+              ...existing,
               job_id: data.job_id,
               platform: data.platform,
               total: data.total,
@@ -135,11 +140,22 @@ export default function Home() {
             const existing = prev.get(data.job_id);
             if (existing) {
               const analyzingJobs = existing.analyzing_jobs || [];
+              const allJobTitles = existing.all_job_titles || [];
+              console.log('[DEBUG] job_analysis_started:', {
+                job_title: data.job_title,
+                existing_all_job_titles: allJobTitles,
+                will_add: !allJobTitles.includes(data.job_title)
+              });
+              const newAllJobTitles = allJobTitles.includes(data.job_title)
+                ? allJobTitles
+                : [...allJobTitles, data.job_title];
+              console.log('[DEBUG] Updated all_job_titles:', newAllJobTitles);
               return new Map(prev).set(data.job_id, {
                 ...existing,
                 current_job_title: data.job_title,
                 analysis_completed: data.analysis_completed,
-                analyzing_jobs: [...analyzingJobs, data.job_title]
+                analyzing_jobs: [...analyzingJobs, data.job_title],
+                all_job_titles: newAllJobTitles
               });
             }
             return prev;
@@ -200,6 +216,24 @@ export default function Home() {
       else if (data.type === "new_job") {
         if (data.job?.user_id === user?.id) {
           setJobs(prevJobs => [data.job, ...prevJobs]);
+
+          // Update jobs_saved counter and remove from analyzing_jobs for the crawl job
+          if (data.crawl_job_id) {
+            setActiveCrawls(prev => {
+              const existing = prev.get(data.crawl_job_id);
+              if (existing) {
+                const analyzingJobs = (existing.analyzing_jobs || []).filter(
+                  title => title !== data.job.title
+                );
+                return new Map(prev).set(data.crawl_job_id, {
+                  ...existing,
+                  jobs_saved: (existing.jobs_saved || 0) + 1,
+                  analyzing_jobs: analyzingJobs
+                });
+              }
+              return prev;
+            });
+          }
         }
       }
       else if (data.type === "job_update") {

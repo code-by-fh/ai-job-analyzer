@@ -54,6 +54,7 @@ def cleanup_stale_jobs():
                 if status == "completed" or (total > 0 and analysis_completed >= total):
                     r.srem(user_key, job_id)
                     r.delete(f"crawl_job:{job_id}")
+                    r.delete(f"crawl_job:{job_id}:all_job_titles")
                     total_removed += 1
                     logger.info(f"Removed completed job {job_id}")
     
@@ -106,14 +107,21 @@ async def get_crawl_status(user_id: int):
         job_data = r.hgetall(f"crawl_job:{job_id}")
         
         if job_data:
+            # Get all_job_titles from Redis list
+            all_job_titles_bytes = r.lrange(f"crawl_job:{job_id}:all_job_titles", 0, -1)
+            all_job_titles = [title.decode('utf-8') for title in all_job_titles_bytes]
+            logger.info(f"Crawl status for {job_id}: Retrieved {len(all_job_titles)} job titles from Redis")
+            
             jobs.append({
                 "job_id": job_id,
                 "platform": job_data.get(b"platform_url", b"").decode('utf-8'),
                 "total": int(job_data.get(b"total", 0)),
                 "scraping_completed": int(job_data.get(b"scraping_completed", 0)),
                 "analysis_completed": int(job_data.get(b"analysis_completed", 0)),
+                "jobs_saved": int(job_data.get(b"jobs_saved", 0)),
                 "status": job_data.get(b"status", b"unknown").decode('utf-8'),
-                "started_at": job_data.get(b"started_at", b"").decode('utf-8')
+                "started_at": job_data.get(b"started_at", b"").decode('utf-8'),
+                "all_job_titles": all_job_titles
             })
     
     return {"jobs": jobs}
