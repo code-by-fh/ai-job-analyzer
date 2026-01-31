@@ -10,7 +10,7 @@ import JobPlatformsManager from '../components/JobPlatformsManager';
 import ConfirmModal from '../components/ConfirmModal';
 
 export default function Settings() {
-  const { user, token, isAuthenticated } = useAuth();
+  const { user, token, isAuthenticated, refreshUser } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
 
@@ -86,6 +86,7 @@ export default function Settings() {
         body: JSON.stringify(formData)
       });
       setStatus(t('saved'));
+      refreshUser(); // Update global user state (e.g. is_profile_complete)
       setTimeout(() => setStatus(''), 2000);
     } catch (e) {
       setStatus(t('error'));
@@ -234,6 +235,7 @@ export default function Settings() {
         job_urls: []
       });
       setStatus(t('saved'));
+      refreshUser();
     } catch (e) {
       setStatus(t('error'));
     }
@@ -251,6 +253,7 @@ export default function Settings() {
         job_urls: []
       });
       setStatus(t('saved'));
+      refreshUser();
       setTimeout(() => window.location.href = "/", 1000);
     } catch (e) {
       setStatus(t('error'));

@@ -398,6 +398,11 @@ def get_settings(current_user: User = Depends(get_current_user)):
         if not profile:
             profile = UserProfile(
                 user_id=current_user.id,
+                role="",
+                skills="",
+                min_salary="",
+                location="",
+                preferences="",
                 cv_data={"experience": [], "projects": [], "education": ""}, 
                 job_urls=[]
             )

@@ -284,17 +284,26 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
                     );
                 })}
 
-                <div className="flex gap-2 p-2 bg-slate-50/50 dark:bg-slate-950/20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl mt-4">
+                <div className="relative flex gap-2 p-2 bg-slate-50/50 dark:bg-slate-950/20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl mt-4">
+                    {!user?.is_profile_complete && (
+                        <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                            <span className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 px-3 py-1.5 rounded-full border border-rose-200 dark:border-rose-900 shadow-sm flex items-center gap-1.5">
+                                ⚠️ {t('completeProfileFirst')}
+                            </span>
+                        </div>
+                    )}
                     <input
                         value={newUrl}
                         onChange={(e) => setNewUrl(e.target.value)}
-                        className="flex-1 bg-transparent border-none text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-0 px-2"
+                        className="flex-1 bg-transparent border-none text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-0 px-2 disabled:opacity-50"
                         placeholder={t('addPlatformPlaceholder')}
                         onKeyDown={(e) => e.key === 'Enter' && addPlatform()}
+                        disabled={!user?.is_profile_complete}
                     />
                     <button
                         onClick={addPlatform}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold transition shadow-lg shadow-indigo-500/20 cursor-pointer"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold transition shadow-lg shadow-indigo-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!user?.is_profile_complete}
                     >+</button>
                 </div>
             </div>

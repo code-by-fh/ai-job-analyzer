@@ -214,7 +214,8 @@ export const translations = {
         // Dynamic List
         addItem: "Add Item",
         noEntries: "No entries yet.",
-        removeEntry: "Remove entry"
+        removeEntry: "Remove entry",
+        completeProfileFirst: "Please complete your profile first."
     },
     de: {
         // Navigation
@@ -428,7 +429,8 @@ export const translations = {
         // Dynamic List
         addItem: "Eintrag hinzufügen",
         noEntries: "Noch keine Einträge.",
-        removeEntry: "Eintrag entfernen"
+        removeEntry: "Eintrag entfernen",
+        completeProfileFirst: "Bitte vervollständige zuerst dein Profil."
     }
 };
 

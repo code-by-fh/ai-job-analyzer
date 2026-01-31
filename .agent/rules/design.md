@@ -71,3 +71,21 @@ trigger: manual
 - Nutze `dark:` Modifier für JEDE Farbeigenschaft.
 - Keine harten Kontraste im Dark Mode (z.B. kein `#000` auf `#FFF`), nutze Off-White (`slate-200`) auf Dark-Grey (`slate-900`).
 - Wenn "Deep Thinking" aktiv ist, nutze Skeleton-Loader oder pulsierende Badges.
+
+6. BASIS-ELEMENTE & LAYOUT-STRUKTUR:
+   - Page Layout:
+     - Desktop: Sidebar links (fest, 250px-280px), Main Content rechts (flex-1).
+     - Mobile: Hamburger-Menu für Sidebar, Main Content full-width.
+   - Container:
+     - `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8` für zentrierten Content.
+   - Formulare/Inputs:
+     - Light: `bg-white border-slate-300 text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500`
+     - Dark: `dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100 dark:focus:ring-2 dark:focus:ring-indigo-500/50 dark:focus:border-indigo-500/50`
+     - Radius: `rounded-lg` für Inputs.
+     - Label: `block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1`.
+
+7. INTERAKTIONEN & ANIMATIONEN:
+   - Global Transitions: `transition-all duration-200 ease-in-out` für Hover-Effekte.
+   - Page Transitions: Sanftes Fading (`animate-in fade-in duration-300`).
+   - Focus States: Immer sichtbare Focus-Rings für Accessibility (`ring-2 ring-offset-2 ...`).
+   - Disabled States: `opacity-50 cursor-not-allowed`.

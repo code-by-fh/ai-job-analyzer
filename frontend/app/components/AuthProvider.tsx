@@ -6,6 +6,7 @@ interface User {
     id: number;
     username: string;
     is_admin: boolean;
+    is_profile_complete?: boolean;
 }
 
 interface AuthContextType {
@@ -13,7 +14,9 @@ interface AuthContextType {
     token: string | null;
     login: (token: string) => void;
     logout: () => void;
+
     isAuthenticated: boolean;
+    refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -21,7 +24,9 @@ const AuthContext = createContext<AuthContextType>({
     token: null,
     login: () => { },
     logout: () => { },
-    isAuthenticated: false
+
+    isAuthenticated: false,
+    refreshUser: async () => { }
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -47,7 +52,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
             if (res.ok) {
                 const userData = await res.json();
-                setUser(userData);
+
+                // Check profile completeness
+                let is_profile_complete = false;
+                try {
+                    const resSettings = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (resSettings.ok) {
+                        const settingsData = await resSettings.json();
+                        // Profile is considered complete if a role is defined
+                        if (settingsData.role && settingsData.role.trim().length > 0) {
+                            is_profile_complete = true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to fetch settings for profile check", e);
+                }
+
+                setUser({ ...userData, is_profile_complete });
             } else {
                 console.error("Token invalid, logging out");
                 logout();
@@ -72,8 +95,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         router.push('/login');
     };
 
+    const refreshUser = async () => {
+        if (token) {
+            await fetchUser(token);
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );
