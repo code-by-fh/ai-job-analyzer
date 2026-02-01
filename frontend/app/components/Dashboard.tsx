@@ -1,7 +1,7 @@
 "use client";
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 
@@ -57,6 +57,27 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         handleUpdateStatus
     } = useJobs({ token, logout, filterType });
 
+    const onJobUpdate = useCallback((data: any) => {
+        setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
+        setPendingIds(prev => prev.filter(id => id !== data.job_id));
+    }, [setJobs]);
+
+    const onNewJob = useCallback((job: Job, crawlJobId?: string) => {
+        if (job?.user_id === user?.id) {
+            let shouldAdd = true;
+            if (filterType === 'favorite' && !job.is_favorite) shouldAdd = false;
+            if (filterType === 'no_favorite' && job.is_favorite) shouldAdd = false;
+
+            if (shouldAdd) {
+                setJobs(prevJobs => {
+                    if (prevJobs.some(j => j.id === job.id)) return prevJobs;
+                    return [job, ...prevJobs];
+                });
+            }
+        }
+        if (token) fetchJobs(true);
+    }, [user?.id, filterType, token, fetchJobs, setJobs]);
+
     const {
         isCrawling,
         setIsCrawling,
@@ -70,25 +91,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     } = useCrawl({
         user,
         token,
-        onJobUpdate: (data) => {
-            setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
-            setPendingIds(prev => prev.filter(id => id !== data.job_id));
-        },
-        onNewJob: (job, crawlJobId) => {
-            if (job?.user_id === user?.id) {
-                let shouldAdd = true;
-                if (filterType === 'favorite' && !job.is_favorite) shouldAdd = false;
-                if (filterType === 'no_favorite' && job.is_favorite) shouldAdd = false;
-
-                if (shouldAdd) {
-                    setJobs(prevJobs => {
-                        if (prevJobs.some(j => j.id === job.id)) return prevJobs;
-                        return [job, ...prevJobs];
-                    });
-                }
-            }
-            if (token) fetchJobs(true);
-        }
+        onJobUpdate,
+        onNewJob
     });
 
     // Derived Global Error

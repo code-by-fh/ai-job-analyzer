@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { CrawlJob } from '../components/CrawlStatus';
 import { AuthContextType } from '../components/AuthProvider';
 import { Job } from '../lib/types';
@@ -15,10 +15,14 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
     const [activeCrawls, setActiveCrawls] = useState<Map<string, CrawlJob>>(new Map());
     const [globalError, setGlobalError] = useState<string | null>(null);
 
+    // WebSocket Ref to persist across renders without triggering effects
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     // Expose this so parent can cancel
     const [crawlToCancel, setCrawlToCancel] = useState<string | null>(null);
 
-    const fetchCrawlStatus = async () => {
+    const fetchCrawlStatus = useCallback(async () => {
         if (!user?.id) return;
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/crawl-status?user_id=${user.id}`);
@@ -39,7 +43,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
         } catch (e) {
             console.error("Fehler beim Laden des Crawl-Status:", e);
         }
-    };
+    }, [user?.id]);
 
     const confirmCancelCrawl = async () => {
         if (!crawlToCancel || !user?.id) return;
@@ -71,6 +75,195 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
         setCrawlToCancel(null);
     };
 
+    // Refs for callbacks to ensure stability without strictly needing to be in dependency array of effect
+    const onJobUpdateRef = useRef(onJobUpdate);
+    const onNewJobRef = useRef(onNewJob);
+
+    // Ref for the connection timer to prevent strict-mode double-invocation issues
+    const connectionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Update refs when props change
+    useEffect(() => {
+        onJobUpdateRef.current = onJobUpdate;
+        onNewJobRef.current = onNewJob;
+    }, [onJobUpdate, onNewJob]);
+
+    const connectWebSocket = useCallback(() => {
+        if (!token || !user) return;
+
+        // Clear any pending connection attempt
+        if (connectionTimerRef.current) {
+            clearTimeout(connectionTimerRef.current);
+            connectionTimerRef.current = null;
+        }
+
+        // Prevent multiple connections if already stable
+        if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
+            return;
+        }
+
+        // Small delay to bypass React Strict Mode's immediate unmount
+        connectionTimerRef.current = setTimeout(() => {
+            const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                // console.log("WebSocket Connected");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === "crawl_job_started") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                return new Map(prev).set(data.job_id, {
+                                    ...existing,
+                                    job_id: data.job_id,
+                                    platform: data.platform,
+                                    total: existing?.total || 0,
+                                    scraping_completed: existing?.scraping_completed || 0,
+                                    analysis_completed: existing?.analysis_completed || 0,
+                                    status: 'starting'
+                                });
+                            });
+                            setIsCrawling(true);
+                        }
+                    }
+                    else if (data.type === "crawl_job_progress") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                return new Map(prev).set(data.job_id, {
+                                    ...existing,
+                                    job_id: data.job_id,
+                                    platform: data.platform,
+                                    total: data.total,
+                                    scraping_completed: data.scraping_completed,
+                                    analysis_completed: existing?.analysis_completed || 0,
+                                    status: 'crawling'
+                                });
+                            });
+                        }
+                    }
+                    else if (data.type === "job_analysis_started") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    const analyzingJobs = existing.analyzing_jobs || [];
+                                    const allJobTitles = existing.all_job_titles || [];
+
+                                    const newAllJobTitles = allJobTitles.includes(data.job_title)
+                                        ? allJobTitles
+                                        : [...allJobTitles, data.job_title];
+
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        current_job_title: data.job_title,
+                                        analysis_completed: data.analysis_completed,
+                                        analyzing_jobs: [...analyzingJobs, data.job_title],
+                                        all_job_titles: newAllJobTitles
+                                    });
+                                }
+                                return prev;
+                            });
+                        }
+                    }
+                    else if (data.type === "job_analysis_finished") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    const analyzingJobs = (existing.analyzing_jobs || []).filter(
+                                        title => title !== data.job_title
+                                    );
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        analyzing_jobs: analyzingJobs
+                                    });
+                                }
+                                return prev;
+                            });
+                        }
+                    }
+                    else if (data.type === "crawl_job_completed") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        show_success: true
+                                    });
+                                }
+                                return prev;
+                            });
+
+                            setTimeout(() => {
+                                setActiveCrawls(prev => {
+                                    const newMap = new Map(prev);
+                                    newMap.delete(data.job_id);
+                                    if (newMap.size === 0) {
+                                        setIsCrawling(false);
+                                    }
+                                    return newMap;
+                                });
+                            }, 5000);
+                        }
+                    }
+                    else if (data.type === "crawl_completed") {
+                        setIsCrawling(false);
+                        setActiveCrawls(new Map());
+                    }
+                    else if (data.type === "new_job") {
+                        if (onNewJobRef.current) onNewJobRef.current(data.job, data.crawl_job_id);
+
+                        if (data.crawl_job_id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.crawl_job_id);
+                                if (existing) {
+                                    const analyzingJobs = (existing.analyzing_jobs || []).filter(
+                                        title => title !== data.job.title
+                                    );
+                                    return new Map(prev).set(data.crawl_job_id, {
+                                        ...existing,
+                                        jobs_saved: (existing.jobs_saved || 0) + 1,
+                                        analyzing_jobs: analyzingJobs
+                                    });
+                                }
+                                return prev;
+                            });
+                        }
+                    }
+                    else if (data.type === "job_update") {
+                        if (onJobUpdateRef.current) onJobUpdateRef.current(data);
+                    }
+                    else if (data.type === "global_error") {
+                        setGlobalError(data.message);
+                        setTimeout(() => setGlobalError(null), 8000);
+                    }
+                } catch (e) {
+                    console.error("Error parsing WS message", e);
+                }
+            };
+
+            ws.onclose = () => {
+                wsRef.current = null;
+            };
+
+            ws.onerror = (err) => {
+                // Ignore errors during close/cleanup
+                if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) return;
+                console.error("WebSocket error", err);
+                ws.close();
+            };
+        }, 100);
+
+    }, [token, user]); // REMOVED onNewJob, onJobUpdate from dependencies
+
     useEffect(() => {
         if (token) {
             fetchCrawlStatus();
@@ -82,149 +275,23 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
             .then(data => { if (data.crawling) setIsCrawling(true); })
             .catch(() => { });
 
-        const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
+        connectWebSocket();
 
-            if (data.type === "crawl_job_started") {
-                if (data.user_id === user?.id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.job_id);
-                        return new Map(prev).set(data.job_id, {
-                            ...existing,
-                            job_id: data.job_id,
-                            platform: data.platform,
-                            total: existing?.total || 0,
-                            scraping_completed: existing?.scraping_completed || 0,
-                            analysis_completed: existing?.analysis_completed || 0,
-                            status: 'starting'
-                        });
-                    });
-                    setIsCrawling(true);
-                }
+        return () => {
+            // Cancel any pending connection attempt
+            if (connectionTimerRef.current) {
+                clearTimeout(connectionTimerRef.current);
+                connectionTimerRef.current = null;
             }
-            else if (data.type === "crawl_job_progress") {
-                if (data.user_id === user?.id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.job_id);
-                        return new Map(prev).set(data.job_id, {
-                            ...existing,
-                            job_id: data.job_id,
-                            platform: data.platform,
-                            total: data.total,
-                            scraping_completed: data.scraping_completed,
-                            analysis_completed: existing?.analysis_completed || 0,
-                            status: 'crawling'
-                        });
-                    });
-                }
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
             }
-            else if (data.type === "job_analysis_started") {
-                if (data.user_id === user?.id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.job_id);
-                        if (existing) {
-                            const analyzingJobs = existing.analyzing_jobs || [];
-                            const allJobTitles = existing.all_job_titles || [];
-
-                            const newAllJobTitles = allJobTitles.includes(data.job_title)
-                                ? allJobTitles
-                                : [...allJobTitles, data.job_title];
-
-                            return new Map(prev).set(data.job_id, {
-                                ...existing,
-                                current_job_title: data.job_title,
-                                analysis_completed: data.analysis_completed,
-                                analyzing_jobs: [...analyzingJobs, data.job_title],
-                                all_job_titles: newAllJobTitles
-                            });
-                        }
-                        return prev;
-                    });
-                }
-            }
-            else if (data.type === "job_analysis_finished") {
-                if (data.user_id === user?.id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.job_id);
-                        if (existing) {
-                            const analyzingJobs = (existing.analyzing_jobs || []).filter(
-                                title => title !== data.job_title
-                            );
-                            return new Map(prev).set(data.job_id, {
-                                ...existing,
-                                analyzing_jobs: analyzingJobs
-                            });
-                        }
-                        return prev;
-                    });
-                }
-            }
-            else if (data.type === "crawl_job_completed") {
-                if (data.user_id === user?.id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.job_id);
-                        if (existing) {
-                            return new Map(prev).set(data.job_id, {
-                                ...existing,
-                                show_success: true
-                            });
-                        }
-                        return prev;
-                    });
-
-                    setTimeout(() => {
-                        setActiveCrawls(prev => {
-                            const newMap = new Map(prev);
-                            newMap.delete(data.job_id);
-                            if (newMap.size === 0) {
-                                setIsCrawling(false);
-                            }
-                            return newMap;
-                        });
-                    }, 5000);
-
-                    // Signal parent to refresh? logic is handled via onNewJob implicitly or explicit fetch from parent?
-                    // The old code did `if (token) fetchJobs(true);` here.
-                    // We can use a callback or just expose a refresh need.
-                }
-            }
-            else if (data.type === "crawl_completed") {
-                setIsCrawling(false);
-                setActiveCrawls(new Map());
-            }
-            else if (data.type === "new_job") {
-                // Logic specific to aggregating new jobs...
-                if (onNewJob) onNewJob(data.job, data.crawl_job_id);
-
-                // Update counters
-                if (data.crawl_job_id) {
-                    setActiveCrawls(prev => {
-                        const existing = prev.get(data.crawl_job_id);
-                        if (existing) {
-                            const analyzingJobs = (existing.analyzing_jobs || []).filter(
-                                title => title !== data.job.title
-                            );
-                            return new Map(prev).set(data.crawl_job_id, {
-                                ...existing,
-                                jobs_saved: (existing.jobs_saved || 0) + 1,
-                                analyzing_jobs: analyzingJobs
-                            });
-                        }
-                        return prev;
-                    });
-                }
-            }
-            else if (data.type === "job_update") {
-                if (onJobUpdate) onJobUpdate(data);
-            }
-            else if (data.type === "global_error") {
-                setGlobalError(data.message);
-                setTimeout(() => setGlobalError(null), 8000);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
             }
         };
-        return () => ws.close();
-    }, [token, user]);
+    }, [token, user, fetchCrawlStatus, connectWebSocket]);
 
     return {
         isCrawling,
