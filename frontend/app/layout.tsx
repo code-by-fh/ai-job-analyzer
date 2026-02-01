@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { Suspense } from "react";
 import { AuthProvider } from "./components/AuthProvider";
 import { LanguageProvider } from "./components/LanguageProvider";
 import DashboardShell from "./components/DashboardShell";
@@ -33,9 +34,11 @@ export default function RootLayout({
       >
         <LanguageProvider>
           <AuthProvider>
-            <DashboardShell>
-              {children}
-            </DashboardShell>
+            <Suspense>
+              <DashboardShell>
+                {children}
+              </DashboardShell>
+            </Suspense>
           </AuthProvider>
         </LanguageProvider>
       </body>

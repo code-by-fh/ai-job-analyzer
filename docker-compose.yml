@@ -124,16 +124,16 @@ services:
       - ./ai-service:/app
       - /app/__pycache__
 
-  # frontend:
-  #   build: ./frontend
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://localhost:8002
-  #     - NEXT_PUBLIC_API_WS_URL=ws://localhost:8002/ws
-  #     - NEXT_PUBLIC_API_SCRAPER_URL=http://localhost:8001
-  #   depends_on:
-  #     - ai-api
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - APP_API_URL=http://localhost:8002
+      - APP_API_WS_URL=ws://localhost:8002/ws
+      - APP_API_SCRAPER_URL=http://localhost:8001
+    depends_on:
+      - ai-api
 
 volumes:
   db_data:

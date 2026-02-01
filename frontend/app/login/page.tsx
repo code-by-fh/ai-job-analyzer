@@ -85,6 +85,7 @@ export default function LoginPage() {
                             "
                             placeholder={t('username')}
                             required
+                            autoFocus
                         />
                     </div>
                     <div>
