@@ -24,6 +24,15 @@ if [ "$SERVICE_MODE" = "worker" ]; then
     fi
     exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
 
+elif [ "$SERVICE_MODE" = "beat" ]; then
+    echo "MODUS: BEAT erkannt."
+    echo "Starte Celery mit worker.py..."
+    if [ ! -f "worker.py" ]; then
+        echo "FEHLER: worker.py nicht gefunden!"
+        exit 1
+    fi
+    exec celery -A worker.celery_app beat --loglevel=info
+
 elif [ "$SERVICE_MODE" = "api" ]; then
     echo "MODUS: API erkannt."
     echo "Starte FastAPI..."
