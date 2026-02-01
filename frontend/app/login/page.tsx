@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import { useLanguage } from '../components/LanguageProvider';
+import PasswordInput from '../components/PasswordInput';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
@@ -88,18 +89,9 @@ export default function LoginPage() {
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5 ml-1">{t('secureKey')}</label>
-                        <input
-                            type="password"
+                        <PasswordInput
                             value={password}
                             onChange={e => setPassword(e.target.value)}
-                            className="
-                                w-full bg-slate-50 dark:bg-slate-950/50 
-                                border border-slate-200 dark:border-slate-800 
-                                text-slate-900 dark:text-white 
-                                rounded-xl px-4 py-2.5 
-                                focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 
-                                transition-all
-                            "
                             placeholder="••••••••"
                             required
                         />

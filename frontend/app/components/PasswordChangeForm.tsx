@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useLanguage } from './LanguageProvider';
+import PasswordInput from './PasswordInput';
 
 export default function PasswordChangeForm({ token }: { token: string | null }) {
     const { t } = useLanguage();
@@ -43,22 +44,18 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
     return (
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
             <div>
-                <input
-                    type="password"
+                <PasswordInput
                     placeholder={t('currentPassword')}
                     value={currentPassword}
                     onChange={e => setCurrentPassword(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
                     required
                 />
             </div>
             <div>
-                <input
-                    type="password"
+                <PasswordInput
                     placeholder={t('newPassword')}
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
                     required
                 />
             </div>

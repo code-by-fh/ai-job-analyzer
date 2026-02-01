@@ -164,7 +164,6 @@ export default function Home() {
 
   useEffect(() => {
     if (token) {
-      // fetchJobs is called by the other effect
       fetchCrawlStatus();
     }
 

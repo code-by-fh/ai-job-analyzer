@@ -2,6 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
+import PasswordInput from '../components/PasswordInput';
 import ConfirmModal from '../components/ConfirmModal';
 import DynamicList from '../components/DynamicList';
 import JobPlatformsManager from '../components/JobPlatformsManager';
@@ -525,12 +526,10 @@ export default function Settings() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">App Password</label>
-                    <input
+                    <PasswordInput
                       name="gmail_app_password"
-                      type="password"
                       value={formData.gmail_app_password}
                       onChange={handleChange}
-                      className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                       placeholder="xxxx xxxx xxxx xxxx"
                     />
                   </div>
@@ -545,20 +544,18 @@ export default function Settings() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">User Key</label>
-                    <input
+                    <PasswordInput
                       name="pushover_user_key"
                       value={formData.pushover_user_key}
                       onChange={handleChange}
-                      className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">API Token</label>
-                    <input
+                    <PasswordInput
                       name="pushover_api_token"
                       value={formData.pushover_api_token}
                       onChange={handleChange}
-                      className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                     />
                   </div>
                 </div>
