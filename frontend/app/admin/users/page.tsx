@@ -123,6 +123,7 @@ export default function AdminUsersPage() {
                         placeholder={t('username')}
                         value={newUsername} onChange={e => setNewUsername(e.target.value)}
                         required
+                        autoComplete="new-username"
                     />
                     <input
                         className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
@@ -130,6 +131,7 @@ export default function AdminUsersPage() {
                         placeholder={t('password')}
                         value={newPassword} onChange={e => setNewPassword(e.target.value)}
                         required
+                        autoComplete="new-password"
                     />
                     <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95 cursor-pointer">
                         {t('createUser')}
