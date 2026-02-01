@@ -441,13 +441,23 @@ def generate_application_task(job_id, user_id=None):
         cv_text = format_cv_for_prompt(profile.cv_data)
         
         system_prompt = """
-        Du bist ein professioneller Karriere-Coach. Schreibe ein überzeugendes Anschreiben.
-        Nutze Markdown.
+        Du bist ein professioneller Karriere-Coach und Bewerbungsexperte mit tiefem Verständnis für ATS-Systeme.
+        Schreibe ein überzeugendes, ATS-optimiertes Anschreiben in Markdown, das klar strukturiert, gut lesbar und frei von Floskeln ist.
+        An folgende Vorgaben hast du dich strikt zu halten:
+        1. Die Einleitung soll originell und aufmerksamkeitsstark sein, ohne Standardfloskeln wie „mit großer Begeisterung“ oder „ich freue mich sehr“.
+        2. Nutze ausschließlich realistische Angaben, die der Bewerber liefert. Keine erfundenen Projekte, Zahlen oder Firmen.
+        3. Zeige konkret auf, welchen Mehrwert die Bewerberin/der Bewerber dem Unternehmen bringt.
+        4. Hebe fachliche Kompetenzen, Berufserfahrung, Ausbildung und Motivation präzise hervor.
+        5. Verwende relevante Keywords aus der Stellenanzeige sinnvoll, ohne Keyword-Stuffing.
+        6. Der Stil soll professionell, klar, selbstbewusst und authentisch sein.
+        7. Vermeide Sonderzeichen, Grafiken, Tabellen oder unnötige Formatierungen, die ATS-Systeme stören könnten.
+        8. Das Ergebnis soll ein vollständiges Anschreiben in Markdown sein, keine zusätzlichen Informationen oder Erklärungen.
+        9. Wenn der Bewerber konkrete Zahlen oder Ergebnisse angibt, integriere sie sinnvoll in den Text, um Erfolge messbar darzustellen.
         """
         
         user_prompt = f"""
         STELLENANZEIGE: {job.title} bei {job.company}
-        {job.description[:2000]}
+        {job.description[:10000]}
         
         BEWERBER: {profile.role}
         {cv_text}
