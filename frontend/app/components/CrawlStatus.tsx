@@ -8,6 +8,7 @@ export interface CrawlJob {
     scraping_completed: number;
     analysis_completed: number;
     jobs_saved?: number;
+    jobs_skipped?: number;
     status: string;
     started_at?: string;
     current_job_title?: string;
@@ -176,12 +177,17 @@ export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
                                 <div className="flex flex-col flex-1">
                                     <span className={`text-sm ${isAnalyzing && !isAnalysisDone ? 'font-medium text-amber-600 dark:text-amber-400' : isAnalysisDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
                                         {isAnalyzing && !isAnalysisDone
-                                            ? t('analyzingCount', { count: job.jobs_saved || 0, total: job.total })
+                                            ? t('analyzingCount', { count: (job?.jobs_saved ?? 0) + (job?.jobs_skipped ?? 0), total: job.total })
                                             : isAnalysisDone
                                                 ? t('analyzingCount', { count: job.total, total: job.total })
                                                 : t('analysis')
                                         }
                                     </span>
+                                    {(job?.jobs_skipped ?? 0) > 0 && (
+                                        <span className="text-xs text-slate-400 ml-1">
+                                            ({job.jobs_skipped} Skipped)
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 

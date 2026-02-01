@@ -126,6 +126,8 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
                                     total: existing?.total || 0,
                                     scraping_completed: existing?.scraping_completed || 0,
                                     analysis_completed: existing?.analysis_completed || 0,
+                                    jobs_saved: existing?.jobs_saved || 0,
+                                    jobs_skipped: existing?.jobs_skipped || 0,
                                     status: 'starting'
                                 });
                             });
@@ -217,6 +219,24 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
                     else if (data.type === "crawl_completed") {
                         setIsCrawling(false);
                         setActiveCrawls(new Map());
+                    }
+                    else if (data.type === "job_skipped") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    const analyzingJobs = (existing.analyzing_jobs || []).filter(
+                                        title => title !== data.job_title
+                                    );
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        jobs_skipped: (existing.jobs_skipped || 0) + 1,
+                                        analyzing_jobs: analyzingJobs
+                                    });
+                                }
+                                return prev;
+                            });
+                        }
                     }
                     else if (data.type === "new_job") {
                         if (onNewJobRef.current) onNewJobRef.current(data.job, data.crawl_job_id);

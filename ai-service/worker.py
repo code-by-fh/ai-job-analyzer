@@ -220,6 +220,37 @@ def analyze_job_task(job_data):
     try:
         if db.query(JobEntry).filter(JobEntry.id == job_data['id']).first():
             logger.info(f"Job {job_id} already exists in database. Skipping analysis.")
+            
+            if crawl_job_id:
+                # Increment skipped counter
+                jobs_skipped = int(r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_skipped", 1))
+                
+                # Notify frontend about skipped job
+                r.publish("job_updates", json.dumps({
+                    "type": "job_skipped",
+                    "job_id": crawl_job_id,
+                    "user_id": user_id,
+                    "job_title": job_title,
+                    "jobs_skipped": jobs_skipped
+                }))
+                
+                # Check completion
+                job_hash = r.hgetall(f"crawl_job:{crawl_job_id}")
+                if job_hash:
+                    total = int(job_hash.get(b"total", 0))
+                    jobs_saved = int(job_hash.get(b"jobs_saved", 0))
+                    # Check if all jobs are accounted for (saved + skipped)
+                    if (jobs_saved + jobs_skipped) >= total and total > 0:
+                        logger.info(f"All jobs processed (some skipped) for crawl {crawl_job_id}. Marking as completed.")
+                        r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
+                        r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
+                        r.delete("system:crawling")
+                        r.publish("job_updates", json.dumps({
+                            "type": "crawl_job_completed",
+                            "job_id": crawl_job_id,
+                            "user_id": user_id
+                        }))
+                        r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
         
         # Determine profile to use (User Specific or Admin/Default)
@@ -331,10 +362,10 @@ def analyze_job_task(job_data):
             job_hash = r.hgetall(f"crawl_job:{crawl_job_id}")
             if job_hash:
                 total = int(job_hash.get(b"total", 0))
-                jobs_saved = int(job_hash.get(b"jobs_saved", 0))
+                jobs_skipped = int(job_hash.get(b"jobs_skipped", 0))
                 
                 # Check if all jobs are saved (new_job events sent)
-                if jobs_saved >= total and total > 0:
+                if (jobs_saved + jobs_skipped) >= total and total > 0:
                     logger.info(f"All jobs analyzed for crawl {crawl_job_id}. Marking as completed.")
                     r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                     r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
