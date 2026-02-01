@@ -129,9 +129,13 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - APP_PREFIX=APP_
+      - ASSET_DIR=./.next/static
       - APP_API_URL=http://localhost:8002
-      - APP_API_WS_URL=ws://localhost:8002/ws
+      - APP_API_WS_URL=ws://localhost:8002
       - APP_API_SCRAPER_URL=http://localhost:8001
+    container_name: frontend
+    hostname: frontend
     depends_on:
       - ai-api
 

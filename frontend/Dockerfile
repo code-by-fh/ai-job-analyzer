@@ -26,10 +26,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-
-ENV APP_PREFIX=APP_
-ENV ASSET_DIR=./.next/static
-
 COPY env.sh /docker-entrypoint.sh
 RUN dos2unix /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
