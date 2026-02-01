@@ -181,39 +181,51 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
 
     return (
         <div className="fixed inset-0 z-[100] pointer-events-none">
-            {/* Spotlight Backdrop */}
-            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] pointer-events-auto transition-opacity duration-500">
-                {targetRect && (
-                    <svg className="absolute inset-0 w-full h-full">
-                        <defs>
-                            <mask id="spotlight-mask">
-                                <rect x="0" y="0" width="100%" height="100%" fill="white" />
-                                <rect
-                                    x={targetRect.left - 8}
-                                    y={targetRect.top - 8}
-                                    width={targetRect.width + 16}
-                                    height={targetRect.height + 16}
-                                    rx="12"
-                                    fill="black"
-                                    className="transition-all duration-500"
-                                />
-                            </mask>
-                        </defs>
-                        <rect x="0" y="0" width="100%" height="100%" fill="black" opacity="0.1" mask="url(#spotlight-mask)" />
-                        <rect
-                            x={targetRect.left - 8}
-                            y={targetRect.top - 8}
-                            width={targetRect.width + 16}
-                            height={targetRect.height + 16}
-                            rx="12"
-                            fill="none"
-                            stroke="rgba(99, 102, 241, 0.5)"
-                            strokeWidth="2"
-                            className="transition-all duration-500 animate-pulse"
-                        />
-                    </svg>
-                )}
-            </div>
+            {/* Mask Definition */}
+            <svg className="absolute w-0 h-0">
+                <defs>
+                    <mask id="spotlight-mask">
+                        <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                        {targetRect && (
+                            <rect
+                                x={targetRect.left - 8}
+                                y={targetRect.top - 8}
+                                width={targetRect.width + 16}
+                                height={targetRect.height + 16}
+                                rx="12"
+                                fill="black"
+                                className="transition-all duration-500"
+                            />
+                        )}
+                    </mask>
+                </defs>
+            </svg>
+
+            {/* Backdrop with Blur - Masked to create hole */}
+            <div
+                className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] pointer-events-auto transition-opacity duration-500"
+                style={{
+                    maskImage: 'url(#spotlight-mask)',
+                    WebkitMaskImage: 'url(#spotlight-mask)',
+                }}
+            />
+
+            {/* Spotlight Border */}
+            {targetRect && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+                    <rect
+                        x={targetRect.left - 8}
+                        y={targetRect.top - 8}
+                        width={targetRect.width + 16}
+                        height={targetRect.height + 16}
+                        rx="12"
+                        fill="none"
+                        stroke="rgba(99, 102, 241, 0.5)"
+                        strokeWidth="2"
+                        className="transition-all duration-500 animate-pulse"
+                    />
+                </svg>
+            )}
 
             {/* Content Bubble */}
             <div
