@@ -9,11 +9,11 @@ import LanguageToggler from './LanguageToggler';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import TutorialModal from './TutorialModal';
+import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS } from '../lib/navigation';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const isApplicationsFilter = searchParams.get('filter') === 'applications';
     const isLoginPage = pathname === '/login';
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -32,6 +32,23 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const handleCloseTutorial = () => {
         localStorage.setItem('hasSeenTutorial', 'true');
         setShowTutorial(false);
+    };
+
+    const isActive = (item: typeof MAIN_NAV_ITEMS[0]) => {
+        const itemPath = item.href.split('?')[0];
+        if (item.matchType === 'startsWith') {
+            return pathname.startsWith(itemPath);
+        }
+        if (pathname !== itemPath) return false;
+
+        if (item.filterParam !== undefined) {
+            const currentFilter = searchParams.get('filter');
+            if (item.filterParam === null) {
+                return currentFilter !== 'applications';
+            }
+            return currentFilter === item.filterParam;
+        }
+        return true;
     };
 
     // If it's the login page, render clean layout without dashboard chrome
@@ -76,15 +93,26 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 </div>
 
                 <nav id="sidebar-nav" className="flex-1 px-4 py-4 space-y-1">
-                    <NavLink href="/" icon="🏠" label={t('dashboard')} active={pathname === '/' && !isApplicationsFilter} collapsed={sidebarCollapsed} />
-                    <NavLink href="/?filter=applications" icon="📁" label={t('applications')} active={pathname === '/' && isApplicationsFilter} collapsed={sidebarCollapsed} />
-                    <NavLink href="/settings" icon="⚙️" label={t('settings')} active={pathname === '/settings'} collapsed={sidebarCollapsed} />
-                    {user?.is_admin && (
-                        <>
-                            <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers') || "Users"} active={pathname.startsWith('/admin/users')} collapsed={sidebarCollapsed} />
-                            <NavLink href="/admin/settings" icon="🔧" label="System Settings" active={pathname.startsWith('/admin/settings')} collapsed={sidebarCollapsed} />
-                        </>
-                    )}
+                    {MAIN_NAV_ITEMS.map(item => (
+                        <NavLink
+                            key={item.href}
+                            href={item.href}
+                            icon={item.icon}
+                            label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
+                            active={isActive(item)}
+                            collapsed={sidebarCollapsed}
+                        />
+                    ))}
+                    {user?.is_admin && ADMIN_NAV_ITEMS.map(item => (
+                        <NavLink
+                            key={item.href}
+                            href={item.href}
+                            icon={item.icon}
+                            label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
+                            active={isActive(item)}
+                            collapsed={sidebarCollapsed}
+                        />
+                    ))}
                 </nav>
 
                 <div className="p-4 border-t border-slate-200 dark:border-slate-800">
@@ -134,12 +162,26 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             {mobileMenuOpen && (
                 <div className="md:hidden fixed inset-0 z-40 bg-slate-50 dark:bg-slate-950 pt-16 px-6 pb-6 animate-in fade-in slide-in-from-top-10 duration-200">
                     <nav className="flex flex-col space-y-4">
-                        <NavLink href="/" icon="🏠" label={t('dashboard')} active={pathname === '/' && !isApplicationsFilter} onClick={() => setMobileMenuOpen(false)} />
-                        <NavLink href="/?filter=applications" icon="📁" label={t('applications')} active={pathname === '/' && isApplicationsFilter} onClick={() => setMobileMenuOpen(false)} />
-                        <NavLink href="/settings" icon="⚙️" label={t('settings')} active={pathname === '/settings'} onClick={() => setMobileMenuOpen(false)} />
-                        {user?.is_admin && (
-                            <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers')} active={pathname.startsWith('/admin')} onClick={() => setMobileMenuOpen(false)} />
-                        )}
+                        {MAIN_NAV_ITEMS.map(item => (
+                            <NavLink
+                                key={item.href}
+                                href={item.href}
+                                icon={item.icon}
+                                label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
+                                active={isActive(item)}
+                                onClick={() => setMobileMenuOpen(false)}
+                            />
+                        ))}
+                        {user?.is_admin && ADMIN_NAV_ITEMS.map(item => (
+                            <NavLink
+                                key={item.href}
+                                href={item.href}
+                                icon={item.icon}
+                                label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
+                                active={isActive(item)}
+                                onClick={() => setMobileMenuOpen(false)}
+                            />
+                        ))}
                         <div className="pt-8 border-t border-slate-200 dark:border-slate-800 space-y-4">
                             <UserMenu onShowTutorial={() => setShowTutorial(true)} />
                         </div>

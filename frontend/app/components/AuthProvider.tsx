@@ -9,7 +9,7 @@ interface User {
     is_profile_complete?: boolean;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
     user: User | null;
     token: string | null;
     login: (token: string) => void;
