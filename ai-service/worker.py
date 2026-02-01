@@ -88,8 +88,7 @@ def send_notification(job, profile):
                 <p>{job.reasoning}</p>
                 <hr>
                 <p>
-                  <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3000')}">View in App</a> | 
-                  <a href="{job.url}">Original Job Post</a>
+                  <a href="{job.url}">Hier Details anschauen</a>
                 </p>
               </body>
             </html>
@@ -113,10 +112,10 @@ def send_notification(job, profile):
             payload = {
                 "token": profile.pushover_api_token,
                 "user": profile.pushover_user_key,
-                "title": f"New Match: {job.title}",
+                "title": f"{job.title}",
                 "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
-                "url": os.getenv('FRONTEND_URL', 'http://localhost:3000'),
-                "url_title": "Open App"
+                "url": job.url,
+                "url_title": "Hier Details anschauen"
             }
             
             resp = requests.post("https://api.pushover.net/1/messages.json", data=payload, timeout=10)
