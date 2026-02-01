@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface User {
@@ -32,20 +32,16 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(null);
-    // Avoid running effect on server? It is use client, but better check window.
     const router = useRouter();
 
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const storedToken = localStorage.getItem('token');
-            if (storedToken) {
-                setToken(storedToken);
-                fetchUser(storedToken);
-            }
-        }
-    }, []);
+    const logout = useCallback(() => {
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
+        router.push('/login');
+    }, [router]);
 
-    const fetchUser = async (authToken: string) => {
+    const fetchUserWithLogout = useCallback(async (authToken: string) => {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
@@ -53,7 +49,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             if (res.ok) {
                 const userData = await res.json();
 
-                // Check profile completeness
                 let is_profile_complete = false;
                 try {
                     const resSettings = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
@@ -61,7 +56,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     });
                     if (resSettings.ok) {
                         const settingsData = await resSettings.json();
-                        // Profile is considered complete if a role is defined
                         if (settingsData.role && settingsData.role.trim().length > 0) {
                             is_profile_complete = true;
                         }
@@ -79,30 +73,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             console.error("Fetch user failed", e);
             logout();
         }
-    };
+    }, [logout]);
 
-    const login = (newToken: string) => {
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedToken = localStorage.getItem('token');
+            if (storedToken) {
+                setToken(storedToken);
+                fetchUserWithLogout(storedToken);
+            }
+        }
+    }, [fetchUserWithLogout]);
+
+    const login = useCallback((newToken: string) => {
         localStorage.setItem('token', newToken);
         setToken(newToken);
-        fetchUser(newToken);
+        fetchUserWithLogout(newToken);
         router.push('/');
-    };
+    }, [fetchUserWithLogout, router]);
 
-    const logout = () => {
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
-        router.push('/login');
-    };
-
-    const refreshUser = async () => {
+    const refreshUser = useCallback(async () => {
         if (token) {
-            await fetchUser(token);
+            await fetchUserWithLogout(token);
         }
-    };
+    }, [token, fetchUserWithLogout]);
+
+    const contextValue = useMemo(() => ({
+        user,
+        token,
+        login,
+        logout,
+        isAuthenticated: !!user,
+        refreshUser
+    }), [user, token, login, logout, refreshUser]);
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user, refreshUser }}>
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

@@ -522,6 +522,7 @@ export default function Settings() {
                       onChange={handleChange}
                       className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                       placeholder="example@gmail.com"
+                      autoComplete="new-password"
                     />
                   </div>
                   <div>
@@ -531,6 +532,7 @@ export default function Settings() {
                       value={formData.gmail_app_password}
                       onChange={handleChange}
                       placeholder="xxxx xxxx xxxx xxxx"
+                      autoComplete="new-password"
                     />
                   </div>
                 </div>

@@ -244,7 +244,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 setQuery={setQuery}
                 onSearch={startSearch}
                 isCrawling={isCrawling}
-                isProfileComplete={user?.is_profile_complete}
+                isProfileComplete={!!user?.is_profile_complete}
+                headlineMsgkey="jobIntelligence"
             />
 
             {/* GLOBAL ERROR BANNER */}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLanguage } from './LanguageProvider';
+import { TranslationKey } from '../lib/languages';
 
 interface SearchHeaderProps {
     jobCount: number;
@@ -8,6 +9,7 @@ interface SearchHeaderProps {
     onSearch: () => void;
     isCrawling: boolean;
     isProfileComplete?: boolean;
+    headlineMsgkey: TranslationKey;
 }
 
 export default function SearchHeader({
@@ -16,7 +18,8 @@ export default function SearchHeader({
     setQuery,
     onSearch,
     isCrawling,
-    isProfileComplete
+    isProfileComplete,
+    headlineMsgkey
 }: SearchHeaderProps) {
     const { t } = useLanguage();
 
@@ -24,7 +27,7 @@ export default function SearchHeader({
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800/50">
             <div>
                 <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
-                    {t('jobIntelligence')}
+                    {t(headlineMsgkey)}
                 </h1>
                 <p className="text-slate-500 dark:text-slate-400 mt-1">
                     {jobCount} {t('opportunitiesDetected')}

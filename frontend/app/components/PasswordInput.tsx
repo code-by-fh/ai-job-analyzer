@@ -20,6 +20,7 @@ export default function PasswordInput({
                 type={showPassword ? 'text' : 'password'}
                 value={value}
                 onChange={onChange}
+                autoComplete="new-password"
                 className={`
                     w-full bg-slate-50 dark:bg-slate-950/50 
                     border border-slate-200 dark:border-slate-800 
