@@ -7,7 +7,7 @@ from openai import OpenAI
 from pypdf import PdfReader
 import redis
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData, JobPlatform
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, JobPlatform, SystemSettings
 import smtplib
 import ssl
 from email.mime.text import MIMEText
@@ -28,6 +28,16 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENAI_API_KEY"),
 )
+
+def get_current_model():
+    db = SessionLocal()
+    try:
+        settings = db.query(SystemSettings).first()
+        return settings.openrouter_model if settings else "tngtech/deepseek-r1t2-chimera:free"
+    except Exception:
+        return "tngtech/deepseek-r1t2-chimera:free"
+    finally:
+        db.close()
 
 
 def format_cv_for_prompt(cv_json):
@@ -155,8 +165,9 @@ def filter_urls_task(args):
         Du bist ein Crawler-Filter. Analysiere den gesamten Text und gib ein JSON Array mit ALLEN relevanten Job-Detail-URLs zurück. Gib NUR das Array zurück.
         Beispiel-Output: ["https://firma.de/jobs/entwickler-123", "https://firma.de/career/marketing-manager"]
         """
+        model = get_current_model()
         response = client.chat.completions.create(
-            model="deepseek/deepseek-v3.2",
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Basis: {base_url}. Liste: {json.dumps(urls_list)}"}
@@ -228,8 +239,9 @@ def analyze_job_task(job_data):
             profile_str = "Python Dev"
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
+        model = get_current_model()
         response = client.chat.completions.create(
-            model="deepseek/deepseek-v3.2", 
+            model=model, 
             messages=[
                 {"role": "system", "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }"}, 
                 {"role": "user", "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}"}
@@ -411,8 +423,9 @@ def generate_application_task(job_id, user_id=None):
         """
 
         logger.info("⏳ Sende Anfrage an OpenAI für Anschreiben...")
+        model = get_current_model()
         response = client.chat.completions.create(
-            model="deepseek/deepseek-v3.2", 
+            model=model, 
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.7
         )

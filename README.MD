@@ -107,6 +107,18 @@ After starting, the services are available at the following addresses:
 4.  Let the AI perform an analysis to see how well the job fits your profile.
 5.  Generate a draft for your cover letter with one click.
 
+## ⚙️ Administration
+
+### OpenRouter Model Configuration
+The application allows the admin user to configure the OpenRouter model used for all AI operations (Scraping, Analysis, Application Generation).
+
+1.  **Log in** as an administrator.
+2.  Navigate to **System Settings** via the sidebar or user menu.
+3.  Enter the desired **OpenRouter Model ID** (e.g., `anthropic/claude-3-opus`, `openai/gpt-4`).
+4.  **Save** the configuration.
+
+*Default Model: `tngtech/deepseek-r1t2-chimera:free`*
+
 ## 🤝 Development
 
 For local development, the services can also be started individually.

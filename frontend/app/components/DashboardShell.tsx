@@ -80,7 +80,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     <NavLink href="/?filter=applications" icon="📁" label={t('applications')} active={pathname === '/' && isApplicationsFilter} collapsed={sidebarCollapsed} />
                     <NavLink href="/settings" icon="⚙️" label={t('settings')} active={pathname === '/settings'} collapsed={sidebarCollapsed} />
                     {user?.is_admin && (
-                        <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers')} active={pathname.startsWith('/admin')} collapsed={sidebarCollapsed} />
+                        <>
+                            <NavLink href="/admin/users" icon="🛡️" label={t('adminUsers') || "Users"} active={pathname.startsWith('/admin/users')} collapsed={sidebarCollapsed} />
+                            <NavLink href="/admin/settings" icon="🔧" label="System Settings" active={pathname.startsWith('/admin/settings')} collapsed={sidebarCollapsed} />
+                        </>
                     )}
                 </nav>
 
@@ -92,7 +95,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             </div>
                             <button
                                 onClick={() => setSidebarCollapsed(true)}
-                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
+                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0 cursor-pointer"
                                 title={t('collapseSidebar')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">

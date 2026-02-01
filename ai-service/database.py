@@ -58,6 +58,12 @@ class UserProfile(Base):
     pushover_api_token = Column(String, nullable=True)
     active_notification_service = Column(String, default="NONE") # NONE, GMAIL, PUSHOVER
 
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True)
+    openrouter_model = Column(String, default="tngtech/deepseek-r1t2-chimera:free")
+
+
 class JobPlatform(Base):
     __tablename__ = "job_platforms"
     id = Column(Integer, primary_key=True, index=True)

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 import requests
 
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User, JobPlatform, PlatformCreate, PlatformUpdate, PlatformResponse
+from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User, JobPlatform, PlatformCreate, PlatformUpdate, PlatformResponse, SystemSettings, engine, Base
 from auth import (
     create_access_token,
     get_current_user,
@@ -38,6 +38,22 @@ from datetime import timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Dynamic Client helpers
+def get_current_model(db: Session = None):
+    # If db is provided, use it. Otherwise create new session.
+    local_db = False
+    if not db:
+        db = SessionLocal()
+        local_db = True
+    try:
+        settings = db.query(SystemSettings).first()
+        return settings.openrouter_model if settings else "tngtech/deepseek-r1t2-chimera:free"
+    except Exception:
+        return "tngtech/deepseek-r1t2-chimera:free"
+    finally:
+        if local_db:
+            db.close()
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -103,6 +119,13 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starte Redis Listener Task...")
     task = asyncio.create_task(redis_listener())
     
+    # Ensure Tables Exist
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Checked/Created Database Tables")
+    except Exception as e:
+        logger.error(f"Error creating tables: {e}")
+    
     # Create Default Admin
     db = SessionLocal()
     try:
@@ -143,6 +166,35 @@ def extract_text_from_pdf(file_bytes):
         logger.error(f"PDF Read Error: {e}")
         return ""
 
+class SystemSettingsUpdate(BaseModel):
+    openrouter_model: str
+
+@app.get("/admin/settings")
+def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
+    db = SessionLocal()
+    try:
+        settings = db.query(SystemSettings).first()
+        if not settings:
+            return {"openrouter_model": "tngtech/deepseek-r1t2-chimera:free"}
+        return {"openrouter_model": settings.openrouter_model}
+    finally:
+        db.close()
+
+@app.post("/admin/settings")
+def update_admin_settings(settings: SystemSettingsUpdate, current_user: User = Depends(get_current_admin_user)):
+    db = SessionLocal()
+    try:
+        db_settings = db.query(SystemSettings).first()
+        if not db_settings:
+            db_settings = SystemSettings(openrouter_model=settings.openrouter_model)
+            db.add(db_settings)
+        else:
+            db_settings.openrouter_model = settings.openrouter_model
+        db.commit()
+        return {"status": "updated", "openrouter_model": db_settings.openrouter_model}
+    finally:
+        db.close()
+
 def parse_cv_with_ai(cv_text):
     system_prompt = """
     Du bist ein Daten-Extraktions-Assistent. 
@@ -171,8 +223,10 @@ def parse_cv_with_ai(cv_text):
     user_prompt = f"Hier ist der Lebenslauf:\n\n{cv_text}"
 
     try:
+        model = get_current_model()
+        logger.info(f"Using Model for CV Parse: {model}")
         response = client.chat.completions.create(
-            model="deepseek/deepseek-v3.2",
+            model=model,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0
         )
