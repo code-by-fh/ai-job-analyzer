@@ -104,11 +104,23 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     // Sync filterType with URL search params
     useEffect(() => {
         const urlFilter = searchParams.get('filter');
-        const target = urlFilter === 'applications' ? 'applications' : 'all';
+        const validFilters = ['all', 'favorite', 'no_favorite', 'applications'];
+        const target = validFilters.includes(urlFilter || '') ? (urlFilter as any) : 'all';
+
         if (filterType !== target) {
             setFilterType(target);
         }
     }, [searchParams, filterType]);
+
+    // Handle filter change by updating URL
+    const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
+        if (newFilter === 'all') {
+            router.push('/');
+        } else {
+            router.push(`/?filter=${newFilter}`);
+        }
+        setFilterType(newFilter);
+    };
 
     // Redirect if not logged in
     useEffect(() => {
@@ -266,7 +278,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
             <FilterBar
                 filterType={filterType}
-                setFilterType={setFilterType}
+                setFilterType={handleFilterChange}
                 sortBy={sortBy}
                 setSortBy={setSortBy}
             />
