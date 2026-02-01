@@ -9,7 +9,7 @@ celery_app = Celery(
 
 celery_app.conf.beat_schedule = {
     'check-crawls-every-5-min': {
-        'task': 'ai.check_periodic_crawls',
+        'task': 'ai.check_platforms_for_crawl',
         'schedule': 300.0, # 5 minutes
     },
 }
