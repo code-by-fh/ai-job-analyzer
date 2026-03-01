@@ -15,38 +15,5 @@ echo "Gelesene Variable SERVICE_MODE: '$SERVICE_MODE'"
 echo "Running Database Migrations..."
 alembic upgrade head || echo "Migrations skipped (oder nicht konfiguriert)"
 
-if [ "$SERVICE_MODE" = "worker" ]; then
-    echo "MODUS: WORKER erkannt."
-    echo "Starte Celery mit worker.py..."
-    if [ ! -f "worker.py" ]; then
-        echo "FEHLER: worker.py nicht gefunden!"
-        exit 1
-    fi
-    exec celery -A worker.celery_app worker --loglevel=info --concurrency=4 -Q ai_queue
-
-elif [ "$SERVICE_MODE" = "beat" ]; then
-    echo "MODUS: BEAT erkannt."
-    echo "Starte Celery mit worker.py..."
-    if [ ! -f "worker.py" ]; then
-        echo "FEHLER: worker.py nicht gefunden!"
-        exit 1
-    fi
-    exec celery -A worker.celery_app beat --loglevel=info
-
-elif [ "$SERVICE_MODE" = "api" ]; then
-    echo "MODUS: API erkannt."
-    echo "Starte FastAPI..."
-    exec uvicorn api:app --host 0.0.0.0 --port 80
-
-else
-    echo "WARNUNG: Kein gültiger SERVICE_MODE gesetzt (Wert ist leer oder falsch)."
-    echo "Fallback: Führe übergebene Argumente aus: $@"
-    
-    if [ -z "$1" ]; then
-        echo "FEHLER: Weder SERVICE_MODE gesetzt noch Argumente übergeben."
-        echo "Der Container weiß nicht, was er tun soll."
-        echo "Bitte setze SERVICE_MODE=worker oder SERVICE_MODE=api in CapRover."
-        exit 1
-    fi
-    exec "$@"
-fi
+echo "Starte Supervisord..."
+exec supervisord -c supervisord.conf

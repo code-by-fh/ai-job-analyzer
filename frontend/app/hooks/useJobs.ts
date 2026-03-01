@@ -6,22 +6,21 @@ interface UseJobsProps {
     token: string | null;
     logout: () => void;
     filterType: 'all' | 'favorite' | 'no_favorite' | 'applications';
+    initialJobs?: Job[];
 }
 
-export function useJobs({ token, logout, filterType }: UseJobsProps) {
-    const [jobs, setJobs] = useState<Job[]>([]);
-    // Use refs for value that shouldn't trigger re-creation of fetchJobs
-    // but are needed inside it.
-    const offsetRef = useRef(0);
-    // hasMoreRef to track logic internally without creating dependency loops
+export function useJobs({ token, logout, filterType, initialJobs }: UseJobsProps) {
+    const [jobs, setJobs] = useState<Job[]>(initialJobs || []);
+
+    const offsetRef = useRef(initialJobs ? 10 : 0);
     const hasMoreRef = useRef(true);
 
-    // UI state that mirrors refs where needed for rendering
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [globalError, setGlobalError] = useState<string | null>(null);
     const [jobToDelete, setJobToDelete] = useState<string | null>(null);
     const limit = 10;
+
 
     const fetchJobs = useCallback(async (reset = false) => {
         if (!token) return;
@@ -71,10 +70,16 @@ export function useJobs({ token, logout, filterType }: UseJobsProps) {
         } finally {
             setIsLoadingMore(false);
         }
-    }, [token, filterType, logout]); // Removed dependencies on offset/hasMore state
+    }, [token, filterType, logout]);
 
     useEffect(() => {
         if (token) {
+            const isInitialMount = offsetRef.current === (initialJobs ? 10 : 0);
+
+            if (isInitialMount && ((initialJobs && initialJobs.length > 0))) {
+                return;
+            }
+
             fetchJobs(true);
         }
     }, [token, filterType, fetchJobs]);

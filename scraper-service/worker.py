@@ -17,11 +17,10 @@ from celery_config import celery_app, REDIS_URL
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
 
 def get_html_with_browser(url):
     logger.info(f"Launching browser for URL: {url}")
@@ -29,24 +28,30 @@ def get_html_with_browser(url):
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+            ],
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080}
+            viewport={"width": 1920, "height": 1080},
         )
         page = context.new_page()
         try:
             logger.info(f"Navigating to {url}...")
             page.goto(url, timeout=60000, wait_until="domcontentloaded")
-            
+
             sleep_time = random.uniform(2, 4)
             logger.info(f"Waiting {sleep_time:.2f}s for dynamic content...")
             time.sleep(sleep_time)
-            
+
             content = page.content()
             duration = time.time() - start_time
-            logger.info(f"Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s")
+            logger.info(
+                f"Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s"
+            )
             return content
         except Exception as e:
             logger.error(f"Playwright Error fetching {url}: {e}", exc_info=True)
@@ -55,25 +60,47 @@ def get_html_with_browser(url):
             browser.close()
             logger.info("Browser closed.")
 
+
 def get_clean_content(html):
     import markdownify
     import re
+
     try:
-        soup = BeautifulSoup(html, 'html.parser')
-        
+        soup = BeautifulSoup(html, "html.parser")
+
         # Radikales Entfernen von Noise
-        for tag in soup(["script", "style", "nav", "footer", "header", "iframe", "noscript", "button", "form"]):
+        for tag in soup(
+            [
+                "script",
+                "style",
+                "nav",
+                "footer",
+                "header",
+                "iframe",
+                "noscript",
+                "button",
+                "form",
+            ]
+        ):
             tag.decompose()
 
-        for text_junk in ["Cookies", "Privatsphäre", "Datenschutz", "consent", "Partner"]:
+        for text_junk in [
+            "Cookies",
+            "Privatsphäre",
+            "Datenschutz",
+            "consent",
+            "Partner",
+        ]:
             for element in soup.find_all(text=re.compile(text_junk, re.I)):
-                parent = element.find_parent(['div', 'section'])
+                parent = element.find_parent(["div", "section"])
                 if parent:
                     parent.decompose()
 
-        text = markdownify.markdownify(str(soup), heading_style="ATX", strip=['img', 'a'])
-        
-        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = markdownify.markdownify(
+            str(soup), heading_style="ATX", strip=["img", "a"]
+        )
+
+        text = re.sub(r"\n{3,}", "\n\n", text)
         clean_text = text.strip()
         logger.debug(f"Cleaned content length: {len(clean_text)} chars")
         return clean_text
@@ -84,66 +111,85 @@ def get_clean_content(html):
 
 @celery_app.task(name="scraper.fetch_links")
 def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
-    logger.info(f"[TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})")
-    
+    logger.info(
+        f"[TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})"
+    )
+
     r = redis.from_url(REDIS_URL)
-    
+
     try:
         if job_id:
             r.hset(f"crawl_job:{job_id}", "status", "fetching_links")
-            r.publish("job_updates", json.dumps({
-                "type": "crawl_job_started",
-                "job_id": job_id,
-                "user_id": user_id,
-                "platform": start_url
-            }))
-        
+            r.publish(
+                "job_updates",
+                json.dumps(
+                    {
+                        "type": "crawl_job_started",
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "platform": start_url,
+                    }
+                ),
+            )
+
         r.setex("system:crawling", 600, "true")
-        
+
         html = get_html_with_browser(start_url)
         if not html:
             logger.warning(f"Failed to fetch content from {start_url}. Aborting crawl.")
             if job_id:
-                from api import cleanup_crawl_job
-                cleanup_crawl_job(job_id, user_id, reason="error")
+                from api import fail_crawl_job
+
+                fail_crawl_job(
+                    job_id,
+                    user_id,
+                    error_message=f"Failed to fetch content from {start_url}",
+                )
             else:
                 r.delete("system:crawling")
                 r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return None
 
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "html.parser")
         all_links = set()
         base_domain = urlparse(start_url).netloc
-        
-        for a in soup.find_all('a', href=True):
-            full_url = urljoin(start_url, a['href'])
-            if urlparse(full_url).netloc != base_domain: continue
-            if any(full_url.lower().endswith(x) for x in ['.pdf', '.jpg', '.png', '.css', '.js']): continue     
+
+        for a in soup.find_all("a", href=True):
+            full_url = urljoin(start_url, a["href"])
+            if urlparse(full_url).netloc != base_domain:
+                continue
+            if any(
+                full_url.lower().endswith(x)
+                for x in [".pdf", ".jpg", ".png", ".css", ".js"]
+            ):
+                continue
             all_links.add(full_url)
-            
+
         logger.info(f"Found {len(all_links)} internal links on {start_url}")
         return [start_url, list(all_links), user_id, job_id, platform_id]
-    
+
     except Exception as e:
         logger.error(f"Error in fetch_links_task for {start_url}: {e}", exc_info=True)
         if job_id:
-            from api import cleanup_crawl_job
-            cleanup_crawl_job(job_id, user_id, reason="error")
+            from api import fail_crawl_job
+
+            fail_crawl_job(job_id, user_id, error_message=str(e))
         else:
             r.delete("system:crawling")
             r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
         return None
+
 
 @celery_app.task(name="scraper.schedule_crawls")
 def schedule_crawls_task(args):
     if not args or len(args) < 2:
         logger.error("Invalid args for schedule_crawls_task")
         return
-    
+
     job_id = None
     platform_id = None
     user_id = 1
-    
+
     try:
         if len(args) >= 3:
             filtered_links, user_id = args[0], args[1]
@@ -151,66 +197,89 @@ def schedule_crawls_task(args):
             platform_id = args[3] if len(args) > 3 else None
         else:
             filtered_links, user_id = args
-        
+
         if not filtered_links:
             logger.info("Keine relevanten Links gefunden (filtered_links is empty).")
-            r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
-            
+            r = redis.from_url(
+                os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+            )
+
             if job_id:
                 r.hset(f"crawl_job:{job_id}", "status", "completed")
                 r.srem(f"user:{user_id}:active_crawls", job_id)
-                r.publish("job_updates", json.dumps({
-                    "type": "crawl_job_completed",
-                    "job_id": job_id,
-                    "user_id": user_id
-                }))
-            
+                r.publish(
+                    "job_updates",
+                    json.dumps(
+                        {
+                            "type": "crawl_job_completed",
+                            "job_id": job_id,
+                            "user_id": user_id,
+                        }
+                    ),
+                )
+
             r.delete("system:crawling")
             r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
 
-        logger.info(f"Scheduling {len(filtered_links)} detailed crawls for User {user_id}...")
+        logger.info(
+            f"Scheduling {len(filtered_links)} detailed crawls for User {user_id}..."
+        )
         r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
-        
+
         if job_id:
-            r.hset(f"crawl_job:{job_id}", mapping={
-                "total": len(filtered_links),
-                "completed": 0,
-                "status": "crawling"
-            })
-            
+            r.hset(
+                f"crawl_job:{job_id}",
+                mapping={
+                    "total": len(filtered_links),
+                    "completed": 0,
+                    "status": "crawling",
+                },
+            )
+
             platform_url = r.hget(f"crawl_job:{job_id}", "platform_url")
-            platform_url = platform_url.decode('utf-8') if platform_url else "Unknown"
-            
-            r.publish("job_updates", json.dumps({
-                "type": "crawl_job_progress",
-                "job_id": job_id,
-                "user_id": user_id,
-                "platform": platform_url,
-                "total": len(filtered_links),
-                "completed": 0
-            }))
-        
+            platform_url = platform_url.decode("utf-8") if platform_url else "Unknown"
+
+            r.publish(
+                "job_updates",
+                json.dumps(
+                    {
+                        "type": "crawl_job_progress",
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "platform": platform_url,
+                        "total": len(filtered_links),
+                        "completed": 0,
+                    }
+                ),
+            )
+
         for link in filtered_links:
-            celery_app.send_task('scraper.scrape_detail', args=[link, user_id, job_id, platform_id], queue='scraper_queue')
-        
+            celery_app.send_task(
+                "scraper.scrape_detail",
+                args=[link, user_id, job_id, platform_id],
+                queue="scraper_queue",
+            )
+
         logger.info(f"All {len(filtered_links)} tasks scheduled.")
-    
+
     except Exception as e:
         logger.error(f"Error in schedule_crawls_task: {e}", exc_info=True)
         if job_id:
-            from api import cleanup_crawl_job
-            cleanup_crawl_job(job_id, user_id, reason="error")
+            from api import fail_crawl_job
+
+            fail_crawl_job(job_id, user_id, error_message=str(e))
+
 
 @celery_app.task(name="scraper.scrape_detail")
 def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
-    
+
     r = redis.from_url(REDIS_URL)
-    
+
     try:
         html = get_html_with_browser(url)
-        if not html: 
+        if not html:
             logger.warning(f"Skipping {url} due to download failure.")
             return
 
@@ -218,9 +287,11 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
         if not content:
             logger.warning(f"No clean content extracted from {url}")
 
-        soup = BeautifulSoup(html, 'html.parser')
-        title = soup.find('h1').get_text().strip() if soup.find('h1') else "Job Position"
-        
+        soup = BeautifulSoup(html, "html.parser")
+        title = (
+            soup.find("h1").get_text().strip() if soup.find("h1") else "Job Position"
+        )
+
         extracted_job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{url}"))
         logger.info(f"Extracted Job: '{title}' (ID: {extracted_job_id}) from {url}")
 
@@ -232,36 +303,47 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
             "url": url,
             "user_id": user_id,
             "crawl_job_id": job_id,
-            "platform_id": platform_id
+            "platform_id": platform_id,
         }
-        
+
         celery_app.send_task("ai.analyze_job", args=[job_data], queue="ai_queue")
         logger.info(f"Triggered ai.analyze_job for {extracted_job_id}")
-        
+
         if job_id:
-            scraping_completed = int(r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1))
+            scraping_completed = int(
+                r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1)
+            )
             total_bytes = r.hget(f"crawl_job:{job_id}", "total")
-            total = int(total_bytes.decode('utf-8')) if total_bytes else 0
+            total = int(total_bytes.decode("utf-8")) if total_bytes else 0
             platform_bytes = r.hget(f"crawl_job:{job_id}", "platform_url")
-            platform_url = platform_bytes.decode('utf-8') if platform_bytes else "Unknown"
-            
-            r.publish("job_updates", json.dumps({
-                "type": "crawl_job_progress",
-                "job_id": job_id,
-                "user_id": user_id,
-                "platform": platform_url,
-                "total": total,
-                "scraping_completed": scraping_completed
-            }))
-        
+            platform_url = (
+                platform_bytes.decode("utf-8") if platform_bytes else "Unknown"
+            )
+
+            r.publish(
+                "job_updates",
+                json.dumps(
+                    {
+                        "type": "crawl_job_progress",
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "platform": platform_url,
+                        "total": total,
+                        "scraping_completed": scraping_completed,
+                    }
+                ),
+            )
+
     except Exception as e:
         logger.error(f"Error in scrape_job_detail_task for {url}: {e}", exc_info=True)
         if job_id:
             job_data = r.hgetall(f"crawl_job:{job_id}")
             if job_data:
-                scraping_completed = int(r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1))
+                scraping_completed = int(
+                    r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1)
+                )
                 total_bytes = r.hget(f"crawl_job:{job_id}", "total")
-                total = int(total_bytes.decode('utf-8')) if total_bytes else 0
-                
+                total = int(total_bytes.decode("utf-8")) if total_bytes else 0
+
                 if scraping_completed >= total and total > 0:
                     logger.warning(f"Job {job_id} completed with errors")

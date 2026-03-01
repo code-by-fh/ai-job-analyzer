@@ -46,6 +46,9 @@ export default function Settings() {
     action: () => Promise<void>;
   } | null>(null);
 
+  const [initialPlatforms, setInitialPlatforms] = useState<any[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
   useEffect(() => {
     const t = localStorage.getItem('token');
     if (!t) {
@@ -54,26 +57,32 @@ export default function Settings() {
     }
 
     if (token) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(res => res.json())
         .then(data => {
+          const profileData = data.profile || {};
+
           setFormData({
-            role: data.role || '',
-            skills: data.skills || '',
-            min_salary: data.min_salary || '',
-            location: data.location || '',
-            preferences: data.preferences || '',
-            cv_data: data.cv_data || { experience: [], projects: [], education: '' },
-            job_urls: data.job_urls || [],
-            gmail_address: data.gmail_address || '',
-            gmail_app_password: data.gmail_app_password || '',
-            pushover_user_key: data.pushover_user_key || '',
-            pushover_api_token: data.pushover_api_token || '',
-            active_notification_service: data.active_notification_service || 'NONE'
+            role: profileData.role || '',
+            skills: profileData.skills || '',
+            min_salary: profileData.min_salary || '',
+            location: profileData.location || '',
+            preferences: profileData.preferences || '',
+            cv_data: profileData.cv_data || { experience: [], projects: [], education: '' },
+            job_urls: profileData.job_urls || [],
+            gmail_address: profileData.gmail_address || '',
+            gmail_app_password: profileData.gmail_app_password || '',
+            pushover_user_key: profileData.pushover_user_key || '',
+            pushover_api_token: profileData.pushover_api_token || '',
+            active_notification_service: profileData.active_notification_service || 'NONE'
           });
+
+          if (data.platforms) setInitialPlatforms(data.platforms);
+
           setLoading(false);
+          setDataLoaded(true);
         })
         .catch(e => { console.error(e); setLoading(false); });
     }
@@ -469,7 +478,7 @@ export default function Settings() {
           </section>
 
           {/* JOB PLATFORMS */}
-          <JobPlatformsManager token={token} user={user} />
+          {dataLoaded && <JobPlatformsManager token={token} user={user} initialPlatforms={initialPlatforms} />}
 
           {/* NOTIFICATION SETTINGS */}
           <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">

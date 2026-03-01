@@ -6,7 +6,7 @@ The **AI Job Agent** is an intelligent application for automating the job search
 
 ## 🚀 Features
 
-*   **Automated Job Search (Scraping)**: Searches various job platforms for relevant job ads based on defined criteria.
+*   **Automated Job Search (Scraping)**: Periodic, automated crawling of registered job platforms in the background via a built-in scheduler, or manual scraping based on specific criteria.
 *   **AI Analysis & Matching**: Analyzes job descriptions using LLMs (Large Language Models), compares them with the user profile, and calculates a matching score.
 *   **Application Generation**: Automatically creates personalized cover letters and CV adaptations for specific positions.
 *   **Application Process Management**: Track the status of your applications, save notes, and organize your job search in one place.
@@ -23,8 +23,8 @@ The **AI Job Agent** is an intelligent application for automating the job search
 The application is based on a modern microservices architecture, ensuring scalability and maintainability.
 
 ### Backend Services
-*   **Scraper Service**: A FastAPI-based service responsible for crawling job boards. It uses `Playwright` for rendering dynamic websites and `Celery` for asynchronous task processing.
-*   **AI Service**: A FastAPI service that provides the interface to OpenAI. It handles the analysis of job ads and text generation. `Celery` is also used here for background tasks.
+*   **Scraper Service**: A FastAPI-based service responsible for crawling job boards. It uses `Playwright` for rendering dynamic websites. It runs a combined API and `Celery` worker via a process manager for asynchronous task processing.
+*   **AI Service**: A FastAPI service that provides the interface to OpenAI. It handles the analysis of job ads and text generation. It also runs a combined `Celery Worker` and `Celery Beat` scheduler for background tasks and periodic platform crawling.
 
 ### Frontend
 *   **Tech Stack**: [Next.js 16](https://nextjs.org/), [React 19](https://react.dev/), [Tailwind CSS 4](https://tailwindcss.com/).
@@ -44,13 +44,13 @@ graph TD
     
     subgraph "Scraper Service"
         ScraperAPI -->|Task| RabbitMQ
-        ScraperWorker["Scraper Worker"] -->|Consume| RabbitMQ
+        ScraperWorker["Scraper Worker (Combined)"] -->|Consume| RabbitMQ
         ScraperWorker -->|Store| DB[("PostgreSQL")]
     end
     
     subgraph "AI Service"
         AIAPI -->|Task| RabbitMQ
-        AIWorker["AI Worker"] -->|Consume| RabbitMQ
+        AIWorker["AI Worker (w/ Celery Beat)"] -->|Consume/Schedule| RabbitMQ
         AIWorker -->|Query/Store| DB
         AIWorker -->|API Call| OpenAI["OpenAI API"]
     end

@@ -8,11 +8,23 @@ interface UseCrawlProps {
     token: string | null;
     onJobUpdate?: (data: any) => void;
     onNewJob?: (job: Job, crawlJobId?: string) => void;
+    initialActiveCrawls?: CrawlJob[];
+    initialIsCrawling?: boolean;
 }
 
-export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) {
-    const [isCrawling, setIsCrawling] = useState(false);
-    const [activeCrawls, setActiveCrawls] = useState<Map<string, CrawlJob>>(new Map());
+export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCrawls, initialIsCrawling }: UseCrawlProps) {
+    const [isCrawling, setIsCrawling] = useState(initialIsCrawling || false);
+
+    const initMap = new Map<string, CrawlJob>();
+    if (initialActiveCrawls) {
+        initialActiveCrawls.forEach(j => {
+            if (j.status !== 'completed') {
+                initMap.set(j.job_id, j);
+            }
+        });
+    }
+
+    const [activeCrawls, setActiveCrawls] = useState<Map<string, CrawlJob>>(initMap);
     const [globalError, setGlobalError] = useState<string | null>(null);
 
     // WebSocket Ref to persist across renders without triggering effects
@@ -220,6 +232,21 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
                         setIsCrawling(false);
                         setActiveCrawls(new Map());
                     }
+                    else if (data.type === "crawl_job_failed") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        status: 'failed',
+                                        error_message: data.error_message || data.reason
+                                    });
+                                }
+                                return prev;
+                            });
+                        }
+                    }
                     else if (data.type === "job_skipped") {
                         if (data.user_id === user?.id) {
                             setActiveCrawls(prev => {
@@ -282,18 +309,14 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob }: UseCrawlProps) 
             };
         }, 100);
 
-    }, [token, user]); // REMOVED onNewJob, onJobUpdate from dependencies
+    }, [token, user]);
 
     useEffect(() => {
         if (token) {
-            fetchCrawlStatus();
+            if (!initialActiveCrawls && !initialIsCrawling) {
+                fetchCrawlStatus();
+            }
         }
-
-        // Check initial status
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`)
-            .then(res => res.json())
-            .then(data => { if (data.crawling) setIsCrawling(true); })
-            .catch(() => { });
 
         connectWebSocket();
 

@@ -10,6 +10,7 @@ export interface CrawlJob {
     jobs_saved?: number;
     jobs_skipped?: number;
     status: string;
+    error_message?: string;
     started_at?: string;
     current_job_title?: string;
     show_success?: boolean;
@@ -30,11 +31,12 @@ export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
     return (
         <div className="space-y-4">
             {jobs.map((job) => {
-                const isSearching = job.total === 0;
+                const isFailed = job.status === 'failed';
+                const isSearching = job.total === 0 && !isFailed;
                 const isFound = job.total > 0;
-                const isScraping = job.scraping_completed > 0 && job.scraping_completed < job.total;
+                const isScraping = job.scraping_completed > 0 && job.scraping_completed < job.total && !isFailed;
                 const isScrapingDone = job.scraping_completed >= job.total && job.total > 0;
-                const isAnalyzing = (job.analyzing_jobs && job.analyzing_jobs.length > 0) || (job.analysis_completed > 0 && !job.show_success);
+                const isAnalyzing = (job.analyzing_jobs && job.analyzing_jobs.length > 0) || (job.analysis_completed > 0 && !job.show_success && !isFailed);
                 const isAnalysisDone = job.show_success === true;
 
                 return (
@@ -84,10 +86,16 @@ export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
                   relative z-10 flex items-center justify-center w-6 h-6 rounded-full border-2 transition-colors duration-300
                   ${isSearching
                                         ? 'border-indigo-600 bg-white dark:bg-slate-900'
-                                        : 'border-emerald-500 bg-emerald-500'}
+                                        : isFailed && job.total === 0
+                                            ? 'border-rose-500 bg-rose-500'
+                                            : 'border-emerald-500 bg-emerald-500'}
                 `}>
                                     {isSearching ? (
                                         <Loader2 className="w-3 h-3 text-indigo-600 animate-spin" />
+                                    ) : isFailed && job.total === 0 ? (
+                                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
                                     ) : (
                                         <CheckCircle className="w-3 h-3 text-white" />
                                     )}
@@ -211,6 +219,34 @@ export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
                                 </div>
                             )}
 
+                            {/* Error Message */}
+                            {isFailed && (
+                                <div className="mt-4 p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg">
+                                    <div className="flex flex-col gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <svg className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <div>
+                                                <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                                                    Ein Fehler ist aufgetreten
+                                                </p>
+                                                <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 break-words">
+                                                    {job.error_message || 'Unbekannter Fehler während des Crawl-Vorgangs.'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {onCancel && (
+                                            <button
+                                                onClick={() => onCancel(job.job_id)}
+                                                className="self-end px-4 py-2 bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/20 dark:hover:bg-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-semibold rounded-md transition duration-200"
+                                            >
+                                                Verstanden
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );

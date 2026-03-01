@@ -34,6 +34,11 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const [sortBy, setSortBy] = useState<'score' | 'date'>('score');
     const [filterType, setFilterType] = useState(initialFilter);
 
+    const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+    const [initialJobs, setInitialJobs] = useState<Job[]>([]);
+    const [initialCrawlStatus, setInitialCrawlStatus] = useState<any[]>([]);
+    const [initialSystemCrawling, setInitialSystemCrawling] = useState(false);
+
     // Generator & Modal
     const [modalOpen, setModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState('');
@@ -41,7 +46,29 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const [modalJob, setModalJob] = useState<Job | null>(null);
     const [pendingIds, setPendingIds] = useState<string[]>([]);
 
-    // CUSTOM HOOKS
+
+    useEffect(() => {
+        if (token && !initialDataLoaded) {
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+                .then(res => {
+                    if (res.status === 401) { logout(); return null; }
+                    return res.json();
+                })
+                .then(data => {
+                    if (data) {
+                        setInitialJobs(data.jobs || []);
+                        setInitialCrawlStatus(data.active_crawls || []);
+                        setInitialSystemCrawling(data.system_crawling || false);
+                        setInitialDataLoaded(true);
+                    }
+                })
+                .catch(err => console.error("Dashboard data fetch error:", err));
+        }
+    }, [token, initialDataLoaded, initialFilter, logout]);
+
+
     const {
         jobs,
         setJobs,
@@ -55,7 +82,12 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         confirmDeleteJob,
         handleToggleFavorite,
         handleUpdateStatus
-    } = useJobs({ token, logout, filterType });
+    } = useJobs({
+        token,
+        logout,
+        filterType,
+        initialJobs: initialDataLoaded ? initialJobs : undefined
+    });
 
     const onJobUpdate = useCallback((data: any) => {
         setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
@@ -92,16 +124,15 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         user,
         token,
         onJobUpdate,
-        onNewJob
+        onNewJob,
+        initialActiveCrawls: initialDataLoaded ? initialCrawlStatus : undefined,
+        initialIsCrawling: initialDataLoaded ? initialSystemCrawling : undefined
     });
 
-    // Derived Global Error
     const globalError = jobsError || crawlError;
     const setGlobalError = (msg: string | null) => {
         if (msg) setJobsError(msg); else { setJobsError(null); setCrawlError(null); }
     }
-
-    // Sync filterType with URL search params
     useEffect(() => {
         const urlFilter = searchParams.get('filter');
         const validFilters = ['all', 'favorite', 'no_favorite', 'applications'];
@@ -112,7 +143,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         }
     }, [searchParams, filterType]);
 
-    // Handle filter change by updating URL
     const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
         if (newFilter === 'all') {
             router.push('/');
@@ -122,13 +152,10 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         setFilterType(newFilter);
     };
 
-    // Redirect if not logged in
     useEffect(() => {
         const t = localStorage.getItem('token');
         if (!t) router.push('/login');
     }, [router]);
-
-    // Infinite Scroll Observer
     useEffect(() => {
         if (!hasMore || isLoadingMore) return;
 
@@ -146,7 +173,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         }
     }, [hasMore, isLoadingMore, jobs]);
 
-    // --- SCROLL TO DETAILS EFFECT ---
     useEffect(() => {
         if (expandedJobId) {
             setTimeout(() => {

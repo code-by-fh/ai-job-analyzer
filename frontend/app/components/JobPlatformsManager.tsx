@@ -18,14 +18,15 @@ interface Platform {
 interface JobPlatformsManagerProps {
     token: string | null;
     user: any;
+    initialPlatforms?: Platform[];
 }
 
-export default function JobPlatformsManager({ token, user }: JobPlatformsManagerProps) {
+export default function JobPlatformsManager({ token, user, initialPlatforms }: JobPlatformsManagerProps) {
     const { t } = useLanguage();
-    const [platforms, setPlatforms] = useState<Platform[]>([]);
+    const [platforms, setPlatforms] = useState<Platform[]>(initialPlatforms || []);
     const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!initialPlatforms);
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
 
@@ -73,8 +74,10 @@ export default function JobPlatformsManager({ token, user }: JobPlatformsManager
     };
 
     useEffect(() => {
-        fetchPlatforms();
-    }, [token]);
+        if (!initialPlatforms) {
+            fetchPlatforms();
+        }
+    }, [token, initialPlatforms]);
 
     useEffect(() => {
         if (user?.id) {

@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     python3-dev \
     libcairo2-dev \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1

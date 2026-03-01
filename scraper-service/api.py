@@ -14,43 +14,47 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+]
 logger.info(f"Allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 r = redis.from_url(REDIS_URL)
 
+
 def cleanup_stale_jobs():
     """Remove stale/completed jobs from Redis on startup"""
     logger.info("🧹 Cleaning up stale crawl jobs from Redis...")
-    
+
     # Get all user active_crawls sets
     user_keys = r.keys("user:*:active_crawls")
     total_removed = 0
-    
+
     for user_key in user_keys:
         job_ids = r.smembers(user_key)
         for job_id_bytes in job_ids:
-            job_id = job_id_bytes.decode('utf-8')
+            job_id = job_id_bytes.decode("utf-8")
             job_data = r.hgetall(f"crawl_job:{job_id}")
-            
+
             if not job_data:
                 # Job hash doesn't exist, remove from set
                 r.srem(user_key, job_id)
                 total_removed += 1
                 logger.info(f"Removed orphaned job {job_id}")
             else:
-                status = job_data.get(b"status", b"").decode('utf-8')
+                status = job_data.get(b"status", b"").decode("utf-8")
                 total = int(job_data.get(b"total", 0))
                 analysis_completed = int(job_data.get(b"analysis_completed", 0))
-                
+
                 # Remove if completed or stale
                 if status == "completed" or (total > 0 and analysis_completed >= total):
                     r.srem(user_key, job_id)
@@ -58,8 +62,9 @@ def cleanup_stale_jobs():
                     r.delete(f"crawl_job:{job_id}:all_job_titles")
                     total_removed += 1
                     logger.info(f"Removed completed job {job_id}")
-    
+
     logger.info(f"✅ Cleanup complete. Removed {total_removed} stale jobs.")
+
 
 def cleanup_crawl_job(job_id, user_id, reason="error"):
     """
@@ -68,22 +73,60 @@ def cleanup_crawl_job(job_id, user_id, reason="error"):
     """
     try:
         logger.info(f"🧹 Cleaning up crawl job {job_id} (reason: {reason})")
-        
+
         r.delete(f"crawl_job:{job_id}")
         r.delete(f"crawl_job:{job_id}:all_job_titles")
         r.srem(f"user:{user_id}:active_crawls", job_id)
         r.delete("system:crawling")
-        
-        r.publish("job_updates", json.dumps({
-            "type": "crawl_job_failed" if reason == "error" else "crawl_job_cancelled",
-            "job_id": job_id,
-            "user_id": user_id,
-            "reason": reason
-        }))
-        
-        logger.info(f"✅ Cleanup complete for job {job_id}")
+
+        r.publish(
+            "job_updates",
+            json.dumps(
+                {
+                    "type": (
+                        "crawl_job_failed"
+                        if reason == "error"
+                        else "crawl_job_cancelled"
+                    ),
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "reason": reason,
+                }
+            ),
+        )
+
     except Exception as e:
         logger.error(f"Error during cleanup of job {job_id}: {e}")
+
+
+def fail_crawl_job(job_id: str, user_id: int, error_message: str):
+    """
+    Mark a crawl job as failed instead of deleting it, so the user sees the error.
+    """
+    try:
+        logger.info(f"Failing crawl job {job_id} (error: {error_message})")
+        r.hset(
+            f"crawl_job:{job_id}",
+            mapping={"status": "failed", "error_message": error_message},
+        )
+        r.delete("system:crawling")
+
+        r.publish(
+            "job_updates",
+            json.dumps(
+                {
+                    "type": "crawl_job_failed",
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "reason": "error",
+                    "error_message": error_message,
+                }
+            ),
+        )
+        logger.info(f"✅ Mark as failed complete for job {job_id}")
+    except Exception as e:
+        logger.error(f"Error during fail of job {job_id}: {e}")
+
 
 # Cleanup on startup
 cleanup_stale_jobs()
@@ -92,89 +135,158 @@ cleanup_stale_jobs()
 class JobSearch(BaseModel):
     query: str
     location: str
-    user_id: int = 1 # Default to 1 (Admin) if not provided
+    user_id: int = 1  # Default to 1 (Admin) if not provided
     platform_id: Optional[int] = None
+
 
 @app.post("/search")
 async def search_jobs(search: JobSearch):
     if not search.query.startswith("http"):
         return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
-    
+
     job_id = str(uuid.uuid4())
-    
-    r.hset(f"crawl_job:{job_id}", mapping={
-        "user_id": search.user_id,
-        "platform_url": search.query,
-        "total": 0,
-        "scraping_completed": 0,
-        "analysis_completed": 0,
-        "jobs_saved": 0,
-        "status": "starting",
-        "started_at": str(int(os.times().elapsed * 1000))
-    })
+
+    r.hset(
+        f"crawl_job:{job_id}",
+        mapping={
+            "user_id": search.user_id,
+            "platform_url": search.query,
+            "total": 0,
+            "scraping_completed": 0,
+            "analysis_completed": 0,
+            "jobs_saved": 0,
+            "status": "starting",
+            "started_at": str(int(os.times().elapsed * 1000)),
+        },
+    )
     r.expire(f"crawl_job:{job_id}", 3600)  # TTL: 1 hour
     r.sadd(f"user:{search.user_id}:active_crawls", job_id)
-    
+
     workflow = chain(
-        celery_app.signature('scraper.fetch_links', args=[search.query, search.user_id, job_id, search.platform_id], queue='scraper_queue'),
-        celery_app.signature('ai.filter_urls', queue='ai_queue'),
-        celery_app.signature('scraper.schedule_crawls', queue='scraper_queue')
+        celery_app.signature(
+            "scraper.fetch_links",
+            args=[search.query, search.user_id, job_id, search.platform_id],
+            queue="scraper_queue",
+        ),
+        celery_app.signature("ai.filter_urls", queue="ai_queue"),
+        celery_app.signature("scraper.schedule_crawls", queue="scraper_queue"),
     )
     workflow.apply_async()
     return {"status": "Started", "job_id": job_id}
+
 
 @app.get("/crawl-status")
 async def get_crawl_status(user_id: int):
     job_ids = r.smembers(f"user:{user_id}:active_crawls")
     jobs = []
-    
+
     for job_id_bytes in job_ids:
-        job_id = job_id_bytes.decode('utf-8')
+        job_id = job_id_bytes.decode("utf-8")
         job_data = r.hgetall(f"crawl_job:{job_id}")
-        
+
         if job_data:
             # Get all_job_titles from Redis list
             all_job_titles_bytes = r.lrange(f"crawl_job:{job_id}:all_job_titles", 0, -1)
-            all_job_titles = [title.decode('utf-8') for title in all_job_titles_bytes]
-            logger.info(f"Crawl status for {job_id}: Retrieved {len(all_job_titles)} job titles from Redis")
-            
-            jobs.append({
-                "job_id": job_id,
-                "platform": job_data.get(b"platform_url", b"").decode('utf-8'),
-                "total": int(job_data.get(b"total", 0)),
-                "scraping_completed": int(job_data.get(b"scraping_completed", 0)),
-                "analysis_completed": int(job_data.get(b"analysis_completed", 0)),
-                "jobs_saved": int(job_data.get(b"jobs_saved", 0)),
-                "status": job_data.get(b"status", b"unknown").decode('utf-8'),
-                "started_at": job_data.get(b"started_at", b"").decode('utf-8'),
-                "all_job_titles": all_job_titles
-            })
-    
+            all_job_titles = [title.decode("utf-8") for title in all_job_titles_bytes]
+            logger.info(
+                f"Crawl status for {job_id}: Retrieved {len(all_job_titles)} job titles from Redis"
+            )
+
+            jobs.append(
+                {
+                    "job_id": job_id,
+                    "platform": job_data.get(b"platform_url", b"").decode("utf-8"),
+                    "total": int(job_data.get(b"total", 0)),
+                    "scraping_completed": int(job_data.get(b"scraping_completed", 0)),
+                    "analysis_completed": int(job_data.get(b"analysis_completed", 0)),
+                    "jobs_saved": int(job_data.get(b"jobs_saved", 0)),
+                    "status": job_data.get(b"status", b"unknown").decode("utf-8"),
+                    "error_message": job_data.get(b"error_message", b"").decode(
+                        "utf-8"
+                    ),
+                    "started_at": job_data.get(b"started_at", b"").decode("utf-8"),
+                    "all_job_titles": all_job_titles,
+                }
+            )
+
     return {"jobs": jobs}
+
 
 class CancelCrawlRequest(BaseModel):
     job_id: str
     user_id: int
 
+
 @app.post("/cancel-crawl")
 async def cancel_crawl(request: CancelCrawlRequest):
     logger.info(f"Cancelling crawl job {request.job_id} for user {request.user_id}")
-    
+
     job_data = r.hgetall(f"crawl_job:{request.job_id}")
     if not job_data:
         return {"status": "error", "message": "Job not found"}
-    
+
     stored_user_id = int(job_data.get(b"user_id", 0))
     if stored_user_id != request.user_id:
         return {"status": "error", "message": "Unauthorized"}
-    
+
     try:
-        celery_app.control.revoke(request.job_id, terminate=True, signal='SIGKILL')
-        
+        celery_app.control.revoke(request.job_id, terminate=True, signal="SIGKILL")
+
         cleanup_crawl_job(request.job_id, request.user_id, reason="cancelled")
-        
+
         logger.info(f"Successfully cancelled crawl job {request.job_id}")
         return {"status": "success", "message": "Crawl job cancelled"}
     except Exception as e:
         logger.error(f"Error cancelling job {request.job_id}: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+class FailCrawlRequest(BaseModel):
+    job_id: str
+    user_id: int
+    error_message: str
+
+
+@app.post("/fail-crawl")
+async def fail_crawl(request: FailCrawlRequest):
+    logger.info(
+        f"Failing crawl job {request.job_id} for user {request.user_id}: {request.error_message}"
+    )
+
+    job_data = r.hgetall(f"crawl_job:{request.job_id}")
+    if not job_data:
+        return {"status": "error", "message": "Job not found"}
+
+    stored_user_id = int(job_data.get(b"user_id", 0))
+    if stored_user_id != request.user_id:
+        return {"status": "error", "message": "Unauthorized"}
+
+    try:
+        # Revoke running celery task if any
+        celery_app.control.revoke(request.job_id, terminate=True, signal="SIGKILL")
+
+        # Keep job data but set status to failed and store the error message
+        r.hset(
+            f"crawl_job:{request.job_id}",
+            mapping={"status": "failed", "error_message": request.error_message},
+        )
+
+        logger.info(f"Job {request.job_id} failed due to: {request.error_message}")
+
+        # Publish event for frontend
+        r.publish(
+            "job_updates",
+            json.dumps(
+                {
+                    "type": "crawl_job_failed",
+                    "job_id": request.job_id,
+                    "user_id": request.user_id,
+                    "reason": "error",
+                    "error_message": request.error_message,
+                }
+            ),
+        )
+        return {"status": "success", "message": "Crawl job failed"}
+    except Exception as e:
+        logger.error(f"Error failing job {request.job_id}: {e}")
         return {"status": "error", "message": str(e)}
