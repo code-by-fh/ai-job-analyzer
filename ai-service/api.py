@@ -7,7 +7,17 @@ from datetime import date
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Depends, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    Depends,
+    status,
+    Response,
+)
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,20 +34,36 @@ from sqlalchemy.orm import Session
 import requests
 
 from celery_config import celery_app
-from database import SessionLocal, JobEntry, UserProfile, SettingsData, CVDataModel, User, JobPlatform, PlatformCreate, PlatformUpdate, PlatformResponse, SystemSettings, engine, Base
+from database import (
+    SessionLocal,
+    JobEntry,
+    UserProfile,
+    SettingsData,
+    CVDataModel,
+    User,
+    JobPlatform,
+    PlatformCreate,
+    PlatformUpdate,
+    PlatformResponse,
+    SystemSettings,
+    engine,
+    Base,
+)
 from auth import (
     create_access_token,
     get_current_user,
     get_current_admin_user,
     verify_password,
     get_password_hash,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from datetime import timedelta
+
 # Note: tasks are referenced by name strings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # Dynamic Client helpers
 def get_current_model(db: Session = None):
@@ -48,27 +74,36 @@ def get_current_model(db: Session = None):
         local_db = True
     try:
         settings = db.query(SystemSettings).first()
-        return settings.openrouter_model if settings else "tngtech/deepseek-r1t2-chimera:free"
+        return (
+            settings.openrouter_model
+            if settings
+            else "tngtech/deepseek-r1t2-chimera:free"
+        )
     except Exception:
         return "tngtech/deepseek-r1t2-chimera:free"
     finally:
         if local_db:
             db.close()
 
+
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENAI_API_KEY"),
 )
 
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+
     async def broadcast(self, message: str):
         for connection in self.active_connections[:]:
             try:
@@ -76,12 +111,14 @@ class ConnectionManager:
             except Exception:
                 self.disconnect(connection)
 
+
 manager = ConnectionManager()
+
 
 async def redis_listener():
     redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
     logger.info(f" cercando Redis at {redis_url}...")
-    
+
     try:
         r = redis_async.from_url(redis_url, encoding="utf-8", decode_responses=True)
         pubsub = r.pubsub()
@@ -97,42 +134,49 @@ async def redis_listener():
     except Exception as e:
         logger.error(f"RITISCHER FEHLER im Redis Listener: {e}")
 
+
 class UserCreate(BaseModel):
     username: str
     password: str
+
 
 class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starte Redis Listener Task...")
     task = asyncio.create_task(redis_listener())
-    
+
     # Ensure Tables Exist
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Checked/Created Database Tables")
     except Exception as e:
         logger.error(f"Error creating tables: {e}")
-    
+
     # Create Default Admin
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.username == "admin").first():
             logger.info("Create default admin user (admin/admin)")
             hashed_pwd = get_password_hash("admin")
-            admin_user = User(username="admin", hashed_password=hashed_pwd, is_admin=True)
+            admin_user = User(
+                username="admin", hashed_password=hashed_pwd, is_admin=True
+            )
             db.add(admin_user)
             db.commit()
     except Exception as e:
@@ -142,18 +186,23 @@ async def lifespan(app: FastAPI):
 
     yield
     task.cancel()
-    
+
+
 app = FastAPI(lifespan=lifespan)
 
-allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+]
 logger.info(f"Allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
+
 
 def extract_text_from_pdf(file_bytes):
     try:
@@ -166,8 +215,10 @@ def extract_text_from_pdf(file_bytes):
         logger.error(f"PDF Read Error: {e}")
         return ""
 
+
 class SystemSettingsUpdate(BaseModel):
     openrouter_model: str
+
 
 @app.get("/admin/settings")
 def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
@@ -180,8 +231,11 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
     finally:
         db.close()
 
+
 @app.post("/admin/settings")
-def update_admin_settings(settings: SystemSettingsUpdate, current_user: User = Depends(get_current_admin_user)):
+def update_admin_settings(
+    settings: SystemSettingsUpdate, current_user: User = Depends(get_current_admin_user)
+):
     db = SessionLocal()
     try:
         db_settings = db.query(SystemSettings).first()
@@ -194,6 +248,7 @@ def update_admin_settings(settings: SystemSettingsUpdate, current_user: User = D
         return {"status": "updated", "openrouter_model": db_settings.openrouter_model}
     finally:
         db.close()
+
 
 def parse_cv_with_ai(cv_text):
     system_prompt = """
@@ -227,8 +282,11 @@ def parse_cv_with_ai(cv_text):
         logger.info(f"Using Model for CV Parse: {model}")
         response = client.chat.completions.create(
             model=model,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.0
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
         )
         content = response.choices[0].message.content.strip()
         content = content.replace("```json", "").replace("```", "")
@@ -236,6 +294,7 @@ def parse_cv_with_ai(cv_text):
     except Exception as e:
         logger.error(f"AI Parse Error: {e}")
         return None
+
 
 @app.post("/auth/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -256,31 +315,34 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     finally:
         db.close()
 
+
 @app.post("/auth/change-password")
 async def change_password(
-    request: ChangePasswordRequest,
-    current_user: User = Depends(get_current_user)
+    request: ChangePasswordRequest, current_user: User = Depends(get_current_user)
 ):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == current_user.id).first()
         if not verify_password(request.current_password, user.hashed_password):
-             raise HTTPException(status_code=400, detail="Incorrect current password")
-        
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+
         user.hashed_password = get_password_hash(request.new_password)
         db.commit()
         return {"status": "password updated"}
     finally:
         db.close()
 
+
 @app.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+
 @app.get("/users", response_model=List[UserResponse])
 async def read_users(
-    skip: int = 0, limit: int = 100, 
-    current_user: User = Depends(get_current_admin_user)
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_admin_user),
 ):
     db = SessionLocal()
     try:
@@ -289,10 +351,10 @@ async def read_users(
     finally:
         db.close()
 
+
 @app.post("/users", response_model=UserResponse)
 async def create_user(
-    user: UserCreate, 
-    current_user: User = Depends(get_current_admin_user)
+    user: UserCreate, current_user: User = Depends(get_current_admin_user)
 ):
     db = SessionLocal()
     try:
@@ -300,7 +362,9 @@ async def create_user(
         if db_user:
             raise HTTPException(status_code=400, detail="Username already registered")
         hashed_password = get_password_hash(user.password)
-        new_user = User(username=user.username, hashed_password=hashed_password, is_admin=False)
+        new_user = User(
+            username=user.username, hashed_password=hashed_password, is_admin=False
+        )
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
@@ -308,21 +372,21 @@ async def create_user(
     finally:
         db.close()
 
+
 @app.delete("/users/{user_id}")
 async def delete_user(
-    user_id: int, 
-    current_user: User = Depends(get_current_admin_user)
+    user_id: int, current_user: User = Depends(get_current_admin_user)
 ):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
-             raise HTTPException(status_code=404, detail="User not found")
-        
+            raise HTTPException(status_code=404, detail="User not found")
+
         # Delete dependent data first to avoid IntegrityError
         # 1. Delete Jobs (depend on User and Platform)
         db.query(JobEntry).filter(JobEntry.user_id == user_id).delete()
-        
+
         # 2. Delete Profile (depends on User)
         db.query(UserProfile).filter(UserProfile.user_id == user_id).delete()
 
@@ -336,6 +400,7 @@ async def delete_user(
     finally:
         db.close()
 
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -345,6 +410,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+
 @app.get("/status")
 async def get_system_status():
     redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
@@ -352,17 +418,18 @@ async def get_system_status():
     is_crawling = r.get("system:crawling")
     return {"crawling": bool(is_crawling)}
 
+
 @app.get("/jobs")
 def get_jobs(
     current_user: User = Depends(get_current_user),
     limit: Optional[int] = None,
     offset: int = 0,
-    filter_type: Optional[str] = None
+    filter_type: Optional[str] = None,
 ):
     db = SessionLocal()
     try:
         query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
-        
+
         # Filtering
         if filter_type == "favorite":
             query = query.filter(JobEntry.is_favorite == True)
@@ -370,38 +437,117 @@ def get_jobs(
             query = query.filter(JobEntry.is_favorite == False)
         elif filter_type == "applications":
             query = query.filter(JobEntry.application_draft.isnot(None))
-            
+
         # Sorting (always by match_score desc)
         query = query.order_by(JobEntry.match_score.desc())
-        
+
         # Pagination (Backward Compatibility: if limit is None, return all)
         if limit is not None:
             query = query.offset(offset).limit(limit)
-            
+
         return query.all()
     finally:
         db.close()
+
 
 @app.post("/jobs/{job_id}/generate")
 def trigger_generation(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         job.status = "GENERATING"
         db.commit()
         # Pass user_id to task so it can use correct profile
-        celery_app.send_task("ai.generate_application", args=[job_id, current_user.id], queue="ai_queue")
+        celery_app.send_task(
+            "ai.generate_application", args=[job_id, current_user.id], queue="ai_queue"
+        )
         return {"status": "started"}
     finally:
         db.close()
+
+
+@app.get("/jobs/{job_id}/download")
+def download_application_pdf(
+    job_id: str, current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job or not job.application_draft:
+            raise HTTPException(status_code=404, detail="Job or application not found")
+
+        html_content = markdown.markdown(job.application_draft)
+
+        styled_html = f"""
+        <html>
+        <head>
+        <style>
+            @page {{
+                size: A4;
+                margin: 2cm;
+            }}
+            body {{
+                font-family: Helvetica, Arial, sans-serif;
+                font-size: 11pt;
+                line-height: 1.5;
+                color: #333333;
+            }}
+            h1, h2, h3 {{
+                color: #111111;
+                margin-top: 1.5em;
+                margin-bottom: 0.5em;
+            }}
+            p {{
+                margin-bottom: 1em;
+            }}
+        </style>
+        </head>
+        <body>
+        {html_content}
+        </body>
+        </html>
+        """
+
+        pdf_buffer = BytesIO()
+        pisa_status = pisa.CreatePDF(io.StringIO(styled_html), dest=pdf_buffer)
+
+        if pisa_status.err:
+            raise HTTPException(status_code=500, detail="Error generating PDF")
+
+        pdf_bytes = pdf_buffer.getvalue()
+
+        company_clean = "".join(
+            c for c in (job.company or "Job") if c.isalnum() or c in " -_"
+        ).replace(" ", "_")
+        headers = {
+            "Content-Disposition": f'attachment; filename="Bewerbung_{company_clean}.pdf"'
+        }
+        return Response(
+            content=pdf_bytes, media_type="application/pdf", headers=headers
+        )
+    finally:
+        db.close()
+
 
 @app.delete("/jobs/{job_id}")
 def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         db.delete(job)
@@ -414,15 +560,27 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+
 class StatusUpdateRequest(BaseModel):
     status: str
 
+
 @app.patch("/jobs/{job_id}/update-status")
-def update_job_status(job_id: str, request: StatusUpdateRequest, current_user: User = Depends(get_current_user)):
-    logger.info(f"Updating status for job {job_id} to {request.status} for user {current_user.username}")
+def update_job_status(
+    job_id: str,
+    request: StatusUpdateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    logger.info(
+        f"Updating status for job {job_id} to {request.status} for user {current_user.username}"
+    )
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
         if not job:
             logger.warning(f"Job {job_id} not found for user {current_user.username}")
             raise HTTPException(status_code=404, detail="Job not found")
@@ -440,11 +598,16 @@ def update_job_status(job_id: str, request: StatusUpdateRequest, current_user: U
     finally:
         db.close()
 
+
 @app.patch("/jobs/{job_id}/favorite")
 def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         job.is_favorite = not job.is_favorite
@@ -458,11 +621,14 @@ def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user))
     finally:
         db.close()
 
+
 @app.get("/settings")
 def get_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if not profile:
             profile = UserProfile(
                 user_id=current_user.id,
@@ -471,8 +637,8 @@ def get_settings(current_user: User = Depends(get_current_user)):
                 min_salary="",
                 location="",
                 preferences="",
-                cv_data={"experience": [], "projects": [], "education": ""}, 
-                job_urls=[]
+                cv_data={"experience": [], "projects": [], "education": ""},
+                job_urls=[],
             )
             db.add(profile)
             db.commit()
@@ -481,15 +647,20 @@ def get_settings(current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+
 @app.post("/settings")
-def save_settings(settings: SettingsData, current_user: User = Depends(get_current_user)):
+def save_settings(
+    settings: SettingsData, current_user: User = Depends(get_current_user)
+):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if not profile:
             profile = UserProfile(user_id=current_user.id)
             db.add(profile)
-        
+
         profile.role = settings.role
         profile.skills = settings.skills
         profile.min_salary = settings.min_salary
@@ -497,24 +668,27 @@ def save_settings(settings: SettingsData, current_user: User = Depends(get_curre
         profile.preferences = settings.preferences
         profile.cv_data = settings.cv_data.dict()
         profile.job_urls = settings.job_urls
-        
+
         # Save Notification Settings
         profile.gmail_address = settings.gmail_address
         profile.gmail_app_password = settings.gmail_app_password
         profile.pushover_user_key = settings.pushover_user_key
         profile.pushover_api_token = settings.pushover_api_token
         profile.active_notification_service = settings.active_notification_service
-        
+
         db.commit()
         return {"status": "saved"}
     finally:
         db.close()
 
+
 @app.delete("/settings")
 def delete_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if profile:
             db.delete(profile)
             db.commit()
@@ -528,11 +702,14 @@ def delete_settings(current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+
 @app.delete("/jobs")
 def delete_all_jobs(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        deleted_count = db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        deleted_count = (
+            db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        )
         db.commit()
         return {"status": "deleted", "count": deleted_count}
     except Exception as e:
@@ -542,18 +719,27 @@ def delete_all_jobs(current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+
 @app.delete("/user/reset")
 def reset_user_data(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        jobs_deleted = db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        jobs_deleted = (
+            db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        )
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         profile_deleted = False
         if profile:
             db.delete(profile)
             profile_deleted = True
         db.commit()
-        return {"status": "reset complete", "jobs_deleted": jobs_deleted, "profile_deleted": profile_deleted}
+        return {
+            "status": "reset complete",
+            "jobs_deleted": jobs_deleted,
+            "profile_deleted": profile_deleted,
+        }
     except Exception as e:
         db.rollback()
         logger.error(f"Fehler beim Reset der Benutzerdaten: {e}")
@@ -561,55 +747,72 @@ def reset_user_data(current_user: User = Depends(get_current_user)):
     finally:
         db.close()
 
+
 @app.get("/platforms", response_model=List[PlatformResponse])
 def get_platforms(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         from sqlalchemy import func
-        # Subquery to count jobs per platform
-        job_counts = db.query(
-            JobEntry.platform_id, 
-            func.count(JobEntry.id).label('job_count')
-        ).filter(JobEntry.user_id == current_user.id).group_by(JobEntry.platform_id).subquery()
 
-        platforms_query = db.query(
-            JobPlatform,
-            func.coalesce(job_counts.c.job_count, 0).label('job_count')
-        ).outerjoin(
-            job_counts, JobPlatform.id == job_counts.c.platform_id
-        ).filter(JobPlatform.user_id == current_user.id).all()
+        # Subquery to count jobs per platform
+        job_counts = (
+            db.query(JobEntry.platform_id, func.count(JobEntry.id).label("job_count"))
+            .filter(JobEntry.user_id == current_user.id)
+            .group_by(JobEntry.platform_id)
+            .subquery()
+        )
+
+        platforms_query = (
+            db.query(
+                JobPlatform, func.coalesce(job_counts.c.job_count, 0).label("job_count")
+            )
+            .outerjoin(job_counts, JobPlatform.id == job_counts.c.platform_id)
+            .filter(JobPlatform.user_id == current_user.id)
+            .all()
+        )
 
         result = []
         for p, count in platforms_query:
-            result.append({
-                "id": p.id,
-                "url": p.url,
-                "name": p.name,
-                "favicon_url": p.favicon_url,
-                "crawl_interval_minutes": p.crawl_interval_minutes,
-                "last_crawl_at": p.last_crawl_at.isoformat() if p.last_crawl_at else None,
-                "is_active": p.is_active,
-                "is_notification_enabled": p.is_notification_enabled,
-                "job_count": count
-            })
+            result.append(
+                {
+                    "id": p.id,
+                    "url": p.url,
+                    "name": p.name,
+                    "favicon_url": p.favicon_url,
+                    "crawl_interval_minutes": p.crawl_interval_minutes,
+                    "last_crawl_at": (
+                        p.last_crawl_at.isoformat() if p.last_crawl_at else None
+                    ),
+                    "is_active": p.is_active,
+                    "is_notification_enabled": p.is_notification_enabled,
+                    "job_count": count,
+                }
+            )
         return result
     finally:
         db.close()
 
+
 @app.post("/platforms", response_model=PlatformResponse)
-def create_platform(platform: PlatformCreate, current_user: User = Depends(get_current_user)):
+def create_platform(
+    platform: PlatformCreate, current_user: User = Depends(get_current_user)
+):
     db = SessionLocal()
     try:
         # Check for duplicates
-        existing = db.query(JobPlatform).filter(
-            JobPlatform.user_id == current_user.id,
-            JobPlatform.url == platform.url
-        ).first()
+        existing = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.user_id == current_user.id, JobPlatform.url == platform.url
+            )
+            .first()
+        )
         if existing:
             raise HTTPException(status_code=400, detail="Platform URL already exists")
 
         # Basic name extraction from URL
         from urllib.parse import urlparse
+
         domain = urlparse(platform.url).netloc
         name = domain.replace("www.", "")
 
@@ -621,7 +824,7 @@ def create_platform(platform: PlatformCreate, current_user: User = Depends(get_c
             url=platform.url,
             name=name,
             favicon_url=favicon_url,
-            crawl_interval_minutes=platform.crawl_interval_minutes
+            crawl_interval_minutes=platform.crawl_interval_minutes,
         )
         db.add(db_platform)
         db.commit()
@@ -630,14 +833,22 @@ def create_platform(platform: PlatformCreate, current_user: User = Depends(get_c
     finally:
         db.close()
 
+
 @app.patch("/platforms/{platform_id}", response_model=PlatformResponse)
-def update_platform(platform_id: int, platform_update: PlatformUpdate, current_user: User = Depends(get_current_user)):
+def update_platform(
+    platform_id: int,
+    platform_update: PlatformUpdate,
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
     try:
-        db_platform = db.query(JobPlatform).filter(
-            JobPlatform.id == platform_id,
-            JobPlatform.user_id == current_user.id
-        ).first()
+        db_platform = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id
+            )
+            .first()
+        )
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
 
@@ -646,64 +857,85 @@ def update_platform(platform_id: int, platform_update: PlatformUpdate, current_u
         if platform_update.is_active is not None:
             db_platform.is_active = platform_update.is_active
         if platform_update.is_notification_enabled is not None:
-            db_platform.is_notification_enabled = platform_update.is_notification_enabled
+            db_platform.is_notification_enabled = (
+                platform_update.is_notification_enabled
+            )
 
         db.commit()
         db.refresh(db_platform)
-        
+
         # Get job count
-        job_count = db.query(JobEntry).filter(JobEntry.platform_id == db_platform.id).count()
-        
+        job_count = (
+            db.query(JobEntry).filter(JobEntry.platform_id == db_platform.id).count()
+        )
+
         return {
             "id": db_platform.id,
             "url": db_platform.url,
             "name": db_platform.name,
             "favicon_url": db_platform.favicon_url,
             "crawl_interval_minutes": db_platform.crawl_interval_minutes,
-            "last_crawl_at": db_platform.last_crawl_at.isoformat() if db_platform.last_crawl_at else None,
+            "last_crawl_at": (
+                db_platform.last_crawl_at.isoformat()
+                if db_platform.last_crawl_at
+                else None
+            ),
             "is_active": db_platform.is_active,
             "is_notification_enabled": db_platform.is_notification_enabled,
-            "job_count": job_count
+            "job_count": job_count,
         }
     finally:
         db.close()
+
 
 @app.delete("/platforms/{platform_id}")
 def delete_platform(platform_id: int, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        db_platform = db.query(JobPlatform).filter(
-            JobPlatform.id == platform_id,
-            JobPlatform.user_id == current_user.id
-        ).first()
+        db_platform = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id
+            )
+            .first()
+        )
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
 
         # Set platform_id to NULL in jobs
-        db.query(JobEntry).filter(JobEntry.platform_id == platform_id).update({"platform_id": None})
-        
+        db.query(JobEntry).filter(JobEntry.platform_id == platform_id).update(
+            {"platform_id": None}
+        )
+
         db.delete(db_platform)
         db.commit()
         return {"status": "deleted"}
     finally:
         db.close()
 
+
 @app.post("/platforms/{platform_id}/crawl")
-def trigger_platform_crawl(platform_id: int, current_user: User = Depends(get_current_user)):
+def trigger_platform_crawl(
+    platform_id: int, current_user: User = Depends(get_current_user)
+):
     db = SessionLocal()
     try:
-        db_platform = db.query(JobPlatform).filter(
-            JobPlatform.id == platform_id,
-            JobPlatform.user_id == current_user.id
-        ).first()
+        db_platform = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id
+            )
+            .first()
+        )
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
-        
+
         if not db_platform.is_active:
             raise HTTPException(status_code=400, detail="Platform is deactivated")
 
         # Trigger scraper-service
         from sqlalchemy import func
+
         SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
         logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
         try:
@@ -711,31 +943,34 @@ def trigger_platform_crawl(platform_id: int, current_user: User = Depends(get_cu
                 f"{SCRAPER_URL}/search",
                 json={
                     "query": db_platform.url,
-                    "location": "Remote", 
+                    "location": "Remote",
                     "user_id": current_user.id,
-                    "platform_id": db_platform.id 
+                    "platform_id": db_platform.id,
                 },
-                timeout=5
+                timeout=5,
             )
             resp.raise_for_status()
-            
+
             # Update last_crawl_at
             db_platform.last_crawl_at = func.now()
             db.commit()
-            
+
             return resp.json()
         except Exception as e:
             logger.error(f"Failed to trigger scraper: {e}")
-            raise HTTPException(status_code=500, detail="Failed to trigger crawler service")
+            raise HTTPException(
+                status_code=500, detail="Failed to trigger crawler service"
+            )
     finally:
         db.close()
+
 
 @app.get("/dashboard-data")
 def get_dashboard_data(
     current_user: User = Depends(get_current_user),
     limit: Optional[int] = 10,
     offset: int = 0,
-    filter_type: Optional[str] = "all"
+    filter_type: Optional[str] = "all",
 ):
     """
     Combined endpoint for Dashboard:
@@ -753,7 +988,7 @@ def get_dashboard_data(
             query = query.filter(JobEntry.is_favorite == False)
         elif filter_type == "applications":
             query = query.filter(JobEntry.application_draft.isnot(None))
-        
+
         query = query.order_by(JobEntry.match_score.desc())
         jobs = query.offset(offset).limit(limit).all()
 
@@ -769,8 +1004,12 @@ def get_dashboard_data(
         # 3. Fetch Scraper Status (Active Crawls)
         active_crawls = []
         try:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
-            res = requests.get(f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2)
+            SCRAPER_URL = os.getenv(
+                "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
+            )
+            res = requests.get(
+                f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
+            )
             if res.ok:
                 data = res.json()
                 if "jobs" in data:
@@ -781,7 +1020,7 @@ def get_dashboard_data(
         return {
             "jobs": jobs,
             "system_crawling": is_crawling,
-            "active_crawls": active_crawls
+            "active_crawls": active_crawls,
         }
     finally:
         db.close()
@@ -798,13 +1037,20 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         # 1. Profile
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if not profile:
             # Create default if missing
             profile = UserProfile(
                 user_id=current_user.id,
-                role="", skills="", min_salary="", location="", preferences="",
-                cv_data={"experience": [], "projects": [], "education": ""}, job_urls=[]
+                role="",
+                skills="",
+                min_salary="",
+                location="",
+                preferences="",
+                cv_data={"experience": [], "projects": [], "education": ""},
+                job_urls=[],
             )
             db.add(profile)
             db.commit()
@@ -812,37 +1058,50 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
 
         # 2. Platforms
         from sqlalchemy import func
-        job_counts = db.query(
-            JobEntry.platform_id, 
-            func.count(JobEntry.id).label('job_count')
-        ).filter(JobEntry.user_id == current_user.id).group_by(JobEntry.platform_id).subquery()
 
-        platforms_query = db.query(
-            JobPlatform,
-            func.coalesce(job_counts.c.job_count, 0).label('job_count')
-        ).outerjoin(
-            job_counts, JobPlatform.id == job_counts.c.platform_id
-        ).filter(JobPlatform.user_id == current_user.id).all()
+        job_counts = (
+            db.query(JobEntry.platform_id, func.count(JobEntry.id).label("job_count"))
+            .filter(JobEntry.user_id == current_user.id)
+            .group_by(JobEntry.platform_id)
+            .subquery()
+        )
+
+        platforms_query = (
+            db.query(
+                JobPlatform, func.coalesce(job_counts.c.job_count, 0).label("job_count")
+            )
+            .outerjoin(job_counts, JobPlatform.id == job_counts.c.platform_id)
+            .filter(JobPlatform.user_id == current_user.id)
+            .all()
+        )
 
         platforms_data = []
         for p, count in platforms_query:
-            platforms_data.append({
-                "id": p.id,
-                "url": p.url,
-                "name": p.name,
-                "favicon_url": p.favicon_url,
-                "crawl_interval_minutes": p.crawl_interval_minutes,
-                "last_crawl_at": p.last_crawl_at.isoformat() if p.last_crawl_at else None,
-                "is_active": p.is_active,
-                "is_notification_enabled": p.is_notification_enabled,
-                "job_count": count
-            })
+            platforms_data.append(
+                {
+                    "id": p.id,
+                    "url": p.url,
+                    "name": p.name,
+                    "favicon_url": p.favicon_url,
+                    "crawl_interval_minutes": p.crawl_interval_minutes,
+                    "last_crawl_at": (
+                        p.last_crawl_at.isoformat() if p.last_crawl_at else None
+                    ),
+                    "is_active": p.is_active,
+                    "is_notification_enabled": p.is_notification_enabled,
+                    "job_count": count,
+                }
+            )
 
         # 3. Crawl Status (Active Crawls)
         active_crawls = []
         try:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
-            res = requests.get(f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2)
+            SCRAPER_URL = os.getenv(
+                "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
+            )
+            res = requests.get(
+                f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
+            )
             if res.ok:
                 data = res.json()
                 if "jobs" in data:
@@ -853,17 +1112,22 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
         return {
             "profile": profile,
             "platforms": platforms_data,
-            "active_crawls": active_crawls
+            "active_crawls": active_crawls,
         }
     finally:
         db.close()
 
-
     db = SessionLocal()
     try:
-        job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id).first()
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
+
         if not job or not job.application_draft:
             raise HTTPException(status_code=404, detail="Kein Anschreiben gefunden")
 
@@ -871,7 +1135,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
 
         today_str = date.today().strftime("%d.%m.%Y")
         applicant_name = "Dein Name"
-        
+
         full_html = f"""
         <html>
         <head>
@@ -943,59 +1207,71 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
             raise HTTPException(status_code=500, detail="PDF Fehler")
 
         pdf_buffer.seek(0)
-        
+
         filename = f"Bewerbung_{job.title.replace(' ', '_')}.pdf"
         return StreamingResponse(
-            pdf_buffer, 
-            media_type="application/pdf", 
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     finally:
         db.close()
 
+
 @app.post("/settings/upload-cv")
-async def upload_cv(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
-    if not file.filename.endswith('.pdf'):
+async def upload_cv(
+    file: UploadFile = File(...), current_user: User = Depends(get_current_user)
+):
+    if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Nur PDF Dateien erlaubt.")
 
     content = await file.read()
     text = extract_text_from_pdf(content)
-    
+
     if len(text) < 50:
-        raise HTTPException(status_code=400, detail="Konnte keinen Text aus dem PDF lesen (evtl. Bild-Scan?).")
+        raise HTTPException(
+            status_code=400,
+            detail="Konnte keinen Text aus dem PDF lesen (evtl. Bild-Scan?).",
+        )
 
     parsed_data = parse_cv_with_ai(text)
-    
+
     if not parsed_data:
-         raise HTTPException(status_code=500, detail="AI konnte CV nicht verarbeiten.")
+        raise HTTPException(status_code=500, detail="AI konnte CV nicht verarbeiten.")
 
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if not profile:
             profile = UserProfile(user_id=current_user.id)
             db.add(profile)
-        
+
         profile.role = parsed_data.get("role", profile.role)
         profile.skills = parsed_data.get("skills", profile.skills)
-        if parsed_data.get("min_salary"): profile.min_salary = parsed_data.get("min_salary")
-        if parsed_data.get("location"): profile.location = parsed_data.get("location")
-        
+        if parsed_data.get("min_salary"):
+            profile.min_salary = parsed_data.get("min_salary")
+        if parsed_data.get("location"):
+            profile.location = parsed_data.get("location")
+
         profile.cv_data = parsed_data.get("cv_data", {})
-        
+
         db.commit()
         return {"status": "success", "data": parsed_data}
-    
+
     except Exception as e:
         logger.error(f"DB Save Error: {e}")
         raise HTTPException(status_code=500, detail="Datenbank Fehler")
     finally:
         db.close()
 
+
 @app.get("/reset")
 def reset_db(current_user: User = Depends(get_current_admin_user)):
     from sqlalchemy import text
+
     db = SessionLocal()
     try:
         # Löscht Jobs UND User Settings
