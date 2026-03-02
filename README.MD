@@ -38,28 +38,38 @@ The application is based on a modern microservices architecture, ensuring scalab
 
 ```mermaid
 graph TD
-    User["User (Browser)"] -->|HTTP| Frontend["Frontend (Next.js)"]
-    Frontend -->|REST| ScraperAPI["Scraper Service API"]
-    Frontend -->|REST| AIAPI["AI Service API"]
-    
-    subgraph "Scraper Service"
-        ScraperAPI -->|Task| RabbitMQ
-        ScraperWorker["Scraper Worker (Combined)"] -->|Consume| RabbitMQ
-        ScraperWorker -->|Store| DB[("PostgreSQL")]
+    User["User (Browser)"]
+    Frontend["Frontend (Next.js)"]
+    OpenAI["OpenAI API"]
+
+    subgraph Infrastructure ["Infrastructure"]
+        RabbitMQ["RabbitMQ"]
+        Redis["Redis"]
+        DB[("PostgreSQL")]
+    end
+
+    subgraph ScraperService ["Scraper Service"]
+        ScraperAPI["Scraper Service API"]
+        ScraperWorker["Scraper Worker (Combined)"]
+    end
+
+    subgraph AIService ["AI Service"]
+        AIAPI["AI Service API"]
+        AIWorker["AI Worker (w/ Celery Beat)"]
     end
     
-    subgraph "AI Service"
-        AIAPI -->|Task| RabbitMQ
-        AIWorker["AI Worker (w/ Celery Beat)"] -->|Consume/Schedule| RabbitMQ
-        AIWorker -->|Query/Store| DB
-        AIWorker -->|API Call| OpenAI["OpenAI API"]
-    end
+    User -->|HTTP| Frontend
+    Frontend -->|REST| ScraperAPI
+    Frontend -->|REST| AIAPI
     
-    subgraph "Infrastructure"
-        RabbitMQ
-        Redis
-        DB
-    end
+    ScraperAPI -->|Task| RabbitMQ
+    ScraperWorker -->|Consume| RabbitMQ
+    ScraperWorker -->|Store| DB
+    
+    AIAPI -->|Task| RabbitMQ
+    AIWorker -->|Consume/Schedule| RabbitMQ
+    AIWorker -->|Query/Store| DB
+    AIWorker -->|API Call| OpenAI
 ```
 
 ## 🛠️ Installation & Usage
