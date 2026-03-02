@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.gitignore
+.dockerignore
+package-lock.json
+README.md
+Dockerfile
+.env*
+! .env*.example
+npm-debug.log
+yarn-error.log
+.DS_Store
