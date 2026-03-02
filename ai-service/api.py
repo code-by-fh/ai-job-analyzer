@@ -419,12 +419,31 @@ async def get_system_status():
     return {"crawling": bool(is_crawling)}
 
 
+@app.get("/jobs/domains")
+def get_job_domains(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import distinct
+        rows = (
+            db.query(distinct(JobEntry.company))
+            .filter(JobEntry.user_id == current_user.id, JobEntry.company.isnot(None))
+            .all()
+        )
+        domains = sorted(r[0] for r in rows if r[0])
+        return domains
+    finally:
+        db.close()
+
+
 @app.get("/jobs")
 def get_jobs(
     current_user: User = Depends(get_current_user),
     limit: Optional[int] = None,
     offset: int = 0,
     filter_type: Optional[str] = None,
+    sort_by: Optional[str] = "score",
+    has_application: Optional[bool] = None,
+    status_filter: Optional[str] = None,
 ):
     db = SessionLocal()
     try:
@@ -438,8 +457,19 @@ def get_jobs(
         elif filter_type == "applications":
             query = query.filter(JobEntry.application_draft.isnot(None))
 
-        # Sorting (always by match_score desc)
-        query = query.order_by(JobEntry.match_score.desc())
+        if has_application is True:
+            query = query.filter(JobEntry.application_draft.isnot(None))
+        elif has_application is False:
+            query = query.filter(JobEntry.application_draft.is_(None))
+
+        if status_filter:
+            query = query.filter(JobEntry.status == status_filter)
+
+        # Sorting
+        if sort_by == "date":
+            query = query.order_by(JobEntry.created_at.desc())
+        else:
+            query = query.order_by(JobEntry.match_score.desc())
 
         # Pagination (Backward Compatibility: if limit is None, return all)
         if limit is not None:
@@ -971,6 +1001,9 @@ def get_dashboard_data(
     limit: Optional[int] = 10,
     offset: int = 0,
     filter_type: Optional[str] = "all",
+    sort_by: Optional[str] = "score",
+    has_application: Optional[bool] = None,
+    status_filter: Optional[str] = None,
 ):
     """
     Combined endpoint for Dashboard:
@@ -989,7 +1022,18 @@ def get_dashboard_data(
         elif filter_type == "applications":
             query = query.filter(JobEntry.application_draft.isnot(None))
 
-        query = query.order_by(JobEntry.match_score.desc())
+        if has_application is True:
+            query = query.filter(JobEntry.application_draft.isnot(None))
+        elif has_application is False:
+            query = query.filter(JobEntry.application_draft.is_(None))
+
+        if status_filter:
+            query = query.filter(JobEntry.status == status_filter)
+
+        if sort_by == "date":
+            query = query.order_by(JobEntry.created_at.desc())
+        else:
+            query = query.order_by(JobEntry.match_score.desc())
         jobs = query.offset(offset).limit(limit).all()
 
         # 2. Fetch System Status

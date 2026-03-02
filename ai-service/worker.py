@@ -7,6 +7,9 @@ from openai import OpenAI
 from pypdf import PdfReader
 import redis
 from celery_config import celery_app
+from urllib.parse import urlparse
+from datetime import datetime, timezone
+
 from database import (
     SessionLocal,
     JobEntry,
@@ -14,6 +17,7 @@ from database import (
     SettingsData,
     JobPlatform,
     SystemSettings,
+    DomainUrlPattern,
 )
 import smtplib
 import ssl
@@ -152,6 +156,46 @@ def send_notification(job, profile):
     return False
 
 
+def _detect_url_pattern_with_ai(base_url, urls_list):
+    """
+    Uses AI to detect the job-detail URL path pattern for a domain.
+    Returns (pattern: str, job_urls: list[str]).
+    Only URLs present in urls_list are returned (anti-hallucination).
+    """
+    model = get_current_model()
+    system_prompt = """Du bist ein URL-Analyse-Experte für Job-Plattformen.
+Analysiere die URL-Liste und identifiziere den URL-Pfad-Präfix, der ausschließlich für Job-Detail-Seiten (einzelne Stellenanzeigen) gilt – keine Listing-, Kategorie- oder Übersichtsseiten.
+
+Antworte NUR mit validem JSON (kein Markdown):
+{
+  "pattern": "/jobs/",
+  "job_urls": ["https://...", "https://..."]
+}
+
+- "pattern": URL-Pfad-Präfix der Job-Detail-Seiten (z.B. "/jobs/", "/stellenangebote/", "/career/detail/")
+- "job_urls": Alle URLs aus der gegebenen Liste, die diesem Pattern entsprechen
+"""
+    sample = urls_list[:150]
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}"},
+        ],
+        temperature=0.0,
+    )
+    content = (
+        response.choices[0].message.content.strip()
+        .replace("```json", "")
+        .replace("```", "")
+    )
+    data = json.loads(content)
+    pattern = data.get("pattern", "")
+    urls_set = set(urls_list)
+    job_urls = [url for url in data.get("job_urls", []) if url in urls_set]
+    return pattern, job_urls
+
+
 @celery_app.task(name="ai.filter_urls")
 def filter_urls_task(args):
     if not args:
@@ -177,55 +221,92 @@ def filter_urls_task(args):
         logger.error(f"Invalid args unpacking in filter_urls: {args}")
         return []
 
-    logger.info(f"Filtering url with Input list size: {len(urls_list)}")
+    logger.info(f"Filtering URLs - Input list size: {len(urls_list)}")
 
+    db = SessionLocal()
     try:
-        system_prompt = """
-        Du bist ein Crawler-Filter. Analysiere den gesamten Text und gib ein JSON Array mit ALLEN relevanten Job-Detail-URLs zurück. Gib NUR das Array zurück.
-        Beispiel-Output: ["https://firma.de/jobs/entwickler-123", "https://firma.de/career/marketing-manager"]
-        """
-        model = get_current_model()
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"Basis: {base_url}. Liste: {json.dumps(urls_list)}",
-                },
-            ],
-            temperature=0.0,
+        domain = urlparse(base_url).netloc
+        existing_entry = (
+            db.query(DomainUrlPattern)
+            .filter(DomainUrlPattern.domain == domain)
+            .first()
         )
-        content = (
-            response.choices[0]
-            .message.content.strip()
-            .replace("```json", "")
-            .replace("```", "")
-        )
-        result_urls = json.loads(content)
-        logger.info(f"Filter result: {len(result_urls)} relevant URLs found.")
-        return [result_urls, user_id, job_id, platform_id]
+
+        if existing_entry:
+            pattern = existing_entry.url_pattern
+            logger.info(f"Known pattern for '{domain}': '{pattern}'")
+
+            filtered_urls = [
+                url for url in urls_list
+                if pattern in urlparse(url).path
+            ]
+
+            if len(filtered_urls) == 0:
+                logger.warning(
+                    f"Pattern '{pattern}' yielded 0 results for '{domain}'. "
+                    "Re-detecting pattern with AI..."
+                )
+                try:
+                    new_pattern, filtered_urls = _detect_url_pattern_with_ai(base_url, urls_list)
+                    if new_pattern:
+                        existing_entry.url_pattern = new_pattern
+                        existing_entry.updated_at = datetime.now(timezone.utc)
+                        db.commit()
+                        logger.info(f"Updated pattern for '{domain}': '{new_pattern}'")
+                except Exception as ai_e:
+                    logger.error(f"AI re-detection failed for '{domain}': {ai_e}")
+                    filtered_urls = []
+            else:
+                logger.info(f"Pattern filter: {len(filtered_urls)} URLs matched.")
+
+        else:
+            logger.info(f"Unknown domain '{domain}'. Detecting URL pattern with AI...")
+            try:
+                pattern, filtered_urls = _detect_url_pattern_with_ai(base_url, urls_list)
+                if pattern:
+                    db.add(DomainUrlPattern(domain=domain, url_pattern=pattern))
+                    db.commit()
+                    logger.info(f"Saved new pattern for '{domain}': '{pattern}'")
+                logger.info(f"AI detected {len(filtered_urls)} job URLs.")
+            except Exception as ai_e:
+                logger.error(f"AI pattern detection failed for '{domain}': {ai_e}")
+                filtered_urls = []
+
+        # Early deduplication: skip URLs already scraped for this user
+        if filtered_urls and user_id:
+            try:
+                existing_urls = {
+                    url
+                    for (url,) in db.query(JobEntry.url)
+                    .filter(JobEntry.user_id == user_id, JobEntry.url.isnot(None))
+                    .all()
+                }
+                before = len(filtered_urls)
+                filtered_urls = [url for url in filtered_urls if url not in existing_urls]
+                skipped = before - len(filtered_urls)
+                if skipped > 0:
+                    logger.info(f"Deduplication: {skipped} already-known URLs removed.")
+            except Exception as dedup_e:
+                logger.error(f"Deduplication error: {dedup_e}")
+
+        logger.info(f"Final: {len(filtered_urls)} new URLs to scrape for '{domain}'.")
+        return [filtered_urls, user_id, job_id, platform_id]
+
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         if job_id:
-            import requests
-
-            SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
-            )
+            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
             try:
                 requests.post(
                     f"{SCRAPER_URL}/fail-crawl",
-                    json={
-                        "job_id": job_id,
-                        "user_id": user_id,
-                        "error_message": str(e),
-                    },
+                    json={"job_id": job_id, "user_id": user_id, "error_message": str(e)},
                     timeout=5,
                 )
             except Exception as cleanup_e:
                 logger.error(f"Failed to trigger cleanup for job {job_id}: {cleanup_e}")
         return []
+    finally:
+        db.close()
 
 
 @celery_app.task(name="ai.analyze_job")

@@ -233,7 +233,14 @@ export const translations = {
         addItem: "Add Item",
         noEntries: "No entries yet.",
         removeEntry: "Remove entry",
-        completeProfileFirst: "Please complete your profile first."
+        completeProfileFirst: "Please complete your profile first.",
+
+        // Job list filters
+        filterSearchPlaceholder: "Search by title or company...",
+        allDomains: "All domains",
+        allStatuses: "All statuses",
+        withApplication: "With cover letter",
+        clearAllFilters: "Clear all filters",
     },
     de: {
         // Navigation
@@ -466,7 +473,14 @@ export const translations = {
         addItem: "Eintrag hinzufügen",
         noEntries: "Noch keine Einträge.",
         removeEntry: "Eintrag entfernen",
-        completeProfileFirst: "Bitte vervollständige zuerst dein Profil."
+        completeProfileFirst: "Bitte vervollständige zuerst dein Profil.",
+
+        // Job list filters
+        filterSearchPlaceholder: "Nach Titel oder Unternehmen suchen...",
+        allDomains: "Alle Domains",
+        allStatuses: "Alle Status",
+        withApplication: "Mit Anschreiben",
+        clearAllFilters: "Alle Filter löschen",
     }
 };
 

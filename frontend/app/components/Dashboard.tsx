@@ -1,7 +1,7 @@
 "use client";
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 
@@ -33,6 +33,11 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
     const [sortBy, setSortBy] = useState<'score' | 'date'>('score');
     const [filterType, setFilterType] = useState(initialFilter);
+    const [searchText, setSearchText] = useState('');
+    const [domainFilter, setDomainFilter] = useState('');
+    const [hasApplication, setHasApplication] = useState(false);
+    const [statusFilter, setStatusFilter] = useState('');
+    const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
@@ -86,6 +91,9 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         token,
         logout,
         filterType,
+        sortBy,
+        hasApplication,
+        statusFilter,
         initialJobs: initialDataLoaded ? initialJobs : undefined
     });
 
@@ -237,14 +245,29 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         }
     };
 
-    const sortedJobs = [...jobs].sort((a, b) => {
-        if (sortBy === 'date') {
-            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return dateB - dateA;
-        }
-        return b.match_score - a.match_score;
-    });
+    useEffect(() => {
+        const counts: Record<string, number> = {};
+        jobs.forEach(job => {
+            if (job.company) {
+                counts[job.company] = (counts[job.company] || 0) + 1;
+            }
+        });
+        const sorted = Object.entries(counts)
+            .map(([domain, count]) => ({ domain, count }))
+            .sort((a, b) => b.count - a.count);
+        setAvailableDomains(sorted);
+    }, [jobs]);
+
+    const visibleJobs = useMemo(() => {
+        return jobs.filter(job => {
+            const q = searchText.toLowerCase();
+            const matchesSearch = !q ||
+                job.title.toLowerCase().includes(q) ||
+                job.company.toLowerCase().includes(q);
+            const matchesDomain = !domainFilter || job.company === domainFilter;
+            return matchesSearch && matchesDomain;
+        });
+    }, [jobs, searchText, domainFilter]);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -307,17 +330,26 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 setFilterType={handleFilterChange}
                 sortBy={sortBy}
                 setSortBy={setSortBy}
+                searchText={searchText}
+                setSearchText={setSearchText}
+                domainFilter={domainFilter}
+                setDomainFilter={setDomainFilter}
+                availableDomains={availableDomains}
+                hasApplication={hasApplication}
+                setHasApplication={setHasApplication}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
             />
 
             {/* JOB LIST */}
             <div className="grid gap-6">
-                {jobs.length === 0 && !isCrawling && (
+                {visibleJobs.length === 0 && !isCrawling && (
                     <div className="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                         <p className="text-slate-400 dark:text-slate-500">{t('systemWaiting')}</p>
                     </div>
                 )}
 
-                {sortedJobs.map((job, index) => (
+                {visibleJobs.map((job, index) => (
                     <JobCard
                         key={job.id}
                         job={job}

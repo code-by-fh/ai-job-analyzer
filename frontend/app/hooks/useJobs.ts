@@ -6,14 +6,18 @@ interface UseJobsProps {
     token: string | null;
     logout: () => void;
     filterType: 'all' | 'favorite' | 'no_favorite' | 'applications';
+    sortBy: 'score' | 'date';
+    hasApplication: boolean;
+    statusFilter: string;
     initialJobs?: Job[];
 }
 
-export function useJobs({ token, logout, filterType, initialJobs }: UseJobsProps) {
+export function useJobs({ token, logout, filterType, sortBy, hasApplication, statusFilter, initialJobs }: UseJobsProps) {
     const [jobs, setJobs] = useState<Job[]>(initialJobs || []);
 
     const offsetRef = useRef(initialJobs ? 10 : 0);
     const hasMoreRef = useRef(true);
+    const isFirstRunRef = useRef(true);
 
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -34,11 +38,18 @@ export function useJobs({ token, logout, filterType, initialJobs }: UseJobsProps
         try {
             const queryParams = new URLSearchParams({
                 limit: limit.toString(),
-                offset: currentOffset.toString()
+                offset: currentOffset.toString(),
+                sort_by: sortBy,
             });
 
             if (filterType !== 'all') {
                 queryParams.append('filter_type', filterType);
+            }
+            if (hasApplication) {
+                queryParams.append('has_application', 'true');
+            }
+            if (statusFilter) {
+                queryParams.append('status_filter', statusFilter);
             }
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`, {
@@ -70,19 +81,19 @@ export function useJobs({ token, logout, filterType, initialJobs }: UseJobsProps
         } finally {
             setIsLoadingMore(false);
         }
-    }, [token, filterType, logout]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, logout]);
 
     useEffect(() => {
         if (token) {
-            const isInitialMount = offsetRef.current === (initialJobs ? 10 : 0);
-
-            if (isInitialMount && ((initialJobs && initialJobs.length > 0))) {
-                return;
+            if (isFirstRunRef.current) {
+                isFirstRunRef.current = false;
+                if (initialJobs && initialJobs.length > 0) {
+                    return; // Mount with server data — skip initial fetch
+                }
             }
-
             fetchJobs(true);
         }
-    }, [token, filterType, fetchJobs]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, fetchJobs]);
 
     const confirmDeleteJob = async () => {
         if (!jobToDelete) return;

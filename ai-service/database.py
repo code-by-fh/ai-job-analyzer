@@ -64,6 +64,15 @@ class SystemSettings(Base):
     openrouter_model = Column(String, default="tngtech/deepseek-r1t2-chimera:free")
 
 
+class DomainUrlPattern(Base):
+    __tablename__ = "domain_url_patterns"
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, unique=True, index=True, nullable=False)
+    url_pattern = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class JobPlatform(Base):
     __tablename__ = "job_platforms"
     id = Column(Integer, primary_key=True, index=True)
