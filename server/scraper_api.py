@@ -7,7 +7,7 @@ from celery import chain
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from celery_config import celery_app
+from scraper_celery_config import celery_app
 import redis
 
 logging.basicConfig(level=logging.INFO)

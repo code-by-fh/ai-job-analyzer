@@ -16,3 +16,6 @@ python-jose
 passlib
 bcrypt==3.2.2
 requests
+bs4
+markdownify
+playwright

@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import redis
 
-from celery_config import celery_app, REDIS_URL
+from scraper_celery_config import celery_app, REDIS_URL
 
 # Logging Setup
 logging.basicConfig(
@@ -138,7 +138,7 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
         if not html:
             logger.warning(f"Failed to fetch content from {start_url}. Aborting crawl.")
             if job_id:
-                from api import fail_crawl_job
+                from scraper_api import fail_crawl_job
 
                 fail_crawl_job(
                     job_id,
@@ -171,7 +171,7 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
     except Exception as e:
         logger.error(f"Error in fetch_links_task for {start_url}: {e}", exc_info=True)
         if job_id:
-            from api import fail_crawl_job
+            from scraper_api import fail_crawl_job
 
             fail_crawl_job(job_id, user_id, error_message=str(e))
         else:
@@ -266,7 +266,7 @@ def schedule_crawls_task(args):
     except Exception as e:
         logger.error(f"Error in schedule_crawls_task: {e}", exc_info=True)
         if job_id:
-            from api import fail_crawl_job
+            from scraper_api import fail_crawl_job
 
             fail_crawl_job(job_id, user_id, error_message=str(e))
 
