@@ -5,6 +5,9 @@ export const translations = {
     en: {
         // Navigation
         dashboard: "Dashboard",
+        listings: "Listings",
+        statistics: "Statistics",
+        scheduledPlatforms: "Scheduled Platforms",
         settings: "Settings",
         adminUsers: "Admin Users",
         applications: "Applications",
@@ -245,6 +248,9 @@ export const translations = {
     de: {
         // Navigation
         dashboard: "Dashboard",
+        listings: "Listings",
+        statistics: "Statistiken",
+        scheduledPlatforms: "Geplante Plattformen",
         settings: "Einstellungen",
         adminUsers: "Admin Benutzer",
         applications: "Bewerbungen",

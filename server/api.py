@@ -995,6 +995,27 @@ def trigger_platform_crawl(
         db.close()
 
 
+@app.get("/statistics")
+def get_statistics(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        q = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        total_jobs = q.count()
+        applied_jobs = q.filter(JobEntry.status == "APPLIED").count()
+        interviews = q.filter(JobEntry.status == "INTERVIEW").count()
+        offers = q.filter(JobEntry.status == "OFFER").count()
+        rejected = q.filter(JobEntry.status == "REJECTED").count()
+        return {
+            "total_jobs": total_jobs,
+            "applied_jobs": applied_jobs,
+            "interviews": interviews,
+            "offers": offers,
+            "rejected": rejected,
+        }
+    finally:
+        db.close()
+
+
 @app.get("/dashboard-data")
 def get_dashboard_data(
     current_user: User = Depends(get_current_user),

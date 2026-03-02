@@ -30,17 +30,15 @@ export interface NavItemConfig {
 export const MAIN_NAV_ITEMS: NavItemConfig[] = [
     {
         href: '/',
-        icon: '🏠',
+        icon: '📊',
         labelKey: 'dashboard',
         matchType: 'exact',
-        filterParam: null // Represents "Dashboard" (no applications filter)
     },
     {
-        href: '/?filter=applications',
-        icon: '📁',
-        labelKey: 'applications',
-        matchType: 'exact',
-        filterParam: 'applications'
+        href: '/listings',
+        icon: '📋',
+        labelKey: 'listings',
+        matchType: 'startsWith',
     },
     {
         href: '/settings',

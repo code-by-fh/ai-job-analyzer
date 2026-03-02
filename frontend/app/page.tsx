@@ -1,16 +1,6 @@
 
-import Dashboard from './components/Dashboard';
+import OverviewDashboard from './components/OverviewDashboard';
 
-interface PageProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}
-
-export default async function Page({ searchParams }: PageProps) {
-  const params = await searchParams;
-  const filterParam = params?.filter;
-  const rawFilter = Array.isArray(filterParam) ? filterParam[0] : filterParam;
-  const validFilters = ['all', 'favorite', 'no_favorite', 'applications'];
-  const initialFilter = validFilters.includes(rawFilter || '') ? (rawFilter as any) : 'all';
-
-  return <Dashboard initialFilter={initialFilter} />;
+export default function Page() {
+  return <OverviewDashboard />;
 }
