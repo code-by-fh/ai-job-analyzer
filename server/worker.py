@@ -180,12 +180,16 @@ Antworte NUR mit validem JSON (kein Markdown):
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}"},
+            {
+                "role": "user",
+                "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}",
+            },
         ],
         temperature=0.0,
     )
     content = (
-        response.choices[0].message.content.strip()
+        response.choices[0]
+        .message.content.strip()
         .replace("```json", "")
         .replace("```", "")
     )
@@ -227,19 +231,14 @@ def filter_urls_task(args):
     try:
         domain = urlparse(base_url).netloc
         existing_entry = (
-            db.query(DomainUrlPattern)
-            .filter(DomainUrlPattern.domain == domain)
-            .first()
+            db.query(DomainUrlPattern).filter(DomainUrlPattern.domain == domain).first()
         )
 
         if existing_entry:
             pattern = existing_entry.url_pattern
             logger.info(f"Known pattern for '{domain}': '{pattern}'")
 
-            filtered_urls = [
-                url for url in urls_list
-                if pattern in urlparse(url).path
-            ]
+            filtered_urls = [url for url in urls_list if pattern in urlparse(url).path]
 
             if len(filtered_urls) == 0:
                 logger.warning(
@@ -247,7 +246,9 @@ def filter_urls_task(args):
                     "Re-detecting pattern with AI..."
                 )
                 try:
-                    new_pattern, filtered_urls = _detect_url_pattern_with_ai(base_url, urls_list)
+                    new_pattern, filtered_urls = _detect_url_pattern_with_ai(
+                        base_url, urls_list
+                    )
                     if new_pattern:
                         existing_entry.url_pattern = new_pattern
                         existing_entry.updated_at = datetime.now(timezone.utc)
@@ -262,7 +263,9 @@ def filter_urls_task(args):
         else:
             logger.info(f"Unknown domain '{domain}'. Detecting URL pattern with AI...")
             try:
-                pattern, filtered_urls = _detect_url_pattern_with_ai(base_url, urls_list)
+                pattern, filtered_urls = _detect_url_pattern_with_ai(
+                    base_url, urls_list
+                )
                 if pattern:
                     db.add(DomainUrlPattern(domain=domain, url_pattern=pattern))
                     db.commit()
@@ -282,7 +285,9 @@ def filter_urls_task(args):
                     .all()
                 }
                 before = len(filtered_urls)
-                filtered_urls = [url for url in filtered_urls if url not in existing_urls]
+                filtered_urls = [
+                    url for url in filtered_urls if url not in existing_urls
+                ]
                 skipped = before - len(filtered_urls)
                 if skipped > 0:
                     logger.info(f"Deduplication: {skipped} already-known URLs removed.")
@@ -295,11 +300,17 @@ def filter_urls_task(args):
     except Exception as e:
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         if job_id:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+            SCRAPER_URL = os.getenv(
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+            )
             try:
                 requests.post(
                     f"{SCRAPER_URL}/fail-crawl",
-                    json={"job_id": job_id, "user_id": user_id, "error_message": str(e)},
+                    json={
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "error_message": str(e),
+                    },
                     timeout=5,
                 )
             except Exception as cleanup_e:
@@ -578,7 +589,7 @@ def analyze_job_task(job_data):
                 import requests
 
                 SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
                 )
                 requests.post(
                     f"{SCRAPER_URL}/fail-crawl",
@@ -755,7 +766,7 @@ def check_platforms_for_crawl():
         platforms = db.query(JobPlatform).filter(JobPlatform.is_active == True).all()
 
         triggered_count = 0
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
 
         for p in platforms:
             is_due = False

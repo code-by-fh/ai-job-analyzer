@@ -203,6 +203,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from scraper_api import app as scraper_app
+
+app.mount("/scraper", scraper_app)
+
 
 def extract_text_from_pdf(file_bytes):
     try:
@@ -424,6 +428,7 @@ def get_job_domains(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         from sqlalchemy import distinct
+
         rows = (
             db.query(distinct(JobEntry.company))
             .filter(JobEntry.user_id == current_user.id, JobEntry.company.isnot(None))
@@ -966,7 +971,7 @@ def trigger_platform_crawl(
         # Trigger scraper-service
         from sqlalchemy import func
 
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://scraper-service:8000")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
         logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
         try:
             resp = requests.post(
@@ -1070,7 +1075,7 @@ def get_dashboard_data(
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
             )
             res = requests.get(
                 f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
@@ -1162,7 +1167,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://scraper-service:8000"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
             )
             res = requests.get(
                 f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
