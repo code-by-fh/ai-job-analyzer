@@ -83,7 +83,8 @@ class JobPlatform(Base):
     crawl_interval_minutes = Column(Integer, default=1440) # Default: 24h
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
-    is_notification_enabled = Column(Boolean, default=False) # New field
+    is_notification_enabled = Column(Boolean, default=False)
+    notification_adapters = Column(JSON, default=[])
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -128,6 +129,7 @@ class PlatformUpdate(BaseModel):
     crawl_interval_minutes: Optional[int] = None
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
+    notification_adapters: Optional[List[str]] = None
 
 class PlatformResponse(BaseModel):
     id: int
@@ -138,6 +140,7 @@ class PlatformResponse(BaseModel):
     last_crawl_at: Optional[str] = None
     is_active: bool
     is_notification_enabled: bool = False
+    notification_adapters: List[str] = []
     job_count: int = 0
 
     class Config:

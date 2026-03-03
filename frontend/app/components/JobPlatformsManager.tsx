@@ -13,17 +13,21 @@ interface Platform {
     is_active: boolean;
     job_count: number;
     is_notification_enabled: boolean;
+    notification_adapters: string[];
 }
 
 interface JobPlatformsManagerProps {
     token: string | null;
     user: any;
     initialPlatforms?: Platform[];
+    configuredAdapters?: string[];
 }
 
-export default function JobPlatformsManager({ token, user, initialPlatforms }: JobPlatformsManagerProps) {
+const sortByName = (list: Platform[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
+
+export default function JobPlatformsManager({ token, user, initialPlatforms, configuredAdapters = [] }: JobPlatformsManagerProps) {
     const { t } = useLanguage();
-    const [platforms, setPlatforms] = useState<Platform[]>(initialPlatforms || []);
+    const [platforms, setPlatforms] = useState<Platform[]>(sortByName(initialPlatforms || []));
     const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(!initialPlatforms);
@@ -41,7 +45,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms }: J
             });
             if (res.ok) {
                 const data = await res.json();
-                setPlatforms(data);
+                setPlatforms(sortByName(data));
             }
         } catch (e) {
             console.error("Failed to fetch platforms", e);
@@ -196,9 +200,40 @@ export default function JobPlatformsManager({ token, user, initialPlatforms }: J
         }
     };
 
-    const toggleNotification = async (platform: Platform) => {
-        const newValue = !platform.is_notification_enabled;
-        await updatePlatform(platform.id, { is_notification_enabled: newValue });
+    const toggleAdapter = async (platform: Platform, adapter: string) => {
+        const current = platform.notification_adapters || [];
+        const updated = current.includes(adapter)
+            ? current.filter((a) => a !== adapter)
+            : [...current, adapter];
+
+        // Optimistic update — UI reflects the change immediately
+        setPlatforms(prev => prev.map(p =>
+            p.id === platform.id
+                ? { ...p, notification_adapters: updated, is_notification_enabled: updated.length > 0 }
+                : p
+        ));
+
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ notification_adapters: updated })
+            });
+            if (!res.ok) {
+                // Revert optimistic update on API error
+                setPlatforms(prev => prev.map(p =>
+                    p.id === platform.id ? { ...p, notification_adapters: current, is_notification_enabled: current.length > 0 } : p
+                ));
+            }
+        } catch {
+            // Revert on network error
+            setPlatforms(prev => prev.map(p =>
+                p.id === platform.id ? { ...p, notification_adapters: current, is_notification_enabled: current.length > 0 } : p
+            ));
+        }
     };
 
     if (loading) return <div className="text-slate-500 text-sm animate-pulse">{t('loading')}</div>;
@@ -244,57 +279,61 @@ export default function JobPlatformsManager({ token, user, initialPlatforms }: J
                                             </div>
                                         )}
                                         <div className="font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
-                                        <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{p.url}</div>
+                                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:text-indigo-400 hover:underline truncate max-w-[180px] block transition-colors" title={p.url}>
+                                            {p.url}
+                                        </a>
                                     </div>
                                 </div>
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() => toggleNotification(p)}
-                                        className={`p-2 rounded-lg transition-all cursor-pointer ${p.is_notification_enabled
-                                            ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10'
-                                            : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                            }`}
-                                        title={p.is_notification_enabled ? t('notificationsEnabled') : t('notificationsDisabled')}
-                                    >
-                                        <svg className="w-4 h-4" fill={p.is_notification_enabled ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                                    </button>
+                                <div className="flex gap-2 items-center">
                                     <button
                                         onClick={() => updatePlatform(p.id, { is_active: !p.is_active })}
-                                        className={`p-2 rounded-lg transition-all cursor-pointer ${p.is_active
-                                            ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
-                                            : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        className={`px-3 py-1.5 rounded-lg flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${p.is_active
+                                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 shadow-sm border border-emerald-200 dark:border-emerald-800/50'
+                                            : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
                                             }`}
                                         title={p.is_active ? t('platformActive') : t('platformInactive')}
                                     >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            {p.is_active ? (
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            ) : (
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            )}
-                                        </svg>
+                                        <div className={`w-2 h-2 rounded-full ${p.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                        {p.is_active ? 'ON' : 'OFF'}
                                     </button>
+                                    {(['GMAIL', 'PUSHOVER'] as const).filter(a => configuredAdapters.includes(a)).map((adapter) => {
+                                        const active = (p.notification_adapters || []).includes(adapter);
+                                        return (
+                                            <button
+                                                key={adapter}
+                                                onClick={() => toggleAdapter(p, adapter)}
+                                                className={`px-2 py-1.5 rounded-lg text-[10px] font-bold tracking-wide transition-all border cursor-pointer ${
+                                                    active
+                                                        ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50'
+                                                        : 'text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 line-through'
+                                                }`}
+                                                title={active ? `Disable ${adapter}` : `Enable ${adapter}`}
+                                            >
+                                                {adapter === 'GMAIL' ? '✉' : '📱'} {adapter}
+                                            </button>
+                                        );
+                                    })}
                                     <button
                                         onClick={() => triggerCrawl(p)}
                                         disabled={isBusy || !p.is_active}
-                                        className={`p-2 rounded-lg transition ${isBusy || !p.is_active ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
+                                        className={`p-2.5 rounded-lg transition ${isBusy || !p.is_active ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
                                         title={!p.is_active ? t('platformInactive') : (isBusy ? t('crawlInProgress') : t('scanNow'))}
                                     >
                                         {isBusy ? (
-                                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                             </svg>
                                         ) : (
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                         )}
                                     </button>
                                     <button
                                         onClick={() => removePlatform(p.id)}
-                                        className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                                        className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
                                         title={t('remove')}
                                     >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
                             </div>

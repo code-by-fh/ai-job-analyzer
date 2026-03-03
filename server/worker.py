@@ -72,88 +72,110 @@ def format_cv_for_prompt(cv_json):
     return text
 
 
-def send_notification(job, profile):
-    """
-    Sends notification via configured service (Gmail or Pushover).
-    Returns True if sent successfully, False otherwise.
-    """
-    service = profile.active_notification_service
-    if not service or service == "NONE":
+def _send_via_gmail(job, profile):
+    """Send a notification via Gmail. Returns True on success."""
+    if not profile.gmail_address or not profile.gmail_app_password:
+        logger.warning("Gmail notification enabled but credentials missing.")
         return False
 
-    try:
-        if service == "GMAIL":
-            if not profile.gmail_address or not profile.gmail_app_password:
-                logger.warning("Gmail notification enabled but credentials missing.")
-                return False
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = (
+        f"New Job Match: {job.title} at {job.company} ({int(job.match_score)}%)"
+    )
+    msg["From"] = profile.gmail_address
+    msg["To"] = profile.gmail_address
 
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = (
-                f"New Job Match: {job.title} at {job.company} ({int(job.match_score)}%)"
-            )
-            msg["From"] = profile.gmail_address
-            msg["To"] = profile.gmail_address
+    html = f"""
+    <html>
+      <body>
+        <h2>New Job Found!</h2>
+        <p><b>Title:</b> {job.title}</p>
+        <p><b>Company:</b> {job.company}</p>
+        <p><b>Match Score:</b> {int(job.match_score)}%</p>
+        <hr>
+        <h3>Reasoning:</h3>
+        <p>{job.reasoning}</p>
+        <hr>
+        <p>
+          <a href="{job.url}">Hier Details anschauen</a>
+        </p>
+      </body>
+    </html>
+    """
+    part = MIMEText(html, "html")
+    msg.attach(part)
 
-            # Simple HTML Body
-            html = f"""
-            <html>
-              <body>
-                <h2>New Job Found!</h2>
-                <p><b>Title:</b> {job.title}</p>
-                <p><b>Company:</b> {job.company}</p>
-                <p><b>Match Score:</b> {int(job.match_score)}%</p>
-                <hr>
-                <h3>Reasoning:</h3>
-                <p>{job.reasoning}</p>
-                <hr>
-                <p>
-                  <a href="{job.url}">Hier Details anschauen</a>
-                </p>
-              </body>
-            </html>
-            """
-            part = MIMEText(html, "html")
-            msg.attach(part)
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(profile.gmail_address, profile.gmail_app_password)
+        server.sendmail(
+            profile.gmail_address, profile.gmail_address, msg.as_string()
+        )
 
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-                server.login(profile.gmail_address, profile.gmail_app_password)
-                server.sendmail(
-                    profile.gmail_address, profile.gmail_address, msg.as_string()
-                )
+    logger.info(f"📧 Email notification sent for job {job.id}")
+    return True
 
-            logger.info(f"📧 Email notification sent for job {job.id}")
-            return True
 
-        elif service == "PUSHOVER":
-            if not profile.pushover_user_key or not profile.pushover_api_token:
-                logger.warning("Pushover notification enabled but credentials missing.")
-                return False
-
-            payload = {
-                "token": profile.pushover_api_token,
-                "user": profile.pushover_user_key,
-                "title": f"{job.title}",
-                "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
-                "url": job.url,
-                "url_title": "Hier Details anschauen",
-            }
-
-            resp = requests.post(
-                "https://api.pushover.net/1/messages.json", data=payload, timeout=10
-            )
-            if resp.status_code == 200:
-                logger.info(f"📱 Pushover notification sent for job {job.id}")
-                return True
-            else:
-                logger.error(f"Pushover Error: {resp.text}")
-                return False
-
-    except Exception as e:
-        logger.error(f"Notification Failed: {e}")
+def _send_via_pushover(job, profile):
+    """Send a notification via Pushover. Returns True on success."""
+    if not profile.pushover_user_key or not profile.pushover_api_token:
+        logger.warning("Pushover notification enabled but credentials missing.")
         return False
 
-    return False
+    payload = {
+        "token": profile.pushover_api_token,
+        "user": profile.pushover_user_key,
+        "title": f"{job.title}",
+        "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
+        "url": job.url,
+        "url_title": "Hier Details anschauen",
+    }
+
+    resp = requests.post(
+        "https://api.pushover.net/1/messages.json", data=payload, timeout=10
+    )
+    if resp.status_code == 200:
+        logger.info(f"📱 Pushover notification sent for job {job.id}")
+        return True
+    else:
+        logger.error(f"Pushover Error: {resp.text}")
+        return False
+
+
+def send_notification(job, profile, adapters=None):
+    """
+    Sends notifications via the specified adapters (e.g. ['GMAIL', 'PUSHOVER']).
+    If adapters is None or empty, falls back to profile.active_notification_service.
+    Sends via all specified adapters and returns True if at least one succeeded.
+    """
+    _adapter_fns = {
+        "GMAIL": _send_via_gmail,
+        "PUSHOVER": _send_via_pushover,
+    }
+
+    # Determine which adapters to use
+    if adapters:
+        services = [a.upper() for a in adapters if a.upper() in _adapter_fns]
+    else:
+        # Fallback: use all adapters that have credentials configured
+        services = []
+        if profile.gmail_address and profile.gmail_app_password:
+            services.append("GMAIL")
+        if profile.pushover_user_key and profile.pushover_api_token:
+            services.append("PUSHOVER")
+
+    if not services:
+        return False
+
+    any_sent = False
+    for service in services:
+        try:
+            if _adapter_fns[service](job, profile):
+                any_sent = True
+        except Exception as e:
+            logger.error(f"Notification via {service} failed: {e}")
+
+    return any_sent
 
 
 def _detect_url_pattern_with_ai(base_url, urls_list):
@@ -411,52 +433,64 @@ def analyze_job_task(job_data):
                         )
             return
 
-        # Determine profile to use (User Specific or Admin/Default)
-        profile = None
-        if user_id:
-            profile = (
-                db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            )
+        # Check if this is an initial run (skip LLM analysis to avoid unnecessary costs)
+        is_initial_run = False
+        if crawl_job_id:
+            raw = r.hget(f"crawl_job:{crawl_job_id}", "is_initial_run")
+            is_initial_run = raw is not None and int(raw) == 1
 
-        # Fallback to Admin (ID=1) or default if no user speciifed
-        if not profile:
-            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
-
-        if profile:
-            cv_text = format_cv_for_prompt(profile.cv_data)
-            profile_str = (
-                f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
+        if is_initial_run:
+            logger.info(
+                f"Initial run detected for crawl {crawl_job_id}. Skipping LLM analysis for Job {job_id}."
             )
+            data = {"score": 0, "reason_de": "Initialer Scan (Keine KI-Analyse)"}
         else:
-            logger.warning("No user profile found. Using default fallback profile.")
-            profile_str = "Python Dev"
+            # Determine profile to use (User Specific or Admin/Default)
+            profile = None
+            if user_id:
+                profile = (
+                    db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                )
 
-        logger.info(f"Sending analysis request to LLM for Job {job_id}...")
-        model = get_current_model()
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }",
-                },
-                {
-                    "role": "user",
-                    "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}",
-                },
-            ],
-            temperature=0.0,
-        )
-        content = (
-            response.choices[0]
-            .message.content.strip()
-            .replace("```json", "")
-            .replace("```", "")
-        )
-        data = json.loads(content)
-        logger.info(
-            f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
-        )
+            # Fallback to Admin (ID=1) or default if no user speciifed
+            if not profile:
+                profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+
+            if profile:
+                cv_text = format_cv_for_prompt(profile.cv_data)
+                profile_str = (
+                    f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
+                )
+            else:
+                logger.warning("No user profile found. Using default fallback profile.")
+                profile_str = "Python Dev"
+
+            logger.info(f"Sending analysis request to LLM for Job {job_id}...")
+            model = get_current_model()
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}",
+                    },
+                ],
+                temperature=0.0,
+            )
+            content = (
+                response.choices[0]
+                .message.content.strip()
+                .replace("```json", "")
+                .replace("```", "")
+            )
+            data = json.loads(content)
+            logger.info(
+                f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
+            )
 
         db_job = JobEntry(
             id=job_data["id"],
@@ -534,9 +568,6 @@ def analyze_job_task(job_data):
                     and platform.is_notification_enabled
                     and not db_job.notification_sent
                 ):
-                    # Fetch profile (already fetched earlier as 'profile', but ensure it's the one with settings)
-                    # Note: earlier 'profile' might be UserProfile or fallback.
-                    # We need the user's settings profile specifically.
                     settings_profile = (
                         db.query(UserProfile)
                         .filter(UserProfile.user_id == user_id)
@@ -544,7 +575,8 @@ def analyze_job_task(job_data):
                     )
 
                     if settings_profile:
-                        sent = send_notification(db_job, settings_profile)
+                        platform_adapters = platform.notification_adapters or []
+                        sent = send_notification(db_job, settings_profile, adapters=platform_adapters if platform_adapters else None)
                         if sent:
                             db_job.notification_sent = True
                             db.commit()
@@ -779,6 +811,7 @@ def check_platforms_for_crawl():
                     is_due = True
 
             if is_due:
+                is_initial_run = not p.last_crawl_at
                 logger.info(
                     f"🚀 Platform {p.name} (ID: {p.id}) is due for crawl. Triggering..."
                 )
@@ -790,6 +823,7 @@ def check_platforms_for_crawl():
                             "location": "Remote",
                             "user_id": p.user_id,
                             "platform_id": p.id,
+                            "is_initial_run": is_initial_run,
                         },
                         timeout=5,
                     )

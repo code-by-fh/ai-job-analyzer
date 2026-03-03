@@ -137,6 +137,7 @@ class JobSearch(BaseModel):
     location: str
     user_id: int = 1  # Default to 1 (Admin) if not provided
     platform_id: Optional[int] = None
+    is_initial_run: bool = False
 
 
 @app.post("/search")
@@ -157,6 +158,7 @@ async def search_jobs(search: JobSearch):
             "jobs_saved": 0,
             "status": "starting",
             "started_at": str(int(os.times().elapsed * 1000)),
+            "is_initial_run": int(search.is_initial_run),
         },
     )
     r.expire(f"crawl_job:{job_id}", 3600)  # TTL: 1 hour

@@ -820,6 +820,7 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     ),
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
+                    "notification_adapters": p.notification_adapters or [],
                     "job_count": count,
                 }
             )
@@ -864,7 +865,7 @@ def create_platform(
         db.add(db_platform)
         db.commit()
         db.refresh(db_platform)
-        return {**db_platform.__dict__, "job_count": 0}
+        return {**db_platform.__dict__, "job_count": 0, "notification_adapters": db_platform.notification_adapters or []}
     finally:
         db.close()
 
@@ -892,9 +893,10 @@ def update_platform(
         if platform_update.is_active is not None:
             db_platform.is_active = platform_update.is_active
         if platform_update.is_notification_enabled is not None:
-            db_platform.is_notification_enabled = (
-                platform_update.is_notification_enabled
-            )
+            db_platform.is_notification_enabled = platform_update.is_notification_enabled
+        if platform_update.notification_adapters is not None:
+            db_platform.notification_adapters = platform_update.notification_adapters
+            db_platform.is_notification_enabled = len(platform_update.notification_adapters) > 0
 
         db.commit()
         db.refresh(db_platform)
@@ -917,6 +919,7 @@ def update_platform(
             ),
             "is_active": db_platform.is_active,
             "is_notification_enabled": db_platform.is_notification_enabled,
+            "notification_adapters": db_platform.notification_adapters or [],
             "job_count": job_count,
         }
     finally:
@@ -968,6 +971,8 @@ def trigger_platform_crawl(
         if not db_platform.is_active:
             raise HTTPException(status_code=400, detail="Platform is deactivated")
 
+        is_initial_run = db_platform.last_crawl_at is None
+
         # Trigger scraper-service
         from sqlalchemy import func
 
@@ -981,6 +986,7 @@ def trigger_platform_crawl(
                     "location": "Remote",
                     "user_id": current_user.id,
                     "platform_id": db_platform.id,
+                    "is_initial_run": is_initial_run,
                 },
                 timeout=5,
             )
@@ -1159,6 +1165,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     ),
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
+                    "notification_adapters": p.notification_adapters or [],
                     "job_count": count,
                 }
             )
