@@ -5,7 +5,7 @@ import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
 import ConfirmModal from '../../components/ConfirmModal';
 
-export default function AdminUsersPage() {
+export default function UserManagementPage() {
     const { user, token, isAuthenticated } = useAuth();
     const { t } = useLanguage();
     const router = useRouter();

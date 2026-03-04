@@ -41,18 +41,30 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         matchType: 'startsWith',
     },
     {
+        href: '/profile',
+        icon: '👤',
+        labelKey: 'profile',
+        matchType: 'startsWith',
+    },
+    {
         href: '/settings',
         icon: '⚙️',
         labelKey: 'settings',
-        matchType: 'exact'
-    }
+        matchType: 'startsWith',
+    },
+    {
+        href: '/account',
+        icon: '🔑',
+        labelKey: 'account',
+        matchType: 'startsWith',
+    },
 ];
 
 export const ADMIN_NAV_ITEMS: NavItemConfig[] = [
     {
         href: '/admin/users',
         icon: '🛡️',
-        labelKey: 'adminUsers',
+        labelKey: 'userManagement',
         matchType: 'startsWith',
         requiresAdmin: true
     },

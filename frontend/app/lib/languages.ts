@@ -9,7 +9,8 @@ export const translations = {
         statistics: "Statistics",
         scheduledPlatforms: "Scheduled Platforms",
         settings: "Settings",
-        adminUsers: "Admin Users",
+        account: "Account",
+        userManagement: "User Management",
         applications: "Applications",
 
         // Dashboard Shell
@@ -252,7 +253,8 @@ export const translations = {
         statistics: "Statistiken",
         scheduledPlatforms: "Geplante Plattformen",
         settings: "Einstellungen",
-        adminUsers: "Admin Benutzer",
+        account: "Konto",
+        userManagement: "Benutzerverwaltung",
         applications: "Bewerbungen",
 
         // Dashboard Shell
