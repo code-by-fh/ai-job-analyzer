@@ -155,7 +155,6 @@ export const translations = {
         techStack: "Tech Stack",
 
         // Admin
-        userManagement: "User Management",
         adminControlPanel: "Admin Control Panel",
         createNewUser: "Create New User",
         username: "Username",
@@ -246,6 +245,17 @@ export const translations = {
         allStatuses: "All statuses",
         withApplication: "With cover letter",
         clearAllFilters: "Clear all filters",
+
+        // Deletion actions
+        alsoDeleteListings: "Also delete all associated listings",
+        deleteAllFromPlatform: "Delete all from this platform",
+        keepFavorites: "Keep favorites",
+        keepApplications: "Keep listings with application",
+        select: "Select",
+        selected: "Selected",
+        selectAllVisible: "Select all visible",
+        bulkDelete: "Delete Selected",
+        deleteAllFromCompany: "Delete all from {company}",
     },
     de: {
         // Navigation
@@ -400,7 +410,6 @@ export const translations = {
         techStack: "Tech Stack",
 
         // Admin
-        userManagement: "Benutzerverwaltung",
         adminControlPanel: "Admin-Kontrollzentrum",
         createNewUser: "Neuen Benutzer erstellen",
         username: "Benutzername",
@@ -491,6 +500,17 @@ export const translations = {
         allStatuses: "Alle Status",
         withApplication: "Mit Anschreiben",
         clearAllFilters: "Alle Filter löschen",
+
+        // Deletion actions
+        alsoDeleteListings: "Auch zugehörige Listings löschen",
+        deleteAllFromPlatform: "Alle von dieser Plattform löschen",
+        keepFavorites: "Favoriten behalten",
+        keepApplications: "Listings mit Bewerbung behalten",
+        select: "Auswählen",
+        selected: "ausgewählt",
+        selectAllVisible: "Alle sichtbaren auswählen",
+        bulkDelete: "Ausgewählte löschen",
+        deleteAllFromCompany: "Alle von {company} löschen",
     }
 };
 

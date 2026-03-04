@@ -17,6 +17,7 @@ import SearchHeader from './SearchHeader';
 import { useCrawl } from '../hooks/useCrawl';
 import { useJobs } from '../hooks/useJobs';
 import { Job } from '../lib/types';
+import { logger } from '../lib/logger';
 
 interface DashboardProps {
     initialFilter: 'all' | 'favorite' | 'no_favorite' | 'applications';
@@ -69,7 +70,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         setInitialDataLoaded(true);
                     }
                 })
-                .catch(err => console.error("Dashboard data fetch error:", err));
+                .catch(err => logger.error({ err }, "Dashboard data fetch error"));
         }
     }, [token, initialDataLoaded, initialFilter, logout]);
 
@@ -357,7 +358,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
                         onToggleExpand={(id) => setExpandedJobId(prev => prev === id ? null : id)}
                         onGenerate={handleGenerate}
-                        onDelete={(e, id) => setJobToDelete(id)}
                         onStatusUpdate={handleUpdateStatus}
                         onToggleFavorite={handleToggleFavorite}
                     />

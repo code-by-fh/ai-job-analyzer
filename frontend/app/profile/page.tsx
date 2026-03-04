@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import DynamicList from '../components/DynamicList';
 import { useLanguage } from '../components/LanguageProvider';
+import { logger } from '../lib/logger';
 
 export default function Profile() {
   const { token, refreshUser } = useAuth();
@@ -50,7 +51,7 @@ export default function Profile() {
           });
           setLoading(false);
         })
-        .catch(e => { console.error(e); setLoading(false); });
+        .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); setLoading(false); });
     }
   }, [token, router]);
 
@@ -111,7 +112,7 @@ export default function Profile() {
 
       setStatus(t('importSuccess'));
     } catch (error) {
-      console.error(error);
+      logger.error({ err: error }, "CV upload failed");
       setStatus(t('importFailed'));
     } finally {
       setUploading(false);

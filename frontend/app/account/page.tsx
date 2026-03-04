@@ -12,6 +12,8 @@ export default function Account() {
   const router = useRouter();
 
   const [status, setStatus] = useState('');
+  const [keepFavorites, setKeepFavorites] = useState(true);
+  const [keepApplications, setKeepApplications] = useState(true);
 
   const [confirmAction, setConfirmAction] = useState<{
     type: 'DELETE_JOBS' | 'DELETE_PROFILE' | 'FACTORY_RESET';
@@ -29,7 +31,7 @@ export default function Account() {
 
   const executeDeleteJobs = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -103,7 +105,7 @@ export default function Account() {
 
       <ConfirmModal
         isOpen={!!confirmAction}
-        onClose={() => setConfirmAction(null)}
+        onClose={() => { setConfirmAction(null); setKeepFavorites(true); setKeepApplications(true); }}
         onConfirm={() => {
           if (confirmAction) confirmAction.action();
         }}
@@ -111,7 +113,36 @@ export default function Account() {
         message={confirmAction?.message || ''}
         confirmText={t('confirm')}
         isDestructive
-      />
+      >
+        {confirmAction?.type === 'DELETE_JOBS' && (
+          <div className="mt-2 flex flex-col gap-1.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="keepFavoritesCheckbox"
+                checked={keepFavorites}
+                onChange={(e) => setKeepFavorites(e.target.checked)}
+                className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+              />
+              <label htmlFor="keepFavoritesCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
+                {t('keepFavorites')}
+              </label>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="checkbox"
+                id="keepApplicationsCheckbox"
+                checked={keepApplications}
+                onChange={(e) => setKeepApplications(e.target.checked)}
+                className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+              />
+              <label htmlFor="keepApplicationsCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
+                {t('keepApplications')}
+              </label>
+            </div>
+          </div>
+        )}
+      </ConfirmModal>
 
       {/* PAGE HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">

@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2, CheckCircle, Circle } from 'lucide-react';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
+import { logger } from '../lib/logger';
 
 interface Platform {
     id: number;
@@ -32,12 +34,16 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [platforms, setPlatforms] = useState<Platform[]>(sortByName(initialPlatforms || []));
     const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
+    const [lastRunByPlatform, setLastRunByPlatform] = useState<Record<string, { total: number; saved: number; skipped: number; status: 'success' | 'failed'; error?: string }>>({});
     const [loading, setLoading] = useState(!initialPlatforms);
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
 
     // Confirm Modal
     const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
+    const [deleteListingsWithPlatform, setDeleteListingsWithPlatform] = useState(false);
+    const [keepFavorites, setKeepFavorites] = useState(true);
+    const [keepApplications, setKeepApplications] = useState(true);
 
     const fetchPlatforms = async () => {
         if (!token) return;
@@ -50,7 +56,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 setPlatforms(sortByName(data));
             }
         } catch (e) {
-            console.error("Failed to fetch platforms", e);
+            logger.error({ err: e }, "Failed to fetch platforms");
         } finally {
             setLoading(false);
         }
@@ -73,11 +79,40 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                     active.forEach((j: any) => next.delete(j.platform));
                     return next;
                 });
+
+                // Capture completed/failed jobs as last-run summary
+                const done = data.jobs.filter((j: any) =>
+                    j.show_success === true || j.status === 'failed' ||
+                    (j.total > 0 && j.analysis_completed >= j.total)
+                );
+                if (done.length > 0) {
+                    setLastRunByPlatform(prev => {
+                        const next = { ...prev };
+                        done.forEach((j: any) => {
+                            next[j.platform] = {
+                                total: j.total ?? 0,
+                                saved: j.jobs_saved ?? 0,
+                                skipped: j.jobs_skipped ?? 0,
+                                status: j.status === 'failed' ? 'failed' : 'success',
+                                error: j.error_message,
+                            };
+                        });
+                        try { localStorage.setItem('crawl_last_run', JSON.stringify(next)); } catch { }
+                        return next;
+                    });
+                }
             }
         } catch (e) {
-            console.error("Failed to fetch crawl status", e);
+            logger.error({ err: e }, "Failed to fetch crawl status");
         }
     };
+
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('crawl_last_run');
+            if (stored) setLastRunByPlatform(JSON.parse(stored));
+        } catch { }
+    }, []);
 
     useEffect(() => {
         if (!initialPlatforms) {
@@ -139,7 +174,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const finalizeRemovePlatform = async () => {
         if (!platformToRemove) return;
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}?delete_listings=${deleteListingsWithPlatform}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -149,6 +184,9 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setTimeout(() => setStatus(''), 3000);
         }
         setPlatformToRemove(null);
+        setDeleteListingsWithPlatform(false);
+        setKeepFavorites(true);
+        setKeepApplications(true);
     };
 
     const triggerCrawl = async (platform: Platform) => {
@@ -195,10 +233,10 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             if (res.ok) {
                 fetchPlatforms();
             } else {
-                console.error("Update platform failed with status:", res.status);
+                logger.error({ status: res.status }, "Update platform failed");
             }
         } catch (e) {
-            console.error("Update platform failed", e);
+            logger.error({ err: e }, "Update platform failed");
         }
     };
 
@@ -244,13 +282,55 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         <section id="platforms-manager" className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <ConfirmModal
                 isOpen={!!platformToRemove}
-                onClose={() => setPlatformToRemove(null)}
+                onClose={() => { setPlatformToRemove(null); setDeleteListingsWithPlatform(false); setKeepFavorites(true); setKeepApplications(true); }}
                 onConfirm={finalizeRemovePlatform}
                 title={t('removePlatform')}
                 message={t('areYouCertain')}
                 confirmText={t('remove')}
                 isDestructive
-            />
+            >
+                <div className="mt-2 flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex items-start gap-3">
+                        <input
+                            type="checkbox"
+                            id="deleteListingsCheckbox"
+                            checked={deleteListingsWithPlatform}
+                            onChange={(e) => setDeleteListingsWithPlatform(e.target.checked)}
+                            className="mt-0.5 flex-shrink-0 appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-rose-500 checked:border-rose-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+                        />
+                        <label htmlFor="deleteListingsCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer leading-tight font-medium">
+                            {t('alsoDeleteListings')}
+                        </label>
+                    </div>
+
+                    <div className={`flex flex-col gap-1.5 pl-7 mt-1 transition-opacity duration-200 ${deleteListingsWithPlatform ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="keepFavoritesCheckbox"
+                                checked={keepFavorites}
+                                onChange={(e) => setKeepFavorites(e.target.checked)}
+                                className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+                            />
+                            <label htmlFor="keepFavoritesCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                {t('keepFavorites')}
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="keepApplicationsCheckbox"
+                                checked={keepApplications}
+                                onChange={(e) => setKeepApplications(e.target.checked)}
+                                className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+                            />
+                            <label htmlFor="keepApplicationsCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                {t('keepApplications')}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </ConfirmModal>
 
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -262,7 +342,20 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
 
             <div className="space-y-4">
                 {platforms.map((p) => {
-                    const isBusy = activeJobs.some(job => job.platform === p.url) || pendingUrls.has(p.url);
+                    const activeJob = activeJobs.find((job: any) => job.platform === p.url);
+                    const isBusy = !!activeJob || pendingUrls.has(p.url);
+
+                    const lastRun = lastRunByPlatform[p.url];
+
+                    // Step state derived from activeJob
+                    const isFailed = activeJob?.status === 'failed';
+                    const isSearching = activeJob && activeJob.total === 0 && !isFailed;
+                    const isFound = activeJob && activeJob.total > 0;
+                    const isScraping = activeJob && activeJob.scraping_completed > 0 && activeJob.scraping_completed < activeJob.total && !isFailed;
+                    const isScrapingDone = activeJob && activeJob.scraping_completed >= activeJob.total && activeJob.total > 0;
+                    const isAnalyzing = activeJob && ((activeJob.analyzing_jobs?.length > 0) || (activeJob.analysis_completed > 0 && !activeJob.show_success && !isFailed));
+                    const isAnalysisDone = activeJob?.show_success === true;
+
                     return (
                         <div key={p.id} className={`group relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border rounded-2xl p-4 sm:p-5 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/10 ${p.is_active ? 'bg-white/60 dark:bg-slate-900/60 backdrop-blur-md border-slate-200 dark:border-slate-800/80 hover:border-indigo-200 dark:hover:border-indigo-800/60' : 'bg-slate-50/50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-75'}`}>
                             {/* Left: Branding & Info */}
@@ -307,16 +400,19 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                                     const day = String(date.getDate()).padStart(2, '0');
                                                     const month = String(date.getMonth() + 1).padStart(2, '0');
                                                     const year = date.getFullYear();
-                                                    return `${day}.${month}.${year}`;
+                                                    const hours = String(date.getHours()).padStart(2, '0');
+                                                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                                                    return `${day}.${month}.${year} ${hours}:${minutes}`;
                                                 })() : t('neverScanned')}
                                             </span>
                                         </div>
 
-                                        <div className="flex items-center">
+                                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                                            <span className="text-blue-500">🔄</span>
                                             <select
                                                 value={p.crawl_interval_minutes}
                                                 onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
-                                                className="bg-transparent text-[11px] font-medium text-slate-500 dark:text-slate-400 border-none p-0 pr-4 focus:ring-0 cursor-pointer hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                                                className="bg-transparent text-[11px] font-medium text-slate-700 dark:text-slate-300 border-none p-0 pr-4 focus:ring-0 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors"
                                                 title="Scan Interval"
                                             >
                                                 <option value={60}>{t('everyHour')}</option>
@@ -327,6 +423,69 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                             </select>
                                         </div>
                                     </div>
+
+                                    {/* Inline Crawl Status */}
+                                    {isBusy && (
+                                        <div className="mt-3 flex items-center gap-1.5 text-[10px] font-medium">
+                                            {/* Step 1: Suche */}
+                                            <div className="flex items-center gap-1">
+                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${isSearching ? 'border-indigo-500 bg-white dark:bg-slate-900' : isFailed && !isFound ? 'border-rose-500 bg-rose-500' : 'border-emerald-500 bg-emerald-500'}`}>
+                                                    {isSearching
+                                                        ? <Loader2 className="w-2.5 h-2.5 text-indigo-500 animate-spin" />
+                                                        : isFailed && !isFound
+                                                            ? <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            : <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                                    }
+                                                </span>
+                                                <span className={isSearching ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'}>{t('searchingForJobs')}</span>
+                                            </div>
+
+                                            <span className="text-slate-300 dark:text-slate-700">›</span>
+
+                                            {/* Step 2: Gefunden */}
+                                            <div className="flex items-center gap-1">
+                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isFound ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : 'border-emerald-500 bg-emerald-500'}`}>
+                                                    {!isFound
+                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
+                                                        : <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                                    }
+                                                </span>
+                                                <span className={isFound ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}>
+                                                    {isFound ? `${activeJob.total} ${t('jobsFound')}` : t('jobsFound')}
+                                                </span>
+                                            </div>
+
+                                            <span className="text-slate-300 dark:text-slate-700">›</span>
+
+                                            {/* Step 3: Details */}
+                                            <div className="flex items-center gap-1">
+                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isScraping && !isScrapingDone ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : isScrapingDone ? 'border-emerald-500 bg-emerald-500' : 'border-indigo-500 bg-white dark:bg-slate-900'}`}>
+                                                    {!isScraping && !isScrapingDone
+                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
+                                                        : isScrapingDone
+                                                            ? <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                                            : <Loader2 className="w-2.5 h-2.5 text-indigo-500 animate-spin" />
+                                                    }
+                                                </span>
+                                                <span className={isScraping ? 'text-indigo-600 dark:text-indigo-400' : isScrapingDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-400 dark:text-slate-500'}>{t('loadJobDetails')}</span>
+                                            </div>
+
+                                            <span className="text-slate-300 dark:text-slate-700">›</span>
+
+                                            {/* Step 4: Analyse */}
+                                            <div className="flex items-center gap-1">
+                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isAnalyzing && !isAnalysisDone ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : isAnalysisDone ? 'border-emerald-500 bg-emerald-500' : 'border-amber-500 bg-white dark:bg-slate-900'}`}>
+                                                    {!isAnalyzing && !isAnalysisDone
+                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
+                                                        : isAnalysisDone
+                                                            ? <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                                            : <Loader2 className="w-2.5 h-2.5 text-amber-500 animate-spin" />
+                                                    }
+                                                </span>
+                                                <span className={isAnalyzing && !isAnalysisDone ? 'text-amber-600 dark:text-amber-400' : isAnalysisDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-400 dark:text-slate-500'}>{t('analysis')}</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

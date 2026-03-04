@@ -26,12 +26,9 @@ from email.mime.multipart import MIMEMultipart
 import requests
 
 # Logging Setup
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -108,9 +105,7 @@ def _send_via_gmail(job, profile):
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
         server.login(profile.gmail_address, profile.gmail_app_password)
-        server.sendmail(
-            profile.gmail_address, profile.gmail_address, msg.as_string()
-        )
+        server.sendmail(profile.gmail_address, profile.gmail_address, msg.as_string())
 
     logger.info(f"📧 Email notification sent for job {job.id}")
     return True
@@ -458,9 +453,7 @@ def analyze_job_task(job_data):
 
             if profile:
                 cv_text = format_cv_for_prompt(profile.cv_data)
-                profile_str = (
-                    f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
-                )
+                profile_str = f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
             else:
                 logger.warning("No user profile found. Using default fallback profile.")
                 profile_str = "Python Dev"
@@ -576,7 +569,11 @@ def analyze_job_task(job_data):
 
                     if settings_profile:
                         platform_adapters = platform.notification_adapters or []
-                        sent = send_notification(db_job, settings_profile, adapters=platform_adapters if platform_adapters else None)
+                        sent = send_notification(
+                            db_job,
+                            settings_profile,
+                            adapters=platform_adapters if platform_adapters else None,
+                        )
                         if sent:
                             db_job.notification_sent = True
                             db.commit()

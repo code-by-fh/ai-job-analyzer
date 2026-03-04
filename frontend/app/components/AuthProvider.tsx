@@ -1,6 +1,7 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { logger } from '../lib/logger';
 
 interface User {
     id: number;
@@ -61,16 +62,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                         }
                     }
                 } catch (e) {
-                    console.warn("Failed to fetch settings for profile check", e);
+                    logger.warn({ err: e }, "Failed to fetch settings for profile check");
                 }
 
                 setUser({ ...userData, is_profile_complete });
             } else {
-                console.error("Token invalid, logging out");
+                logger.error("Token invalid, logging out");
                 logout();
             }
         } catch (e) {
-            console.error("Fetch user failed", e);
+            logger.error({ err: e }, "Fetch user failed");
             logout();
         }
     }, [logout]);

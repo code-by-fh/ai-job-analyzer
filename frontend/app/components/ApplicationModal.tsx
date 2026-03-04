@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
+import { logger } from '../lib/logger';
 
 interface Props {
   isOpen: boolean;
@@ -17,6 +18,17 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
   const { t } = useLanguage();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -48,7 +60,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
       }
     } catch (e) {
       setErrorMessage(t('pdfDownloadError'));
-      console.error(e);
+      logger.error({ err: e }, 'PDF download error');
     }
   };
 

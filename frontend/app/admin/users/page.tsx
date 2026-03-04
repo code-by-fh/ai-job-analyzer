@@ -4,6 +4,7 @@ import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
 import ConfirmModal from '../../components/ConfirmModal';
+import { logger } from '../../lib/logger';
 
 export default function UserManagementPage() {
     const { user, token, isAuthenticated } = useAuth();
@@ -38,7 +39,7 @@ export default function UserManagementPage() {
                 setUsers(data);
             }
         } catch (e) {
-            console.error(e);
+            logger.error({ err: e }, "Fetch users failed");
         }
     };
 
@@ -80,7 +81,7 @@ export default function UserManagementPage() {
             });
             fetchUsers();
         } catch (e) {
-            console.error(e);
+            logger.error({ err: e }, "Error deleting user");
             setStatus(t('error') || 'Error deleting user');
             setTimeout(() => setStatus(''), 3000);
         }

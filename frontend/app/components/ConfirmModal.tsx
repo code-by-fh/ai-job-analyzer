@@ -11,6 +11,7 @@ interface ConfirmModalProps {
     confirmText?: string;
     cancelText?: string;
     isDestructive?: boolean;
+    children?: React.ReactNode;
 }
 
 export default function ConfirmModal({
@@ -21,18 +22,28 @@ export default function ConfirmModal({
     message,
     confirmText,
     cancelText,
-    isDestructive = false
+    isDestructive = false,
+    children
 }: ConfirmModalProps) {
     const { t } = useLanguage();
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
+            document.body.style.overflow = 'hidden';
             setIsVisible(true);
         } else {
+            document.body.style.overflow = 'unset';
             const timer = setTimeout(() => setIsVisible(false), 300);
-            return () => clearTimeout(timer);
+            return () => {
+                clearTimeout(timer);
+                document.body.style.overflow = 'unset';
+            };
         }
+
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
     }, [isOpen]);
 
     if (!isVisible) return null;
@@ -41,7 +52,7 @@ export default function ConfirmModal({
         <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
             {/* Backdrop */}
             <div
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             />
 
@@ -70,6 +81,8 @@ export default function ConfirmModal({
                     <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed mb-6">
                         {message}
                     </p>
+
+                    {children && <div className="mb-6">{children}</div>}
 
                     <div className="flex justify-end gap-3">
                         <button

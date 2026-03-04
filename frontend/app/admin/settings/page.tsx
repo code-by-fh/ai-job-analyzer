@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
+import { logger } from '../../lib/logger';
 
 export default function AdminSettingsPage() {
     const { user, token, isAuthenticated } = useAuth();
@@ -32,7 +33,7 @@ export default function AdminSettingsPage() {
                 setModel(data.openrouter_model);
             }
         } catch (e) {
-            console.error(e);
+            logger.error({ err: e }, "Fetch settings failed");
         } finally {
             setLoading(false);
         }

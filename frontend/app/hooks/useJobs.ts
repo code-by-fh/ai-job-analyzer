@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { logger } from '../lib/logger';
 import { Job } from '../lib/types';
 import { JobStatus } from '../components/JobStatusBadge';
 
@@ -80,7 +81,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             setHasMore(newHasMore);
 
         } catch (e) {
-            console.error("Fehler beim Laden:", e);
+            logger.error({ err: e }, "Error loading jobs");
             setGlobalError("Fehler beim Laden der Jobs.");
         } finally {
             setIsLoadingMore(false);
@@ -111,11 +112,11 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
                 setJobs(prev => prev.filter(job => job.id !== jobToDelete));
             } else {
                 const data = await res.json().catch(() => ({}));
-                console.error('Delete failed:', res.status, data);
+                logger.error({ status: res.status, data }, 'Delete failed');
                 setGlobalError(`Löschen fehlgeschlagen: ${data.detail || res.statusText}`);
             }
         } catch (e) {
-            console.error('Error deleting job:', e);
+            logger.error({ err: e }, 'Error deleting job');
             setGlobalError('Netzwerkfehler beim Löschen.');
         }
         setJobToDelete(null);
@@ -134,7 +135,35 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
                 ));
             }
         } catch (e) {
-            console.error('Error toggling favorite:', e);
+            logger.error({ err: e }, 'Error toggling favorite');
+        }
+    };
+
+    const bulkDeleteJobs = async (jobIds: string[]) => {
+        if (!jobIds.length) return false;
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/bulk-delete`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ job_ids: jobIds })
+            });
+
+            if (res.ok) {
+                setJobs(prev => prev.filter(job => !jobIds.includes(job.id)));
+                return true;
+            } else {
+                const data = await res.json().catch(() => ({}));
+                logger.error({ status: res.status, data }, 'Bulk delete failed');
+                setGlobalError(`Löschen fehlgeschlagen: ${data.detail || res.statusText}`);
+                return false;
+            }
+        } catch (e) {
+            logger.error({ err: e }, 'Error bulk deleting jobs');
+            setGlobalError('Netzwerkfehler beim Bulk-Löschen.');
+            return false;
         }
     };
 
@@ -154,11 +183,11 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
                 ));
             } else {
                 const errorData = await res.json().catch(() => ({}));
-                console.error('Failed to update status:', res.status, errorData);
+                logger.error({ status: res.status, errorData }, 'Failed to update status');
                 setGlobalError(`Fehler beim Aktualisieren: ${res.status} ${errorData.detail || ''}`);
             }
         } catch (e) {
-            console.error('Error updating status:', e);
+            logger.error({ err: e }, 'Error updating status');
             setGlobalError('Netzwerkfehler beim Aktualisieren des Status');
         }
     };
@@ -175,6 +204,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         setJobToDelete,
         confirmDeleteJob,
         handleToggleFavorite,
-        handleUpdateStatus
+        handleUpdateStatus,
+        bulkDeleteJobs
     };
 }

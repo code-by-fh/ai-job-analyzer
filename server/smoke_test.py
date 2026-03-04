@@ -14,6 +14,10 @@ Ausfuehrung:
   pytest smoke_test.py -v
 """
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 import sys
 import os
 import io
@@ -31,11 +35,11 @@ from types import SimpleNamespace
 
 # ─── Farben fuer Terminal-Output ────────────────────────────────────────────────
 GREEN = "\033[92m"
-RED   = "\033[91m"
+RED = "\033[91m"
 YELLOW = "\033[93m"
-CYAN  = "\033[96m"
+CYAN = "\033[96m"
 RESET = "\033[0m"
-BOLD  = "\033[1m"
+BOLD = "\033[1m"
 
 # ─── Globaler Test-State ────────────────────────────────────────────────────────
 _results: list[dict] = []
@@ -44,43 +48,54 @@ _base_url = "http://localhost:8002"
 
 def ok(name: str):
     _results.append({"name": name, "status": "PASS"})
-    print(f"  {GREEN}[OK]{RESET} {name}")
+    logger.info(f"  {GREEN}[OK]{RESET} {name}")
 
 
 def fail(name: str, reason: str = ""):
     _results.append({"name": name, "status": "FAIL", "reason": reason})
-    print(f"  {RED}[FAIL]{RESET} {name}" + (f"  -> {reason}" if reason else ""))
+    logger.info(f"  {RED}[FAIL]{RESET} {name}" + (f"  -> {reason}" if reason else ""))
 
 
 def skip(name: str, reason: str = ""):
     _results.append({"name": name, "status": "SKIP", "reason": reason})
-    print(f"  {YELLOW}[SKIP]{RESET} {name}" + (f"  -> {reason}" if reason else ""))
+    logger.info(
+        f"  {YELLOW}[SKIP]{RESET} {name}" + (f"  -> {reason}" if reason else "")
+    )
 
 
 def section(title: str):
-    print(f"\n{BOLD}{CYAN}{'-'*60}{RESET}")
-    print(f"{BOLD}{CYAN}  {title}{RESET}")
-    print(f"{BOLD}{CYAN}{'-'*60}{RESET}")
+    logger.info(f"\n{BOLD}{CYAN}{'-'*60}{RESET}")
+    logger.info(f"{BOLD}{CYAN}  {title}{RESET}")
+    logger.info(f"{BOLD}{CYAN}{'-'*60}{RESET}")
 
 
 # ─── HTTP-Hilfsfunktionen ───────────────────────────────────────────────────────
 
+
 def _get(path: str, token: str = None, **kwargs):
     import requests as req
+
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return req.get(f"{_base_url}{path}", headers=headers, timeout=10, **kwargs)
 
 
 def _post(path: str, data=None, json_data=None, token: str = None, **kwargs):
     import requests as req
+
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return req.post(
-        f"{_base_url}{path}", data=data, json=json_data, headers=headers, timeout=10, **kwargs
+        f"{_base_url}{path}",
+        data=data,
+        json=json_data,
+        headers=headers,
+        timeout=10,
+        **kwargs,
     )
 
 
 def _patch(path: str, json_data=None, token: str = None, **kwargs):
     import requests as req
+
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return req.patch(
         f"{_base_url}{path}", json=json_data, headers=headers, timeout=10, **kwargs
@@ -89,6 +104,7 @@ def _patch(path: str, json_data=None, token: str = None, **kwargs):
 
 def _delete(path: str, token: str = None, **kwargs):
     import requests as req
+
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return req.delete(f"{_base_url}{path}", headers=headers, timeout=10, **kwargs)
 
@@ -96,6 +112,7 @@ def _delete(path: str, token: str = None, **kwargs):
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEIL 1: API SMOKE TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def test_api_reachable() -> bool:
     """Stellt sicher dass die API erreichbar ist."""
@@ -110,8 +127,10 @@ def test_api_reachable() -> bool:
             return False
     except Exception as e:
         fail("GET /status", str(e))
-        print(f"\n  {RED}API nicht erreichbar unter {_base_url}{RESET}")
-        print(f"  Stelle sicher, dass der Server laeuft: docker-compose up server")
+        logger.info(f"\n  {RED}API nicht erreichbar unter {_base_url}{RESET}")
+        logger.info(
+            f"  Stelle sicher, dass der Server laeuft: docker-compose up server"
+        )
         return False
 
 
@@ -140,7 +159,10 @@ def test_auth(admin_token: list) -> None:
         if r.status_code == 401:
             ok("POST /auth/login (falsches PW) -> 401 Unauthorized")
         else:
-            fail("POST /auth/login (falsches PW)", f"Erwartet 401, erhalten {r.status_code}")
+            fail(
+                "POST /auth/login (falsches PW)",
+                f"Erwartet 401, erhalten {r.status_code}",
+            )
     except Exception as e:
         fail("POST /auth/login (falsches PW)", str(e))
 
@@ -224,7 +246,9 @@ def test_settings(token: str) -> None:
         r = _get("/settings", token=token)
         if r.status_code == 200:
             data = r.json()
-            ok(f"GET /settings -> Role='{data.get('role', '?')}', Location='{data.get('location', '?')}'")
+            ok(
+                f"GET /settings -> Role='{data.get('role', '?')}', Location='{data.get('location', '?')}'"
+            )
         else:
             fail("GET /settings", f"HTTP {r.status_code}")
             return
@@ -273,7 +297,10 @@ def test_settings(token: str) -> None:
         if r.status_code == 200 and r.json().get("role") == "Smoke Test Engineer":
             ok("GET /settings -> Aktualisierte Settings korrekt gespeichert")
         else:
-            fail("GET /settings (Verifikation)", f"Unerwarteter Wert: {r.json().get('role')}")
+            fail(
+                "GET /settings (Verifikation)",
+                f"Unerwarteter Wert: {r.json().get('role')}",
+            )
     except Exception as e:
         fail("GET /settings (Verifikation)", str(e))
 
@@ -297,7 +324,10 @@ def test_platforms(token: str) -> list:
     try:
         r = _post(
             "/platforms",
-            json_data={"url": "https://smoke-test-example.com/jobs", "crawl_interval_minutes": 720},
+            json_data={
+                "url": "https://smoke-test-example.com/jobs",
+                "crawl_interval_minutes": 720,
+            },
             token=token,
         )
         if r.status_code == 200:
@@ -346,12 +376,21 @@ def test_platform_crawl(token: str, platform_id: int) -> None:
         r = _post(f"/platforms/{platform_id}/crawl", token=token)
         # 200 = gestartet, 503 = Celery nicht verfuegbar
         if r.status_code in (200, 202, 503):
-            status_info = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-            ok(f"POST /platforms/{platform_id}/crawl -> HTTP {r.status_code} (Crawl getriggert oder Celery offline)")
+            status_info = (
+                r.json()
+                if r.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
+            ok(
+                f"POST /platforms/{platform_id}/crawl -> HTTP {r.status_code} (Crawl getriggert oder Celery offline)"
+            )
         elif r.status_code == 404:
             fail(f"POST /platforms/{platform_id}/crawl", "Platform nicht gefunden")
         else:
-            fail(f"POST /platforms/{platform_id}/crawl", f"HTTP {r.status_code}: {r.text[:200]}")
+            fail(
+                f"POST /platforms/{platform_id}/crawl",
+                f"HTTP {r.status_code}: {r.text[:200]}",
+            )
     except Exception as e:
         fail(f"POST /platforms/{platform_id}/crawl", str(e))
 
@@ -407,7 +446,11 @@ def test_users(token: str) -> None:
     test_username = f"smoketest_user_{int(time.time())}"
     created_id = None
     try:
-        r = _post("/users", json_data={"username": test_username, "password": "TestPW123!"}, token=token)
+        r = _post(
+            "/users",
+            json_data={"username": test_username, "password": "TestPW123!"},
+            token=token,
+        )
         if r.status_code == 200:
             created_id = r.json().get("id")
             ok(f"POST /users -> User '{test_username}' (id={created_id}) erstellt")
@@ -419,11 +462,17 @@ def test_users(token: str) -> None:
     # 8c. Duplikat-User verhindern
     if created_id:
         try:
-            r = _post("/users", json_data={"username": test_username, "password": "pw"}, token=token)
+            r = _post(
+                "/users",
+                json_data={"username": test_username, "password": "pw"},
+                token=token,
+            )
             if r.status_code == 400:
                 ok(f"POST /users (Duplikat) -> 400 Bad Request")
             else:
-                fail("POST /users (Duplikat)", f"Erwartet 400, erhalten {r.status_code}")
+                fail(
+                    "POST /users (Duplikat)", f"Erwartet 400, erhalten {r.status_code}"
+                )
         except Exception as e:
             fail("POST /users (Duplikat)", str(e))
 
@@ -433,7 +482,10 @@ def test_users(token: str) -> None:
             if r.status_code == 200:
                 ok(f"DELETE /users/{created_id} -> User geloescht")
             else:
-                fail(f"DELETE /users/{created_id}", f"HTTP {r.status_code}: {r.text[:200]}")
+                fail(
+                    f"DELETE /users/{created_id}",
+                    f"HTTP {r.status_code}: {r.text[:200]}",
+                )
         except Exception as e:
             fail(f"DELETE /users/{created_id}", str(e))
 
@@ -456,6 +508,7 @@ def cleanup_platforms(token: str, platform_ids: list) -> None:
 # TEIL 2: UNIT TESTS - BUSINESS LOGIC
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_worker_utilities() -> None:
     """Testet Hilfsfunktionen aus worker.py (ohne DB/Celery)."""
     section("10. Worker Utility Functions")
@@ -468,15 +521,19 @@ def test_worker_utilities() -> None:
     # format_cv_for_prompt
     try:
         # Modulimport mit gemockten Abhaengigkeiten
-        with patch.dict("sys.modules", {
-            "celery_config": MagicMock(),
-            "database": MagicMock(),
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "celery_config": MagicMock(),
+                "database": MagicMock(),
+                "openai": MagicMock(),
+                "pypdf": MagicMock(),
+                "redis": MagicMock(),
+            },
+        ):
             import importlib
             import worker as w
+
             importlib.reload(w)
 
             cv_json = {
@@ -509,14 +566,18 @@ def test_worker_utilities() -> None:
 
     # format_cv_for_prompt mit leerem Input
     try:
-        with patch.dict("sys.modules", {
-            "celery_config": MagicMock(),
-            "database": MagicMock(),
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "celery_config": MagicMock(),
+                "database": MagicMock(),
+                "openai": MagicMock(),
+                "pypdf": MagicMock(),
+                "redis": MagicMock(),
+            },
+        ):
             import worker as w
+
             result = w.format_cv_for_prompt(None)
             assert "Keine" in result, "Leerer Input nicht korrekt behandelt"
             ok("format_cv_for_prompt(None) -> Fallback-Text korrekt")
@@ -532,15 +593,19 @@ def test_notification_gmail() -> None:
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(),
-        "database": MagicMock(),
-        "openai": MagicMock(),
-        "pypdf": MagicMock(),
-        "redis": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
         import importlib
         import worker as w
+
         importlib.reload(w)
 
         job = SimpleNamespace(
@@ -565,7 +630,9 @@ def test_notification_gmail() -> None:
         if result is False:
             ok("_send_via_gmail (fehlende Creds) -> False (korrekt)")
         else:
-            fail("_send_via_gmail (fehlende Creds)", f"Erwartet False, erhalten {result}")
+            fail(
+                "_send_via_gmail (fehlende Creds)", f"Erwartet False, erhalten {result}"
+            )
 
         # 11b. Erfolgreicher Gmail-Versand via Mock
         mock_server = MagicMock()
@@ -578,7 +645,10 @@ def test_notification_gmail() -> None:
                 if result is True:
                     ok("_send_via_gmail (Mock SMTP) -> True, E-Mail versendet")
                 else:
-                    fail("_send_via_gmail (Mock SMTP)", f"Erwartet True, erhalten {result}")
+                    fail(
+                        "_send_via_gmail (Mock SMTP)",
+                        f"Erwartet True, erhalten {result}",
+                    )
             except Exception as e:
                 fail("_send_via_gmail (Mock SMTP)", str(e))
 
@@ -591,15 +661,19 @@ def test_notification_pushover() -> None:
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(),
-        "database": MagicMock(),
-        "openai": MagicMock(),
-        "pypdf": MagicMock(),
-        "redis": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
         import importlib
         import worker as w
+
         importlib.reload(w)
 
         job = SimpleNamespace(
@@ -624,7 +698,10 @@ def test_notification_pushover() -> None:
         if result is False:
             ok("_send_via_pushover (fehlende Creds) -> False (korrekt)")
         else:
-            fail("_send_via_pushover (fehlende Creds)", f"Erwartet False, erhalten {result}")
+            fail(
+                "_send_via_pushover (fehlende Creds)",
+                f"Erwartet False, erhalten {result}",
+            )
 
         # 12b. Erfolgreiche Pushover-Anfrage (HTTP 200)
         mock_response = MagicMock()
@@ -635,12 +712,19 @@ def test_notification_pushover() -> None:
                 ok("_send_via_pushover (Mock HTTP 200) -> True, Push versendet")
                 # Pruefe dass POST-Payload korrekte Felder enthaelt
                 call_kwargs = mock_post.call_args
-                payload = call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
+                payload = (
+                    call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
+                )
                 assert payload.get("token") == "api-token-xyz", "Falscher API-Token"
                 assert payload.get("user") == "user-key-abc", "Falscher User-Key"
-                ok("_send_via_pushover -> Payload enthaelt korrekten Token und User-Key")
+                ok(
+                    "_send_via_pushover -> Payload enthaelt korrekten Token und User-Key"
+                )
             else:
-                fail("_send_via_pushover (Mock HTTP 200)", f"Erwartet True, erhalten {result}")
+                fail(
+                    "_send_via_pushover (Mock HTTP 200)",
+                    f"Erwartet True, erhalten {result}",
+                )
 
         # 12c. Pushover Fehlerfall (HTTP 400)
         mock_response_err = MagicMock()
@@ -651,7 +735,10 @@ def test_notification_pushover() -> None:
             if result is False:
                 ok("_send_via_pushover (Mock HTTP 400) -> False (Fehlerbehandlung)")
             else:
-                fail("_send_via_pushover (Mock HTTP 400)", f"Erwartet False, erhalten {result}")
+                fail(
+                    "_send_via_pushover (Mock HTTP 400)",
+                    f"Erwartet False, erhalten {result}",
+                )
 
 
 def test_notification_dispatcher() -> None:
@@ -662,15 +749,19 @@ def test_notification_dispatcher() -> None:
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(),
-        "database": MagicMock(),
-        "openai": MagicMock(),
-        "pypdf": MagicMock(),
-        "redis": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
         import importlib
         import worker as w
+
         importlib.reload(w)
 
         job = SimpleNamespace(
@@ -689,8 +780,11 @@ def test_notification_dispatcher() -> None:
         )
 
         # 13a. Explizite Adapter-Liste: nur GMAIL
-        with patch.object(w, "_send_via_gmail", return_value=True) as mock_gmail, \
-             patch.object(w, "_send_via_pushover", return_value=False) as mock_push:
+        with patch.object(
+            w, "_send_via_gmail", return_value=True
+        ) as mock_gmail, patch.object(
+            w, "_send_via_pushover", return_value=False
+        ) as mock_push:
             result = w.send_notification(job, profile, adapters=["GMAIL"])
             assert result is True
             assert mock_gmail.call_count == 1
@@ -698,20 +792,30 @@ def test_notification_dispatcher() -> None:
             ok("send_notification(adapters=['GMAIL']) -> ruft nur Gmail auf")
 
         # 13b. Explizite Adapter-Liste: GMAIL + PUSHOVER
-        with patch.object(w, "_send_via_gmail", return_value=True) as mock_gmail, \
-             patch.object(w, "_send_via_pushover", return_value=True) as mock_push:
+        with patch.object(
+            w, "_send_via_gmail", return_value=True
+        ) as mock_gmail, patch.object(
+            w, "_send_via_pushover", return_value=True
+        ) as mock_push:
             result = w.send_notification(job, profile, adapters=["GMAIL", "PUSHOVER"])
             assert result is True
             assert mock_gmail.call_count == 1
             assert mock_push.call_count == 1
-            ok("send_notification(adapters=['GMAIL','PUSHOVER']) -> ruft beide Adapter auf")
+            ok(
+                "send_notification(adapters=['GMAIL','PUSHOVER']) -> ruft beide Adapter auf"
+            )
 
         # 13c. Fallback ohne Adapter-Angabe (nutzt Credentials)
-        with patch.object(w, "_send_via_gmail", return_value=True) as mock_gmail, \
-             patch.object(w, "_send_via_pushover", return_value=True) as mock_push:
+        with patch.object(
+            w, "_send_via_gmail", return_value=True
+        ) as mock_gmail, patch.object(
+            w, "_send_via_pushover", return_value=True
+        ) as mock_push:
             result = w.send_notification(job, profile, adapters=None)
             assert result is True
-            ok("send_notification(adapters=None) -> Fallback auf vorhandene Credentials")
+            ok(
+                "send_notification(adapters=None) -> Fallback auf vorhandene Credentials"
+            )
 
         # 13d. Kein Service verfuegbar -> False
         empty_profile = SimpleNamespace(
@@ -720,13 +824,17 @@ def test_notification_dispatcher() -> None:
             pushover_user_key=None,
             pushover_api_token=None,
         )
-        with patch.object(w, "_send_via_gmail", return_value=False), \
-             patch.object(w, "_send_via_pushover", return_value=False):
+        with patch.object(w, "_send_via_gmail", return_value=False), patch.object(
+            w, "_send_via_pushover", return_value=False
+        ):
             result = w.send_notification(job, empty_profile, adapters=None)
             if result is False:
                 ok("send_notification (keine Credentials) -> False")
             else:
-                fail("send_notification (keine Credentials)", f"Erwartet False, erhalten {result}")
+                fail(
+                    "send_notification (keine Credentials)",
+                    f"Erwartet False, erhalten {result}",
+                )
 
 
 def test_scraper_utilities() -> None:
@@ -737,14 +845,18 @@ def test_scraper_utilities() -> None:
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
-    with patch.dict("sys.modules", {
-        "scraper_celery_config": MagicMock(),
-        "playwright": MagicMock(),
-        "playwright.sync_api": MagicMock(),
-        "redis": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "scraper_celery_config": MagicMock(),
+            "playwright": MagicMock(),
+            "playwright.sync_api": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
         import importlib
         import scraper_worker as sw
+
         importlib.reload(sw)
 
         # 14a. get_clean_content mit echtem HTML
@@ -771,7 +883,9 @@ def test_scraper_utilities() -> None:
             assert "Nav-Junk" not in result, "Nav-Inhalt nicht entfernt"
             assert "Footer-Junk" not in result, "Footer-Inhalt nicht entfernt"
             assert "alert" not in result, "Script nicht entfernt"
-            ok("get_clean_content -> HTML korrekt bereinigt (Nav/Script/Footer entfernt)")
+            ok(
+                "get_clean_content -> HTML korrekt bereinigt (Nav/Script/Footer entfernt)"
+            )
         except Exception as e:
             fail("get_clean_content", str(e))
 
@@ -799,8 +913,10 @@ def test_schedule_crawls_logic() -> None:
 
     def passthrough_task_decorator(**kwargs):
         """Gibt die dekorierte Funktion unveraendert zurueck."""
+
         def decorator(fn):
             return fn
+
         return decorator
 
     mock_celery = MagicMock()
@@ -817,14 +933,18 @@ def test_schedule_crawls_logic() -> None:
     mock_scraper_celery_cfg.celery_app = mock_celery
     mock_scraper_celery_cfg.REDIS_URL = "redis://localhost:6379/0"
 
-    with patch.dict("sys.modules", {
-        "scraper_celery_config": mock_scraper_celery_cfg,
-        "playwright": MagicMock(),
-        "playwright.sync_api": MagicMock(),
-        "redis": mock_redis_module,
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "scraper_celery_config": mock_scraper_celery_cfg,
+            "playwright": MagicMock(),
+            "playwright.sync_api": MagicMock(),
+            "redis": mock_redis_module,
+        },
+    ):
         import importlib
         import scraper_worker as sw
+
         importlib.reload(sw)
         # Nach reload: celery_app im Modul ist unser mock mit passthrough decorator
         # send_task muss separat gemockt werden da das Modul celery_app.send_task nutzt
@@ -837,7 +957,10 @@ def test_schedule_crawls_logic() -> None:
             if mock_send_task.call_count == 0:
                 ok("schedule_crawls_task (leere Links) -> kein Task gesendet (korrekt)")
             else:
-                fail("schedule_crawls_task (leere Links)", f"Erwartet 0 Tasks, {mock_send_task.call_count} gesendet")
+                fail(
+                    "schedule_crawls_task (leere Links)",
+                    f"Erwartet 0 Tasks, {mock_send_task.call_count} gesendet",
+                )
         except Exception as e:
             fail("schedule_crawls_task (leere Links)", str(e))
 
@@ -853,7 +976,10 @@ def test_schedule_crawls_logic() -> None:
             if n == len(test_links):
                 ok(f"schedule_crawls_task -> {n} scraper.scrape_detail Tasks geplant")
             else:
-                fail("schedule_crawls_task (mit Links)", f"Erwartet {len(test_links)} Tasks, erhalten {n}")
+                fail(
+                    "schedule_crawls_task (mit Links)",
+                    f"Erwartet {len(test_links)} Tasks, erhalten {n}",
+                )
         except Exception as e:
             fail("schedule_crawls_task (mit Links)", str(e))
 
@@ -871,31 +997,32 @@ def test_schedule_crawls_logic() -> None:
 # ZUSAMMENFASSUNG
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def print_summary() -> int:
     passed = [r for r in _results if r["status"] == "PASS"]
     failed = [r for r in _results if r["status"] == "FAIL"]
     skipped = [r for r in _results if r["status"] == "SKIP"]
 
-    print(f"\n{BOLD}{'='*60}{RESET}")
-    print(f"{BOLD}  SMOKE TEST ERGEBNIS{RESET}")
-    print(f"{BOLD}{'='*60}{RESET}")
-    print(f"  {GREEN}[PASS] Bestanden: {len(passed)}{RESET}")
-    print(f"  {RED}[FAIL] Fehlgeschlagen: {len(failed)}{RESET}")
-    print(f"  {YELLOW}[SKIP] Uebersprungen: {len(skipped)}{RESET}")
-    print(f"  Gesamt: {len(_results)}")
+    logger.info(f"\n{BOLD}{'='*60}{RESET}")
+    logger.info(f"{BOLD}  SMOKE TEST ERGEBNIS{RESET}")
+    logger.info(f"{BOLD}{'='*60}{RESET}")
+    logger.info(f"  {GREEN}[PASS] Bestanden: {len(passed)}{RESET}")
+    logger.info(f"  {RED}[FAIL] Fehlgeschlagen: {len(failed)}{RESET}")
+    logger.info(f"  {YELLOW}[SKIP] Uebersprungen: {len(skipped)}{RESET}")
+    logger.info(f"  Gesamt: {len(_results)}")
 
     if failed:
-        print(f"\n{RED}Fehlgeschlagene Tests:{RESET}")
+        logger.info(f"\n{RED}Fehlgeschlagene Tests:{RESET}")
         for r in failed:
             reason = f" -> {r['reason']}" if r.get("reason") else ""
-            print(f"  {RED}FAIL{RESET} {r['name']}{reason}")
+            logger.info(f"  {RED}FAIL{RESET} {r['name']}{reason}")
 
-    print(f"\n{'='*60}")
+    logger.info(f"\n{'='*60}")
     if not failed:
-        print(f"{GREEN}{BOLD}  ALLE TESTS BESTANDEN{RESET}")
+        logger.info(f"{GREEN}{BOLD}  ALLE TESTS BESTANDEN{RESET}")
     else:
-        print(f"{RED}{BOLD}  {len(failed)} TEST(S) FEHLGESCHLAGEN{RESET}")
-    print(f"{'='*60}\n")
+        logger.info(f"{RED}{BOLD}  {len(failed)} TEST(S) FEHLGESCHLAGEN{RESET}")
+    logger.info(f"{'='*60}\n")
 
     return 1 if failed else 0
 
@@ -904,18 +1031,32 @@ def print_summary() -> int:
 # PYTEST-KOMPATIBLE WRAPPER (werden von pytest erkannt)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_unit_format_cv():
     """pytest: format_cv_for_prompt"""
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(), "database": MagicMock(),
-        "openai": MagicMock(), "pypdf": MagicMock(), "redis": MagicMock(),
-    }):
-        import importlib, worker as w; importlib.reload(w)
-        cv = {"experience": [{"role": "Dev", "company": "X", "duration": "2y", "description": "d"}],
-              "projects": [], "education": "BSc"}
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
+        import importlib, worker as w
+
+        importlib.reload(w)
+        cv = {
+            "experience": [
+                {"role": "Dev", "company": "X", "duration": "2y", "description": "d"}
+            ],
+            "projects": [],
+            "education": "BSc",
+        }
         r = w.format_cv_for_prompt(cv)
         assert "Dev" in r and "X" in r
 
@@ -925,11 +1066,19 @@ def test_unit_format_cv_none():
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(), "database": MagicMock(),
-        "openai": MagicMock(), "pypdf": MagicMock(), "redis": MagicMock(),
-    }):
-        import importlib, worker as w; importlib.reload(w)
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
+        import importlib, worker as w
+
+        importlib.reload(w)
         assert "Keine" in w.format_cv_for_prompt(None)
 
 
@@ -938,12 +1087,21 @@ def test_unit_get_clean_content():
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
-    with patch.dict("sys.modules", {
-        "scraper_celery_config": MagicMock(), "playwright": MagicMock(),
-        "playwright.sync_api": MagicMock(), "redis": MagicMock(),
-    }):
-        import importlib, scraper_worker as sw; importlib.reload(sw)
-        html = "<html><body><nav>nav</nav><h1>Senior Dev</h1><p>cool job</p></body></html>"
+    with patch.dict(
+        "sys.modules",
+        {
+            "scraper_celery_config": MagicMock(),
+            "playwright": MagicMock(),
+            "playwright.sync_api": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
+        import importlib, scraper_worker as sw
+
+        importlib.reload(sw)
+        html = (
+            "<html><body><nav>nav</nav><h1>Senior Dev</h1><p>cool job</p></body></html>"
+        )
         r = sw.get_clean_content(html)
         assert "Senior Dev" in r
         assert "nav" not in r.lower() or True  # nav koennte in Heading erscheinen
@@ -954,15 +1112,33 @@ def test_unit_send_notification_gmail_only():
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(), "database": MagicMock(),
-        "openai": MagicMock(), "pypdf": MagicMock(), "redis": MagicMock(),
-    }):
-        import importlib, worker as w; importlib.reload(w)
-        job = SimpleNamespace(id="j1", title="Dev", company="C", match_score=80,
-                              reasoning="r", url="http://x.com")
-        profile = SimpleNamespace(gmail_address="a@b.com", gmail_app_password="pw",
-                                  pushover_user_key=None, pushover_api_token=None)
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
+        import importlib, worker as w
+
+        importlib.reload(w)
+        job = SimpleNamespace(
+            id="j1",
+            title="Dev",
+            company="C",
+            match_score=80,
+            reasoning="r",
+            url="http://x.com",
+        )
+        profile = SimpleNamespace(
+            gmail_address="a@b.com",
+            gmail_app_password="pw",
+            pushover_user_key=None,
+            pushover_api_token=None,
+        )
         with patch.object(w, "_send_via_gmail", return_value=True) as m:
             assert w.send_notification(job, profile, adapters=["GMAIL"]) is True
             assert m.call_count == 1
@@ -973,13 +1149,27 @@ def test_unit_pushover_missing_creds():
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
-    with patch.dict("sys.modules", {
-        "celery_config": MagicMock(), "database": MagicMock(),
-        "openai": MagicMock(), "pypdf": MagicMock(), "redis": MagicMock(),
-    }):
-        import importlib, worker as w; importlib.reload(w)
-        job = SimpleNamespace(id="j2", title="Dev", company="C", match_score=80,
-                              reasoning="r", url="http://x.com")
+    with patch.dict(
+        "sys.modules",
+        {
+            "celery_config": MagicMock(),
+            "database": MagicMock(),
+            "openai": MagicMock(),
+            "pypdf": MagicMock(),
+            "redis": MagicMock(),
+        },
+    ):
+        import importlib, worker as w
+
+        importlib.reload(w)
+        job = SimpleNamespace(
+            id="j2",
+            title="Dev",
+            company="C",
+            match_score=80,
+            reasoning="r",
+            url="http://x.com",
+        )
         profile = SimpleNamespace(pushover_user_key=None, pushover_api_token=None)
         assert w._send_via_pushover(job, profile) is False
 
@@ -988,21 +1178,28 @@ def test_unit_pushover_missing_creds():
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def main():
     global _base_url
 
     parser = argparse.ArgumentParser(description="Job Agent MVP Smoke Test")
-    parser.add_argument("--url", default="http://localhost:8002", help="Base URL der API")
-    parser.add_argument("--skip-api", action="store_true", help="API-Tests ueberspringen (nur Unit-Tests)")
+    parser.add_argument(
+        "--url", default="http://localhost:8002", help="Base URL der API"
+    )
+    parser.add_argument(
+        "--skip-api",
+        action="store_true",
+        help="API-Tests ueberspringen (nur Unit-Tests)",
+    )
     args = parser.parse_args()
 
     _base_url = args.url.rstrip("/")
 
-    print(f"\n{BOLD}{'='*60}{RESET}")
-    print(f"{BOLD}  JOB AGENT MVP - SMOKE TEST SUITE{RESET}")
-    print(f"{BOLD}{'='*60}{RESET}")
-    print(f"  API URL: {_base_url}")
-    print(f"  Datum:   {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"\n{BOLD}{'='*60}{RESET}")
+    logger.info(f"{BOLD}  JOB AGENT MVP - SMOKE TEST SUITE{RESET}")
+    logger.info(f"{BOLD}{'='*60}{RESET}")
+    logger.info(f"  API URL: {_base_url}")
+    logger.info(f"  Datum:   {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     admin_token: list = []
 

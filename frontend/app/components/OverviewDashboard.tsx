@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
+import { logger } from '../lib/logger';
 
 interface Statistics {
     total_jobs: number;
@@ -47,19 +48,19 @@ export default function OverviewDashboard() {
             }
             setLoading(false);
         }).catch(err => {
-            console.error("OverviewDashboard fetch error:", err);
+            logger.error({ err }, "OverviewDashboard fetch error");
             setLoading(false);
         });
     }, [token, logout]);
 
     const statCards = stats
         ? [
-              { label: 'Total', value: stats.total_jobs, color: 'indigo', icon: '💼' },
-              { label: t('statusApplied'), value: stats.applied_jobs, color: 'blue', icon: '📤' },
-              { label: t('statusInterview'), value: stats.interviews, color: 'amber', icon: '🗓️' },
-              { label: t('statusOffer'), value: stats.offers, color: 'emerald', icon: '🎉' },
-              { label: t('statusRejected'), value: stats.rejected, color: 'rose', icon: '❌' },
-          ]
+            { label: 'Total', value: stats.total_jobs, color: 'indigo', icon: '💼' },
+            { label: t('statusApplied'), value: stats.applied_jobs, color: 'blue', icon: '📤' },
+            { label: t('statusInterview'), value: stats.interviews, color: 'amber', icon: '🗓️' },
+            { label: t('statusOffer'), value: stats.offers, color: 'emerald', icon: '🎉' },
+            { label: t('statusRejected'), value: stats.rejected, color: 'rose', icon: '❌' },
+        ]
         : [];
 
     const colorMap: Record<string, string> = {

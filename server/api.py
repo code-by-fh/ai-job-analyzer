@@ -62,8 +62,9 @@ from datetime import timedelta
 
 # Note: tasks are referenced by name strings
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # Dynamic Client helpers
@@ -484,6 +485,8 @@ def get_jobs(
         # Pagination (Backward Compatibility: if limit is None, return all)
         if limit is not None:
             query = query.offset(offset).limit(limit)
+        else:
+            query = query.limit(1000)
 
         return query.all()
     finally:
@@ -597,6 +600,36 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
         db.rollback()
         logger.error(f"Error deleting job: {e}")
         raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        db.close()
+
+
+class BulkDeleteRequest(BaseModel):
+    job_ids: List[str]
+
+
+@app.post("/jobs/bulk-delete")
+def delete_bulk_jobs(
+    request: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        # Prevent massive accidental deletions or empty requests
+        if not request.job_ids:
+            return {"status": "success", "count": 0}
+
+        query = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id, JobEntry.id.in_(request.job_ids)
+        )
+
+        deleted_count = query.delete(synchronize_session=False)
+        db.commit()
+        return {"status": "deleted", "count": deleted_count}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Bulk-Löschen der Jobs: {e}")
+        raise HTTPException(status_code=500, detail="Datenbankfehler beim Bulk-Löschen")
     finally:
         db.close()
 
@@ -728,7 +761,9 @@ def save_notification_settings(
 ):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        )
         if not profile:
             profile = UserProfile(user_id=current_user.id)
             db.add(profile)
@@ -764,12 +799,23 @@ def delete_settings(current_user: User = Depends(get_current_user)):
 
 
 @app.delete("/jobs")
-def delete_all_jobs(current_user: User = Depends(get_current_user)):
+def delete_all_jobs(
+    keep_favorites: bool = True,
+    keep_applications: bool = True,
+    company: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
     try:
-        deleted_count = (
-            db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
-        )
+        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        if company:
+            query = query.filter(JobEntry.company == company)
+        if keep_favorites:
+            query = query.filter(JobEntry.is_favorite == False)
+        if keep_applications:
+            query = query.filter(JobEntry.status == "OPEN")
+
+        deleted_count = query.delete(synchronize_session=False)
         db.commit()
         return {"status": "deleted", "count": deleted_count}
     except Exception as e:
@@ -890,7 +936,11 @@ def create_platform(
         db.add(db_platform)
         db.commit()
         db.refresh(db_platform)
-        return {**db_platform.__dict__, "job_count": 0, "notification_adapters": db_platform.notification_adapters or []}
+        return {
+            **db_platform.__dict__,
+            "job_count": 0,
+            "notification_adapters": db_platform.notification_adapters or [],
+        }
     finally:
         db.close()
 
@@ -918,10 +968,14 @@ def update_platform(
         if platform_update.is_active is not None:
             db_platform.is_active = platform_update.is_active
         if platform_update.is_notification_enabled is not None:
-            db_platform.is_notification_enabled = platform_update.is_notification_enabled
+            db_platform.is_notification_enabled = (
+                platform_update.is_notification_enabled
+            )
         if platform_update.notification_adapters is not None:
             db_platform.notification_adapters = platform_update.notification_adapters
-            db_platform.is_notification_enabled = len(platform_update.notification_adapters) > 0
+            db_platform.is_notification_enabled = (
+                len(platform_update.notification_adapters) > 0
+            )
 
         db.commit()
         db.refresh(db_platform)
@@ -952,7 +1006,13 @@ def update_platform(
 
 
 @app.delete("/platforms/{platform_id}")
-def delete_platform(platform_id: int, current_user: User = Depends(get_current_user)):
+def delete_platform(
+    platform_id: int,
+    delete_listings: bool = False,
+    keep_favorites: bool = True,
+    keep_applications: bool = True,
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
     try:
         db_platform = (
@@ -965,7 +1025,15 @@ def delete_platform(platform_id: int, current_user: User = Depends(get_current_u
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
 
-        # Set platform_id to NULL in jobs
+        if delete_listings:
+            query = db.query(JobEntry).filter(JobEntry.platform_id == platform_id)
+            if keep_favorites:
+                query = query.filter(JobEntry.is_favorite == False)
+            if keep_applications:
+                query = query.filter(JobEntry.status == "OPEN")
+            query.delete()
+
+        # Set platform_id to NULL in remaining jobs (favorites or non-open status)
         db.query(JobEntry).filter(JobEntry.platform_id == platform_id).update(
             {"platform_id": None}
         )
@@ -973,6 +1041,40 @@ def delete_platform(platform_id: int, current_user: User = Depends(get_current_u
         db.delete(db_platform)
         db.commit()
         return {"status": "deleted"}
+    finally:
+        db.close()
+
+
+@app.delete("/platforms/{platform_id}/jobs")
+def delete_platform_jobs(
+    platform_id: int,
+    keep_favorites: bool = True,
+    keep_applications: bool = True,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        # Verify platform belongs to user
+        db_platform = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id
+            )
+            .first()
+        )
+        if not db_platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        query = db.query(JobEntry).filter(JobEntry.platform_id == platform_id)
+        if keep_favorites:
+            query = query.filter(JobEntry.is_favorite == False)
+        if keep_applications:
+            query = query.filter(JobEntry.status == "OPEN")
+
+        deleted_count = query.delete()
+
+        db.commit()
+        return {"status": "deleted", "deleted_count": deleted_count}
     finally:
         db.close()
 

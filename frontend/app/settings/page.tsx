@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import PasswordInput from '../components/PasswordInput';
 import { useLanguage } from '../components/LanguageProvider';
+import { logger } from '../lib/logger';
 
 export default function Settings() {
   const { user, token } = useAuth();
@@ -49,7 +50,7 @@ export default function Settings() {
           setSavedData(loadedData);
           setLoading(false);
         })
-        .catch(e => { console.error(e); setLoading(false); });
+        .catch(e => { logger.error({ err: e }, "Settings load error"); setLoading(false); });
     }
   }, [token, router]);
 

@@ -10,8 +10,9 @@ from pydantic import BaseModel
 from scraper_celery_config import celery_app
 import redis
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 app = FastAPI()
 allowed_origins = [

@@ -14,12 +14,9 @@ import redis
 from scraper_celery_config import celery_app, REDIS_URL
 
 # Logging Setup
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_html_with_browser(url):

@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Job } from '../lib/types';
 import { useLanguage } from './LanguageProvider';
 import JobStatusBadge, { JobStatus } from './JobStatusBadge';
@@ -11,9 +11,10 @@ interface JobCardProps {
     isGenerating: boolean;
     onToggleExpand: (jobId: string) => void;
     onGenerate: (job: Job) => void;
-    onDelete: (e: React.MouseEvent, jobId: string) => void;
     onStatusUpdate: (jobId: string, status: JobStatus) => void;
     onToggleFavorite: (jobId: string, currentStatus: boolean) => void;
+    isSelected?: boolean;
+    onSelect?: (jobId: string, selected: boolean) => void;
 }
 
 export default function JobCard({
@@ -22,9 +23,10 @@ export default function JobCard({
     isGenerating,
     onToggleExpand,
     onGenerate,
-    onDelete,
     onStatusUpdate,
-    onToggleFavorite
+    onToggleFavorite,
+    isSelected = false,
+    onSelect
 }: JobCardProps) {
     const { t } = useLanguage();
 
@@ -56,12 +58,16 @@ export default function JobCard({
         group relative rounded-2xl border transition-all duration-300 hover:z-30
         ${isExpanded
                     ? 'bg-white dark:bg-slate-900 border-indigo-500/30 dark:border-indigo-500/50 shadow-2xl dark:shadow-[0_0_40px_rgba(0,0,0,0.4)] z-20'
-                    : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-lg dark:hover:shadow-none'
+                    : isSelected
+                        ? 'bg-indigo-50/50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 shadow-md'
+                        : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-lg dark:hover:shadow-none'
                 }
       `}
         >
             {/* Glow Effect (Dark Mode) */}
             <div className={`absolute inset-0 rounded-2xl bg-gradient-to-r from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${isExpanded ? 'opacity-100' : ''}`} />
+
+
 
             <div className="p-6 sm:p-8 flex flex-col sm:flex-row gap-8 relative z-10">
                 {/* Match Score Indicator - Enhanced */}
@@ -102,9 +108,30 @@ export default function JobCard({
                             </div>
                         </div>
                         <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded-full border border-slate-200/50 dark:border-slate-700/30">
-                                {timeAgo(job.created_at)}
-                            </span>
+                            <div className="flex flex-row-reverse sm:flex-row items-center gap-3">
+                                {onSelect && (
+                                    <label className="relative flex items-center justify-center cursor-pointer group/cb">
+                                        <input
+                                            type="checkbox"
+                                            className="peer sr-only"
+                                            checked={isSelected}
+                                            onChange={(e) => onSelect(job.id, e.target.checked)}
+                                        />
+                                        <div className={`w-[22px] h-[22px] rounded-md border-2 transition-all duration-200 flex items-center justify-center
+                                            ${isSelected
+                                                ? 'bg-indigo-500 border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]'
+                                                : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 group-hover/cb:border-indigo-400 dark:group-hover/cb:border-indigo-500 shadow-sm'
+                                            }`}>
+                                            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-300 ${isSelected ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </div>
+                                    </label>
+                                )}
+                                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded-full border border-slate-200/50 dark:border-slate-700/30 whitespace-nowrap">
+                                    {timeAgo(job.created_at)}
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -182,13 +209,7 @@ export default function JobCard({
                                 {job.is_favorite ? '⭐' : '☆'}
                             </button>
 
-                            <button
-                                onClick={(e) => onDelete(e, job.id)}
-                                className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-transparent hover:border-rose-200 dark:hover:border-rose-500/20 transition-all duration-200 active:scale-90 cursor-pointer relative z-40"
-                                title={t('deleteJob')}
-                            >
-                                <Trash2 className="w-5 h-5" />
-                            </button>
+
 
                             <button onClick={() => onToggleExpand(job.id)}
                                 className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm font-medium transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer active:scale-95 flex items-center gap-1.5"

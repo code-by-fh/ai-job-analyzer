@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { logger } from '../lib/logger';
 import { CrawlJob } from '../components/CrawlStatus';
 import { AuthContextType } from '../components/AuthProvider';
 import { Job } from '../lib/types';
@@ -53,7 +54,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
                 setIsCrawling(false);
             }
         } catch (e) {
-            console.error("Fehler beim Laden des Crawl-Status:", e);
+            logger.error({ err: e }, "Error loading crawl status");
         }
     }, [user?.id]);
 
@@ -81,7 +82,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
                 setGlobalError(`Failed to cancel: ${data.message || res.statusText}`);
             }
         } catch (e) {
-            console.error('Error cancelling crawl:', e);
+            logger.error({ err: e }, 'Error cancelling crawl');
             setGlobalError('Network error while cancelling crawl');
         }
         setCrawlToCancel(null);
@@ -120,7 +121,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
             wsRef.current = ws;
 
             ws.onopen = () => {
-                // console.log("WebSocket Connected");
+                // logger.info("WebSocket Connected");
             };
 
             ws.onmessage = (event) => {
@@ -293,7 +294,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
                         setTimeout(() => setGlobalError(null), 8000);
                     }
                 } catch (e) {
-                    console.error("Error parsing WS message", e);
+                    logger.error({ err: e }, "Error parsing WS message");
                 }
             };
 
@@ -304,7 +305,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
             ws.onerror = (err) => {
                 // Ignore errors during close/cleanup
                 if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) return;
-                console.error("WebSocket error", err);
+                logger.error({ err }, "WebSocket error");
                 ws.close();
             };
         }, 100);
