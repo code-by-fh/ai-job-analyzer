@@ -175,7 +175,7 @@ export default function Profile() {
         <div className="space-y-8 lg:col-span-2">
 
           {/* TARGET PARAMETERS CARD */}
-          <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
               <span>🎯</span> {t('targetParameters')}
             </h2>
@@ -238,7 +238,7 @@ export default function Profile() {
           </section>
 
           {/* EXPERIENCE */}
-          <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
             <DynamicList
               title={t('experience')}
               items={formData.cv_data.experience}
@@ -261,7 +261,7 @@ export default function Profile() {
           </section>
 
           {/* KEY PROJECTS */}
-          <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
             <DynamicList
               title={t('keyProjects')}
               items={formData.cv_data.projects}
@@ -283,7 +283,7 @@ export default function Profile() {
           </section>
 
           {/* EDUCATION */}
-          <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
               <span>🎓</span> {t('education')}
             </h2>
@@ -305,7 +305,7 @@ export default function Profile() {
 
         {/* RIGHT COLUMN - CV Upload */}
         <div className="space-y-8">
-          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20">
+          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20 hover:shadow-2xl hover:shadow-indigo-500/40 transition-all duration-300">
             <div className="relative z-10">
               <h2 className="text-xl font-bold mb-2">{t('uploadCv')}</h2>
               <p className="text-indigo-100 text-sm mb-6">{t('dropPdf')}</p>

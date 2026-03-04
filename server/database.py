@@ -121,6 +121,12 @@ class SettingsData(BaseModel):
     pushover_api_token: Optional[str] = None
     active_notification_service: str = "NONE"
 
+class NotificationSettingsData(BaseModel):
+    gmail_address: Optional[str] = None
+    gmail_app_password: Optional[str] = None
+    pushover_user_key: Optional[str] = None
+    pushover_api_token: Optional[str] = None
+
 class PlatformCreate(BaseModel):
     url: str
     crawl_interval_minutes: int = 1440

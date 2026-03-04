@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
 
@@ -27,6 +28,7 @@ const sortByName = (list: Platform[]) => [...list].sort((a, b) => a.name.localeC
 
 export default function JobPlatformsManager({ token, user, initialPlatforms, configuredAdapters = [] }: JobPlatformsManagerProps) {
     const { t } = useLanguage();
+    const router = useRouter();
     const [platforms, setPlatforms] = useState<Platform[]>(sortByName(initialPlatforms || []));
     const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
@@ -262,115 +264,131 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 {platforms.map((p) => {
                     const isBusy = activeJobs.some(job => job.platform === p.url) || pendingUrls.has(p.url);
                     return (
-                        <div key={p.id} className={`group relative border rounded-xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/5 ${p.is_active ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/60' : 'bg-slate-100/50 dark:bg-slate-900/20 border-slate-300 dark:border-slate-700/40 opacity-60'}`}>
-                            <div className="flex items-start justify-between gap-4">
-                                <div className="flex gap-3 items-center min-w-0">
-                                    <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700 p-1.5 flex-shrink-0">
-                                        {p.favicon_url ? (
-                                            <img src={p.favicon_url} alt="" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                                        ) : (
-                                            <span className="text-lg">🌐</span>
+                        <div key={p.id} className={`group relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border rounded-2xl p-4 sm:p-5 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/10 ${p.is_active ? 'bg-white/60 dark:bg-slate-900/60 backdrop-blur-md border-slate-200 dark:border-slate-800/80 hover:border-indigo-200 dark:hover:border-indigo-800/60' : 'bg-slate-50/50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-75'}`}>
+                            {/* Left: Branding & Info */}
+                            <div className="flex items-center gap-4 min-w-0 flex-1">
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border p-2 transition-transform duration-300 group-hover:scale-105 ${p.is_active ? 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'}`}>
+                                    {p.favicon_url ? (
+                                        <img src={p.favicon_url} alt="" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                                    ) : (
+                                        <span className="text-xl">🌐</span>
+                                    )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                        <span className={`font-bold text-base truncate transition-colors ${p.is_active ? 'text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                            {p.name}
+                                        </span>
+                                        {!p.is_active && (
+                                            <span className="px-2 py-0.5 text-[9px] uppercase font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 tracking-wider">
+                                                {t('deactivated')}
+                                            </span>
                                         )}
                                     </div>
-                                    <div className="min-w-0">
-                                        {!p.is_active && (
-                                            <div className="text-[9px] uppercase font-bold text-rose-500 dark:text-rose-400 mb-0.5 tracking-wider">
-                                                {t('deactivated')}
-                                            </div>
-                                        )}
-                                        <div className="font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
-                                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:text-indigo-400 hover:underline truncate max-w-[180px] block transition-colors" title={p.url}>
-                                            {p.url}
-                                        </a>
+                                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-slate-500 hover:text-indigo-500 hover:underline truncate block transition-colors" title={p.url}>
+                                        {p.url}
+                                    </a>
+
+                                    {/* Compact Stats */}
+                                    <div className="flex items-center gap-3 mt-2 flex-wrap text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                        <div
+                                            className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                            title={t('jobsFound')}
+                                            onClick={() => router.push(`/listings?platform_id=${p.id}&platform_name=${encodeURIComponent(p.name)}`)}
+                                        >
+                                            <span className="text-indigo-500">💼</span>
+                                            <span className="font-bold text-slate-700 dark:text-slate-300">{p.job_count}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" title={t('lastScan')}>
+                                            <span className="text-emerald-500">⏱️</span>
+                                            <span>
+                                                {p.last_crawl_at ? (() => {
+                                                    const date = new Date(p.last_crawl_at);
+                                                    const day = String(date.getDate()).padStart(2, '0');
+                                                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                    const year = date.getFullYear();
+                                                    return `${day}.${month}.${year}`;
+                                                })() : t('neverScanned')}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex items-center">
+                                            <select
+                                                value={p.crawl_interval_minutes}
+                                                onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
+                                                className="bg-transparent text-[11px] font-medium text-slate-500 dark:text-slate-400 border-none p-0 pr-4 focus:ring-0 cursor-pointer hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                                                title="Scan Interval"
+                                            >
+                                                <option value={60}>{t('everyHour')}</option>
+                                                <option value={360}>{t('every6Hours')}</option>
+                                                <option value={720}>{t('every12Hours')}</option>
+                                                <option value={1440}>{t('every24Hours')}</option>
+                                                <option value={10080}>{t('everyWeek')}</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="flex gap-2 items-center">
-                                    <button
-                                        onClick={() => updatePlatform(p.id, { is_active: !p.is_active })}
-                                        className={`px-3 py-1.5 rounded-lg flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${p.is_active
-                                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 shadow-sm border border-emerald-200 dark:border-emerald-800/50'
-                                            : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
-                                            }`}
-                                        title={p.is_active ? t('platformActive') : t('platformInactive')}
-                                    >
-                                        <div className={`w-2 h-2 rounded-full ${p.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
-                                        {p.is_active ? 'ON' : 'OFF'}
-                                    </button>
+                            </div>
+
+                            {/* Right: Actions */}
+                            <div className="flex items-center gap-2 w-full sm:w-auto mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-none border-slate-100 dark:border-slate-800/50 justify-end flex-wrap sm:flex-nowrap">
+
+                                {/* Notification Adapters */}
+                                <div className="flex gap-1.5 mr-2">
                                     {(['GMAIL', 'PUSHOVER'] as const).filter(a => configuredAdapters.includes(a)).map((adapter) => {
                                         const active = (p.notification_adapters || []).includes(adapter);
                                         return (
                                             <button
+                                                type="button"
                                                 key={adapter}
-                                                onClick={() => toggleAdapter(p, adapter)}
-                                                className={`px-2 py-1.5 rounded-lg text-[10px] font-bold tracking-wide transition-all border cursor-pointer ${
-                                                    active
-                                                        ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50'
-                                                        : 'text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 line-through'
-                                                }`}
+                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleAdapter(p, adapter); }}
+                                                className={`px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold tracking-wide transition-all border cursor-pointer flex items-center gap-1.5 ${active
+                                                    ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50 shadow-sm'
+                                                    : 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:text-slate-600 dark:hover:text-slate-400 line-through opacity-70'
+                                                    }`}
                                                 title={active ? `Disable ${adapter}` : `Enable ${adapter}`}
                                             >
-                                                {adapter === 'GMAIL' ? '✉' : '📱'} {adapter}
+                                                <span>{adapter === 'GMAIL' ? '✉' : '📱'}</span>
+                                                <span className="hidden sm:inline">{adapter}</span>
                                             </button>
                                         );
                                     })}
-                                    <button
-                                        onClick={() => triggerCrawl(p)}
-                                        disabled={isBusy || !p.is_active}
-                                        className={`p-2.5 rounded-lg transition ${isBusy || !p.is_active ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer'}`}
-                                        title={!p.is_active ? t('platformInactive') : (isBusy ? t('crawlInProgress') : t('scanNow'))}
-                                    >
-                                        {isBusy ? (
-                                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                        ) : (
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                        )}
-                                    </button>
-                                    <button
-                                        onClick={() => removePlatform(p.id)}
-                                        className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
-                                        title={t('remove')}
-                                    >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="mt-4 grid grid-cols-3 gap-4 pt-3 border-t border-slate-200 dark:border-slate-800/50">
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">Interval</span>
-                                    <select
-                                        value={p.crawl_interval_minutes}
-                                        onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
-                                        className="bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 cursor-pointer"
-                                    >
-                                        <option value={60} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyHour')}</option>
-                                        <option value={360} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every6Hours')}</option>
-                                        <option value={720} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every12Hours')}</option>
-                                        <option value={1440} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('every24Hours')}</option>
-                                        <option value={10080} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">{t('everyWeek')}</option>
-                                    </select>
                                 </div>
 
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">{t('jobsFound')}</span>
-                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{p.job_count}</span>
-                                </div>
+                                {/* Sync Button */}
+                                <button
+                                    onClick={() => triggerCrawl(p)}
+                                    disabled={isBusy || !p.is_active}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${isBusy || !p.is_active ? 'text-slate-300 dark:text-slate-700 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer hover:shadow-md'}`}
+                                    title={!p.is_active ? t('platformInactive') : (isBusy ? t('crawlInProgress') : t('scanNow'))}
+                                >
+                                    {isBusy ? (
+                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                    )}
+                                </button>
 
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider mb-1">{t('lastScan')}</span>
-                                    <span className="text-xs text-slate-600 dark:text-slate-400">
-                                        {p.last_crawl_at ? (() => {
-                                            const date = new Date(p.last_crawl_at);
-                                            const day = String(date.getDate()).padStart(2, '0');
-                                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                                            const year = date.getFullYear();
-                                            return `${day}.${month}.${year}`;
-                                        })() : t('neverScanned')}
-                                    </span>
-                                </div>
+                                {/* Modern Toggle Switch for Active state */}
+                                <button
+                                    onClick={() => updatePlatform(p.id, { is_active: !p.is_active })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ml-2 cursor-pointer ${p.is_active ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                    title={p.is_active ? t('platformActive') : t('platformInactive')}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${p.is_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                    onClick={() => removePlatform(p.id)}
+                                    className="w-8 h-8 ml-1 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                    title={t('remove')}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
                             </div>
                         </div>
                     );

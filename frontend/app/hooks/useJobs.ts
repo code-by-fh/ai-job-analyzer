@@ -10,9 +10,10 @@ interface UseJobsProps {
     hasApplication: boolean;
     statusFilter: string;
     initialJobs?: Job[];
+    platformId?: number;
 }
 
-export function useJobs({ token, logout, filterType, sortBy, hasApplication, statusFilter, initialJobs }: UseJobsProps) {
+export function useJobs({ token, logout, filterType, sortBy, hasApplication, statusFilter, initialJobs, platformId }: UseJobsProps) {
     const [jobs, setJobs] = useState<Job[]>(initialJobs || []);
 
     const offsetRef = useRef(initialJobs ? 10 : 0);
@@ -51,6 +52,9 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             if (statusFilter) {
                 queryParams.append('status_filter', statusFilter);
             }
+            if (platformId) {
+                queryParams.append('platform_id', platformId.toString());
+            }
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -81,7 +85,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         } finally {
             setIsLoadingMore(false);
         }
-    }, [token, filterType, sortBy, hasApplication, statusFilter, logout]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, logout]);
 
     useEffect(() => {
         if (token) {
@@ -93,7 +97,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             }
             fetchJobs(true);
         }
-    }, [token, filterType, sortBy, hasApplication, statusFilter, fetchJobs]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, fetchJobs]);
 
     const confirmDeleteJob = async () => {
         if (!jobToDelete) return;

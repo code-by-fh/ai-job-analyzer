@@ -3,7 +3,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import PasswordInput from '../components/PasswordInput';
-import JobPlatformsManager from '../components/JobPlatformsManager';
 import { useLanguage } from '../components/LanguageProvider';
 
 export default function Settings() {
@@ -17,10 +16,14 @@ export default function Settings() {
     pushover_user_key: '',
     pushover_api_token: '',
   });
+  const [savedData, setSavedData] = useState({
+    gmail_address: '',
+    gmail_app_password: '',
+    pushover_user_key: '',
+    pushover_api_token: '',
+  });
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
-  const [initialPlatforms, setInitialPlatforms] = useState<any[]>([]);
-  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
@@ -36,15 +39,15 @@ export default function Settings() {
         .then(res => res.json())
         .then(data => {
           const profileData = data.profile || {};
-          setFormData({
+          const loadedData = {
             gmail_address: profileData.gmail_address || '',
             gmail_app_password: profileData.gmail_app_password || '',
             pushover_user_key: profileData.pushover_user_key || '',
             pushover_api_token: profileData.pushover_api_token || '',
-          });
-          if (data.platforms) setInitialPlatforms(data.platforms);
+          };
+          setFormData(loadedData);
+          setSavedData(loadedData);
           setLoading(false);
-          setDataLoaded(true);
         })
         .catch(e => { console.error(e); setLoading(false); });
     }
@@ -58,7 +61,7 @@ export default function Settings() {
     e.preventDefault();
     setStatus(t('saving'));
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notification-settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,6 +69,7 @@ export default function Settings() {
         },
         body: JSON.stringify(formData)
       });
+      setSavedData(formData);
       setStatus(t('saved'));
       setTimeout(() => setStatus(''), 2000);
     } catch {
@@ -82,22 +86,11 @@ export default function Settings() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('settings')}</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('platformsSubtitle')}</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('notificationsSubtitle')}</p>
         </div>
       </div>
 
       <div className="space-y-8">
-
-        {/* JOB PLATFORMS */}
-        {dataLoaded && <JobPlatformsManager
-          token={token}
-          user={user}
-          initialPlatforms={initialPlatforms}
-          configuredAdapters={[
-            ...(formData.gmail_address && formData.gmail_app_password ? ['GMAIL'] : []),
-            ...(formData.pushover_user_key && formData.pushover_api_token ? ['PUSHOVER'] : []),
-          ]}
-        />}
 
         {/* NOTIFICATION SETTINGS */}
         <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
@@ -105,7 +98,7 @@ export default function Settings() {
             <span>🔔</span> {t('notifications')}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-            Configure your notification adapters here. Per-platform activation is done in the Job Platforms section above.
+            Configure your notification adapters here. Per-platform activation is done in the Job Platforms section on the Dashboard.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

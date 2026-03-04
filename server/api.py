@@ -39,6 +39,7 @@ from database import (
     JobEntry,
     UserProfile,
     SettingsData,
+    NotificationSettingsData,
     CVDataModel,
     User,
     JobPlatform,
@@ -449,6 +450,7 @@ def get_jobs(
     sort_by: Optional[str] = "score",
     has_application: Optional[bool] = None,
     status_filter: Optional[str] = None,
+    platform_id: Optional[int] = None,
 ):
     db = SessionLocal()
     try:
@@ -469,6 +471,9 @@ def get_jobs(
 
         if status_filter:
             query = query.filter(JobEntry.status == status_filter)
+
+        if platform_id:
+            query = query.filter(JobEntry.platform_id == platform_id)
 
         # Sorting
         if sort_by == "date":
@@ -711,6 +716,26 @@ def save_settings(
         profile.pushover_api_token = settings.pushover_api_token
         profile.active_notification_service = settings.active_notification_service
 
+        db.commit()
+        return {"status": "saved"}
+    finally:
+        db.close()
+
+
+@app.post("/notification-settings")
+def save_notification_settings(
+    settings: NotificationSettingsData, current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile:
+            profile = UserProfile(user_id=current_user.id)
+            db.add(profile)
+        profile.gmail_address = settings.gmail_address
+        profile.gmail_app_password = settings.gmail_app_password
+        profile.pushover_user_key = settings.pushover_user_key
+        profile.pushover_api_token = settings.pushover_api_token
         db.commit()
         return {"status": "saved"}
     finally:

@@ -12,4 +12,5 @@ export interface Job {
     is_favorite?: boolean;
     generation_error?: string;
     user_id?: number;
+    platform_id?: number;
 }

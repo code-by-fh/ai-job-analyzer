@@ -124,14 +124,18 @@ export default function Account() {
       <div className="max-w-2xl space-y-8">
 
         {/* SECURITY */}
-        <section className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-          <h2 className="font-bold text-slate-900 dark:text-white mb-4">{t('security')}</h2>
+        <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+            <span>🔒</span> {t('security')}
+          </h2>
           <PasswordChangeForm token={token} />
         </section>
 
         {/* DANGER ZONE */}
-        <section className="bg-rose-50 dark:bg-rose-500/5 rounded-2xl border border-rose-100 dark:border-rose-500/10 p-6">
-          <h2 className="font-bold text-rose-700 dark:text-rose-400 mb-4">{t('dangerZone')}</h2>
+        <section className="bg-rose-50/80 dark:bg-rose-500/5 backdrop-blur-xl rounded-2xl border border-rose-200/60 dark:border-rose-500/20 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
+          <h2 className="text-lg font-bold text-rose-700 dark:text-rose-400 mb-6 flex items-center gap-2">
+            <span>⚠️</span> {t('dangerZone')}
+          </h2>
           {status && <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-4">{status}</p>}
           <div className="space-y-3">
             <button

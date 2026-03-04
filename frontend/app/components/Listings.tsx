@@ -20,9 +20,11 @@ import { Job } from '../lib/types';
 
 interface ListingsProps {
     initialFilter: 'all' | 'favorite' | 'no_favorite' | 'applications';
+    initialPlatformId?: number;
+    initialPlatformName?: string;
 }
 
-export default function Listings({ initialFilter }: ListingsProps) {
+export default function Listings({ initialFilter, initialPlatformId, initialPlatformName }: ListingsProps) {
     const { user, token, logout } = useAuth();
     const { t } = useLanguage();
     const router = useRouter();
@@ -37,6 +39,8 @@ export default function Listings({ initialFilter }: ListingsProps) {
     const [domainFilter, setDomainFilter] = useState('');
     const [hasApplication, setHasApplication] = useState(false);
     const [statusFilter, setStatusFilter] = useState('');
+    const [platformIdFilter, setPlatformIdFilter] = useState<number | undefined>(initialPlatformId);
+    const [platformNameFilter, setPlatformNameFilter] = useState<string | undefined>(initialPlatformName);
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
@@ -53,7 +57,7 @@ export default function Listings({ initialFilter }: ListingsProps) {
 
 
     useEffect(() => {
-        if (token && !initialDataLoaded) {
+        if (token && !initialDataLoaded && !initialPlatformId) {
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
@@ -94,7 +98,8 @@ export default function Listings({ initialFilter }: ListingsProps) {
         sortBy,
         hasApplication,
         statusFilter,
-        initialJobs: initialDataLoaded ? initialJobs : undefined
+        initialJobs: initialDataLoaded ? initialJobs : undefined,
+        platformId: platformIdFilter,
     });
 
     const onJobUpdate = useCallback((data: any) => {
@@ -323,6 +328,20 @@ export default function Listings({ initialFilter }: ListingsProps) {
             {/* CRAWL STATUS */}
             {activeCrawls.size > 0 && (
                 <CrawlStatus jobs={Array.from(activeCrawls.values())} onCancel={setCrawlToCancel} />
+            )}
+
+            {platformIdFilter && (
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-xl text-sm text-indigo-700 dark:text-indigo-300">
+                    <span className="text-base">🏢</span>
+                    <span className="font-semibold">{platformNameFilter || `Platform #${platformIdFilter}`}</span>
+                    <button
+                        onClick={() => { setPlatformIdFilter(undefined); setPlatformNameFilter(undefined); }}
+                        className="ml-auto flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-200 transition-colors cursor-pointer"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        {t('clearAllFilters')}
+                    </button>
+                </div>
             )}
 
             <FilterBar

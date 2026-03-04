@@ -199,6 +199,7 @@ export const translations = {
         // Job Platforms
         jobPlatforms: "Job Platforms",
         platformsSubtitle: "Manage URLs and automated scan intervals",
+        notificationsSubtitle: "Configure your notification adapters",
         adding: "Adding...",
         platformAdded: "Platform added! ✅",
         crawlInProgress: "Crawl in progress...",
@@ -443,6 +444,7 @@ export const translations = {
         // Job Platforms
         jobPlatforms: "Job-Plattformen",
         platformsSubtitle: "URLs und automatisierte Scan-Intervalle verwalten",
+        notificationsSubtitle: "Benachrichtigungsadapter konfigurieren",
         adding: "Füge hinzu...",
         platformAdded: "Plattform hinzugefügt! ✅",
         crawlInProgress: "Crawl läuft...",

@@ -109,9 +109,9 @@ export default function UserManagementPage() {
             </div>
 
             {/* CREATE USER CARD */}
-            <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <span>➕</span> {t('createNewUser')}
                     </h2>
                     {status && <span className={`text-sm font-bold ${status.includes('error') ? 'text-rose-500' : 'text-emerald-500'}`}>{status}</span>}
@@ -140,7 +140,7 @@ export default function UserManagementPage() {
             </div>
 
             {/* USER LIST */}
-            <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm transition-all duration-300 overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-bold">
                         <tr>
