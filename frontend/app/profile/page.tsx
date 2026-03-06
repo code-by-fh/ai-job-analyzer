@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import DynamicList from '../components/DynamicList';
+import PageWrapper from '../components/PageWrapper';
+import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { logger } from '../lib/logger';
 
@@ -152,15 +154,10 @@ export default function Profile() {
   if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">{t('loadingProfile')}</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <PageWrapper>
 
       {/* PAGE HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Profil &amp; Lebenslauf</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('profileSubtitle')}</p>
-        </div>
-      </div>
+      <PageHeader title="Profil & Lebenslauf" subtitle={t('profileSubtitle')} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
@@ -324,6 +321,6 @@ export default function Profile() {
         </div>
 
       </div>
-    </div>
+    </PageWrapper>
   );
 }

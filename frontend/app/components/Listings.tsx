@@ -10,6 +10,7 @@ import ApplicationModal from './ApplicationModal';
 import ConfirmModal from './ConfirmModal';
 import FilterBar from './FilterBar';
 import JobCard from './JobCard';
+import PageWrapper from './PageWrapper';
 import SearchHeader from './SearchHeader';
 
 // Hooks & Types
@@ -326,7 +327,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     }, [jobs, searchText, domainFilter]);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <PageWrapper>
             <ApplicationModal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
@@ -609,6 +610,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                     </div>
                 </div>
             )}
-        </div>
+        </PageWrapper>
     );
 }

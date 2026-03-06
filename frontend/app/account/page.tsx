@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
+import PageWrapper from '../components/PageWrapper';
+import PageHeader from '../components/PageHeader';
 import PasswordChangeForm from '../components/PasswordChangeForm';
 import { useLanguage } from '../components/LanguageProvider';
 
@@ -92,7 +94,7 @@ export default function Account() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <PageWrapper>
 
       <ConfirmModal
         isOpen={!!confirmAction}
@@ -136,12 +138,7 @@ export default function Account() {
       </ConfirmModal>
 
       {/* PAGE HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Account</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('security')} &amp; {t('dangerZone')}</p>
-        </div>
-      </div>
+      <PageHeader title="Account" subtitle={`${t('security')} & ${t('dangerZone')}`} />
 
       <div className="max-w-2xl space-y-8">
 
@@ -185,6 +182,6 @@ export default function Account() {
         </section>
 
       </div>
-    </div>
+    </PageWrapper>
   );
 }

@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
+import PageWrapper from '../../components/PageWrapper';
+import PageHeader from '../../components/PageHeader';
 import { useRouter } from 'next/navigation';
 import ConfirmModal from '../../components/ConfirmModal';
 import { logger } from '../../lib/logger';
@@ -91,7 +93,7 @@ export default function UserManagementPage() {
     if (!user || !user.is_admin) return <div className="p-8 text-center text-slate-500 animate-pulse">{t('verifyingClearance')}</div>;
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <PageWrapper>
             <ConfirmModal
                 isOpen={!!userToDelete}
                 onClose={() => setUserToDelete(null)}
@@ -102,12 +104,7 @@ export default function UserManagementPage() {
                 isDestructive
             />
 
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('userManagement')}</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">{t('adminControlPanel')}</p>
-                </div>
-            </div>
+            <PageHeader title={t('userManagement') || 'User Management'} subtitle={t('adminControlPanel')} />
 
             {/* CREATE USER CARD */}
             <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300">
@@ -173,6 +170,6 @@ export default function UserManagementPage() {
                     </tbody>
                 </table>
             </div>
-        </div>
+        </PageWrapper>
     );
 }

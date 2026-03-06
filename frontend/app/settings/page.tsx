@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import PasswordInput from '../components/PasswordInput';
+import PageWrapper from '../components/PageWrapper';
+import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { logger } from '../lib/logger';
 
@@ -73,15 +75,10 @@ export default function Settings() {
   if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">{t('loading')}</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <PageWrapper>
 
       {/* PAGE HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/50 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('settings')}</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">{t('notificationsSubtitle')}</p>
-        </div>
-      </div>
+      <PageHeader title={t('settings') || 'Settings'} subtitle={t('notificationsSubtitle')} />
 
       <div className="space-y-8">
 
@@ -179,6 +176,6 @@ export default function Settings() {
         </section>
 
       </div>
-    </div>
+    </PageWrapper>
   );
 }

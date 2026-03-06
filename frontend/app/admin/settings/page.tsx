@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
+import PageWrapper from '../../components/PageWrapper';
+import PageHeader from '../../components/PageHeader';
 import { logger } from '../../lib/logger';
 
 export default function AdminSettingsPage() {
@@ -65,13 +67,8 @@ export default function AdminSettingsPage() {
     if (!user || !user.is_admin) return <div className="p-8 text-center text-slate-500 animate-pulse">{t('verifyingClearance') || "Verifying..."}</div>;
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50 pb-6">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Admin Settings</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">Global System Configuration</p>
-                </div>
-            </div>
+        <PageWrapper>
+            <PageHeader title="Admin Settings" subtitle="Global System Configuration" />
 
             <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <form onSubmit={handleSave} className="space-y-6">
@@ -109,6 +106,6 @@ export default function AdminSettingsPage() {
                     </div>
                 </form>
             </div>
-        </div>
+        </PageWrapper>
     );
 }

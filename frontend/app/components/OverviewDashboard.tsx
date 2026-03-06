@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
+import PageWrapper from './PageWrapper';
 import { logger } from '../lib/logger';
 
 interface Statistics {
@@ -73,19 +74,19 @@ export default function OverviewDashboard() {
 
     if (loading) {
         return (
-            <div className="space-y-8 animate-in fade-in duration-500">
+            <PageWrapper>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                     {Array.from({ length: 5 }).map((_, i) => (
                         <div key={i} className="h-24 rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse" />
                     ))}
                 </div>
                 <div className="h-64 rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse" />
-            </div>
+            </PageWrapper>
         );
     }
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <PageWrapper>
             {/* Statistics Section */}
             <div>
                 <h2 className="text-xs uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">
@@ -114,6 +115,6 @@ export default function OverviewDashboard() {
                 initialPlatforms={platforms}
                 configuredAdapters={configuredAdapters}
             />
-        </div>
+        </PageWrapper>
     );
 }
