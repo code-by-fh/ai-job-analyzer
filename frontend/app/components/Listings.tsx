@@ -175,7 +175,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         if (token) fetchJobs(true);
     }, [user?.id, filterType, token, fetchJobs, setJobs]);
 
-    const { isCrawling } = useCrawl({ user, token, onJobUpdate, onNewJob });
+    const { isCrawling, setIsCrawling } = useCrawl({ user, token, onJobUpdate, onNewJob });
 
     const globalError = jobsError;
     const setGlobalError = setJobsError;
@@ -272,7 +272,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
 
         setIsCrawling(true);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/search`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query, location: 'Remote', user_id: user?.id })
             });

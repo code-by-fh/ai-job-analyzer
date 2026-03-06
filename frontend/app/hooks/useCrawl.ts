@@ -38,7 +38,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
     const fetchCrawlStatus = useCallback(async () => {
         if (!user?.id) return;
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/crawl-status?user_id=${user.id}`);
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/crawl-status?user_id=${user.id}`);
             const data = await res.json();
             if (data.jobs && data.jobs.length > 0) {
                 const jobsMap = new Map<string, CrawlJob>();
@@ -62,7 +62,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
         if (!crawlToCancel || !user?.id) return;
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/cancel-crawl`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/cancel-crawl`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ job_id: crawlToCancel, user_id: user.id })
@@ -117,7 +117,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
 
         // Small delay to bypass React Strict Mode's immediate unmount
         connectionTimerRef.current = setTimeout(() => {
-            const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_WS_URL}/ws`);
+            const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, 'ws')}/ws`);
             wsRef.current = ws;
 
             ws.onopen = () => {

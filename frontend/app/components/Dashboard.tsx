@@ -212,7 +212,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
         setIsCrawling(true);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/search`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/search`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query, location: 'Remote', user_id: user?.id })
             });
