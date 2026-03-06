@@ -35,6 +35,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
     // Expose this so parent can cancel
     const [crawlToCancel, setCrawlToCancel] = useState<string | null>(null);
 
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization
     const fetchCrawlStatus = useCallback(async () => {
         if (!user?.id) return;
         try {

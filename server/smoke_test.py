@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Smoke Test Suite fuer Job Agent MVP
+Smoke Test Suite for Job Agent MVP
 ====================================
-Testet alle wesentlichen Funktionen:
+Tests all essential functions:
   - API Endpoints (Auth, Jobs, Settings, Platforms, Admin, Users)
   - Notification-Adapter (Gmail, Pushover) via Mocking
-  - Worker-Hilfsfunktionen (format_cv_for_prompt, get_clean_content)
+  - Worker-Helper functions (format_cv_for_prompt, get_clean_content)
   - Schedule-Logik (schedule_crawls_task via Mocking)
 
-Ausfuehrung:
+Execution:
   python smoke_test.py                     # gegen http://localhost:8002
   python smoke_test.py --url http://...:8002
   pytest smoke_test.py -v
@@ -33,7 +33,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 from unittest.mock import MagicMock, patch, call
 from types import SimpleNamespace
 
-# ─── Farben fuer Terminal-Output ────────────────────────────────────────────────
+# ─── Colors for terminal output ────────────────────────────────────────────────
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -41,7 +41,7 @@ CYAN = "\033[96m"
 RESET = "\033[0m"
 BOLD = "\033[1m"
 
-# ─── Globaler Test-State ────────────────────────────────────────────────────────
+# ─── Global test state ────────────────────────────────────────────────────────
 _results: list[dict] = []
 _base_url = "http://localhost:8002"
 
@@ -69,7 +69,7 @@ def section(title: str):
     logger.info(f"{BOLD}{CYAN}{'-'*60}{RESET}")
 
 
-# ─── HTTP-Hilfsfunktionen ───────────────────────────────────────────────────────
+# ─── HTTP-Helper functions ───────────────────────────────────────────────────────
 
 import requests as _requests_module
 
@@ -101,13 +101,13 @@ def _delete(path: str, token: str = None, **kwargs):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TEIL 1: API SMOKE TESTS
+# PART 1: API SMOKE TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
 def test_api_reachable() -> bool:
-    """Stellt sicher dass die API erreichbar ist."""
-    section("1. API Erreichbarkeit")
+    """Ensures the API is reachable."""
+    section("1. API Reachability")
     try:
         r = _get("/status")
         if r.status_code == 200:
@@ -118,41 +118,41 @@ def test_api_reachable() -> bool:
             return False
     except Exception as e:
         fail("GET /status", str(e))
-        logger.info(f"\n  {RED}API nicht erreichbar unter {_base_url}{RESET}")
+        logger.info(f"\n  {RED}API not reachable at {_base_url}{RESET}")
         logger.info(
-            f"  Stelle sicher, dass der Server laeuft: docker-compose up server"
+            f"  Make sure the server is running: docker-compose up server"
         )
         return False
 
 
 def test_auth(admin_token: list) -> bool:
-    """Testet Login und Token-Validierung."""
-    section("2. Authentifizierung")
+    """Tests login and token validation."""
+    section("2. Authentication")
 
-    # 2a. Rate-Limit-Test: 6 fehlgeschlagene Logins, der 6. sollte 429 zurueckgeben
+    # 2a. Rate-Limit-Test: 6 failed logins, the 6th should return 429
     try:
         last_status = None
         for i in range(6):
             r = _post("/auth/login", data={"username": "admin", "password": "wrong_pw"})
             last_status = r.status_code
         if last_status == 429:
-            ok("POST /auth/login (Rate Limit) -> 6. fehlerhafter Login gibt 429 Too Many Requests")
+            ok("POST /auth/login (Rate Limit) -> 6. Errorhafter Login gibt 429 Too Many Requests")
         else:
             fail(
                 "POST /auth/login (Rate Limit)",
-                f"Erwartet 429 nach 6 Versuchen, erhalten {last_status}",
+                f"Expected 429 nach 6 Versuchen, received {last_status}",
             )
     except Exception as e:
         fail("POST /auth/login (Rate Limit)", str(e))
 
-    # Session zuruecksetzen und mit gueltigen Credentials neu einloggen
+    # Reset session and login again with valid credentials
     _session.cookies.clear()
 
-    # 2b. Login mit gueltigen Credentials (Cookie-basiert)
+    # 2b. Login with valid credentials (Cookie-basiert)
     try:
         r = _post("/auth/login", data={"username": "admin", "password": "admin"})
         if r.status_code == 200:
-            ok("POST /auth/login (admin/admin) -> 200 OK, Cookie gesetzt")
+            ok("POST /auth/login (admin/admin) -> 200 OK, Cookie set")
         else:
             fail("POST /auth/login", f"HTTP {r.status_code}: {r.text[:200]}")
             return False
@@ -164,20 +164,20 @@ def test_auth(admin_token: list) -> bool:
     try:
         r = _post("/auth/login", data={"username": "admin", "password": "wrong"})
         if r.status_code == 401:
-            ok("POST /auth/login (falsches PW) -> 401 Unauthorized")
+            ok("POST /auth/login (wrong PW) -> 401 Unauthorized")
         else:
             fail(
-                "POST /auth/login (falsches PW)",
-                f"Erwartet 401, erhalten {r.status_code}",
+                "POST /auth/login (wrong PW)",
+                f"Expected 401, received {r.status_code}",
             )
     except Exception as e:
-        fail("POST /auth/login (falsches PW)", str(e))
+        fail("POST /auth/login (wrong PW)", str(e))
 
     # 2d. GET /me mit Session-Cookie
     try:
         r = _get("/me")
         if r.status_code == 200 and r.json().get("username") == "admin":
-            ok("GET /me -> Gibt Admin-User zurueck (Cookie-Auth)")
+            ok("GET /me -> Returns Admin user (Cookie-Auth)")
         else:
             fail("GET /me", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
@@ -188,17 +188,17 @@ def test_auth(admin_token: list) -> bool:
         tmp_session = _requests_module.Session()
         r = tmp_session.get(f"{_base_url}/me", timeout=10)
         if r.status_code == 401:
-            ok("GET /me (kein Cookie) -> 401 Unauthorized")
+            ok("GET /me (no Cookie) -> 401 Unauthorized")
         else:
-            fail("GET /me (kein Cookie)", f"Erwartet 401, erhalten {r.status_code}")
+            fail("GET /me (no Cookie)", f"Expected 401, received {r.status_code}")
     except Exception as e:
-        fail("GET /me (kein Cookie)", str(e))
+        fail("GET /me (no Cookie)", str(e))
 
     return True
 
 
 def test_jobs(token: str) -> None:
-    """Testet Job-Endpoints."""
+    """Tests Job endpoints."""
     section("3. Jobs")
 
     # 3a. Jobs auflisten
@@ -206,7 +206,7 @@ def test_jobs(token: str) -> None:
         r = _get("/jobs")
         if r.status_code == 200:
             jobs = r.json()
-            ok(f"GET /jobs -> {len(jobs)} Jobs gefunden")
+            ok(f"GET /jobs -> {len(jobs)} Jobs found")
         else:
             fail("GET /jobs", f"HTTP {r.status_code}")
             return
@@ -214,15 +214,15 @@ def test_jobs(token: str) -> None:
         fail("GET /jobs", str(e))
         return
 
-    # 3b. Jobs mit Filtern
+    # 3b. Jobs with filters
     try:
         r = _get("/jobs?filter_type=favorites&sort_by=score")
         if r.status_code == 200:
             ok("GET /jobs?filter_type=favorites&sort_by=score -> 200 OK")
         else:
-            fail("GET /jobs mit Filtern", f"HTTP {r.status_code}")
+            fail("GET /jobs with filters", f"HTTP {r.status_code}")
     except Exception as e:
-        fail("GET /jobs mit Filtern", str(e))
+        fail("GET /jobs with filters", str(e))
 
     # 3c. Job-Domains auflisten
     try:
@@ -234,24 +234,24 @@ def test_jobs(token: str) -> None:
     except Exception as e:
         fail("GET /jobs/domains", str(e))
 
-    # 3d. Nicht existierenden Job abrufen -> 404
+    # 3d. Fetch non-existent job -> 404
     try:
         fake_id = str(uuid.uuid4())
         r = _get(f"/jobs/{fake_id}")
         if r.status_code == 404:
             ok(f"GET /jobs/{{fake_id}} -> 404 Not Found")
         else:
-            # Manche Endpoints geben 422 zurueck wenn kein Job existiert
-            ok(f"GET /jobs/{{fake_id}} -> {r.status_code} (kein Job)")
+            # Some endpoints return 422 if no job exists
+            ok(f"GET /jobs/{{fake_id}} -> {r.status_code} (no job)")
     except Exception as e:
         fail("GET /jobs/{fake_id}", str(e))
 
 
 def test_settings(token: str) -> None:
-    """Testet Settings-Endpoints."""
+    """Tests Settings endpoints."""
     section("4. User Settings")
 
-    # 4a. Settings lesen
+    # 4a. Settings read
     try:
         r = _get("/settings")
         if r.status_code == 200:
@@ -266,13 +266,13 @@ def test_settings(token: str) -> None:
         fail("GET /settings", str(e))
         return
 
-    # 4b. Settings aktualisieren
+    # 4b. Settings update
     payload = {
         "role": "Smoke Test Engineer",
         "skills": "Python, Testing, CI/CD",
         "min_salary": "80000",
         "location": "Remote",
-        "preferences": "Nur Smoke-Test-Positionen",
+        "preferences": "Only smoke test positions",
         "cv_data": {
             "experience": [
                 {
@@ -301,22 +301,22 @@ def test_settings(token: str) -> None:
     except Exception as e:
         fail("POST /settings", str(e))
 
-    # 4c. Settings wieder lesen und pruefen
+    # 4c. Settings wieder read und Checkn
     try:
         r = _get("/settings")
         if r.status_code == 200 and r.json().get("role") == "Smoke Test Engineer":
-            ok("GET /settings -> Aktualisierte Settings korrekt gespeichert")
+            ok("GET /settings -> Aktualisierte Settings correct gespeichert")
         else:
             fail(
                 "GET /settings (Verifikation)",
-                f"Unerwarteter Wert: {r.json().get('role')}",
+                f"UnExpecteder Wert: {r.json().get('role')}",
             )
     except Exception as e:
         fail("GET /settings (Verifikation)", str(e))
 
 
 def test_platforms(token: str) -> list:
-    """Testet Platform-Endpoints. Gibt IDs erstellter Platforms zurueck."""
+    """Tests Platform endpoints. Returns IDs of created platforms."""
     section("5. Job Platforms")
     created_ids = []
 
@@ -324,13 +324,13 @@ def test_platforms(token: str) -> list:
     try:
         r = _get("/platforms")
         if r.status_code == 200:
-            ok(f"GET /platforms -> {len(r.json())} Platforms gefunden")
+            ok(f"GET /platforms -> {len(r.json())} Platforms found")
         else:
             fail("GET /platforms", f"HTTP {r.status_code}")
     except Exception as e:
         fail("GET /platforms", str(e))
 
-    # 5b. Platform erstellen
+    # 5b. Create platform
     try:
         r = _post(
             "/platforms",
@@ -342,20 +342,20 @@ def test_platforms(token: str) -> list:
         if r.status_code == 200:
             pid = r.json().get("id")
             created_ids.append(pid)
-            ok(f"POST /platforms -> Platform {pid} erstellt")
+            ok(f"POST /platforms -> Platform {pid} created")
         else:
             fail("POST /platforms", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
         fail("POST /platforms", str(e))
 
     if not created_ids:
-        skip("PATCH /platforms/{id}", "Kein Platform erstellt")
-        skip("DELETE /platforms/{id}", "Kein Platform erstellt")
+        skip("PATCH /platforms/{id}", "No platform created")
+        skip("DELETE /platforms/{id}", "No platform created")
         return created_ids
 
     pid = created_ids[0]
 
-    # 5c. Platform aktualisieren
+    # 5c. Platform update
     try:
         r = _patch(
             f"/platforms/{pid}",
@@ -377,12 +377,12 @@ def test_platforms(token: str) -> list:
 
 
 def test_platform_crawl(token: str, platform_id: int) -> None:
-    """Testet manuellen Crawl-Trigger."""
+    """Tests manual crawl trigger."""
     section("6. Crawl-Trigger (Schedule)")
 
     try:
         r = _post(f"/platforms/{platform_id}/crawl")
-        # 200 = gestartet, 503 = Celery nicht verfuegbar
+        # 200 = started, 503 = Celery not available
         if r.status_code in (200, 202, 503):
             status_info = (
                 r.json()
@@ -390,10 +390,10 @@ def test_platform_crawl(token: str, platform_id: int) -> None:
                 else {}
             )
             ok(
-                f"POST /platforms/{platform_id}/crawl -> HTTP {r.status_code} (Crawl getriggert oder Celery offline)"
+                f"POST /platforms/{platform_id}/crawl -> HTTP {r.status_code} (Crawl triggered or Celery offline)"
             )
         elif r.status_code == 404:
-            fail(f"POST /platforms/{platform_id}/crawl", "Platform nicht gefunden")
+            fail(f"POST /platforms/{platform_id}/crawl", "Platform nicht found")
         else:
             fail(
                 f"POST /platforms/{platform_id}/crawl",
@@ -404,10 +404,10 @@ def test_platform_crawl(token: str, platform_id: int) -> None:
 
 
 def test_admin(token: str) -> None:
-    """Testet Admin-Endpoints."""
+    """Tests Admin endpoints."""
     section("7. Admin Settings")
 
-    # 7a. Admin Settings lesen
+    # 7a. Admin Settings read
     try:
         r = _get("/admin/settings")
         if r.status_code == 200:
@@ -418,14 +418,14 @@ def test_admin(token: str) -> None:
     except Exception as e:
         fail("GET /admin/settings", str(e))
 
-    # 7b. Admin Settings aktualisieren
+    # 7b. Admin Settings update
     try:
         r = _post(
             "/admin/settings",
             json_data={"openrouter_model": "tngtech/deepseek-r1t2-chimera:free"},
         )
         if r.status_code == 200:
-            ok("POST /admin/settings -> Model gesetzt")
+            ok("POST /admin/settings -> Model set")
         else:
             fail("POST /admin/settings", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
@@ -433,7 +433,7 @@ def test_admin(token: str) -> None:
 
 
 def test_users(token: str) -> None:
-    """Testet User-Management-Endpoints."""
+    """Tests User management endpoints."""
     section("8. User Management")
 
     # 8a. Users auflisten
@@ -441,7 +441,7 @@ def test_users(token: str) -> None:
         r = _get("/users")
         if r.status_code == 200:
             users = r.json()
-            ok(f"GET /users -> {len(users)} User(s) gefunden")
+            ok(f"GET /users -> {len(users)} User(s) found")
         else:
             fail("GET /users", f"HTTP {r.status_code}")
             return
@@ -449,7 +449,7 @@ def test_users(token: str) -> None:
         fail("GET /users", str(e))
         return
 
-    # 8b. Neuen User anlegen
+    # 8b. Create new user
     test_username = f"smoketest_user_{int(time.time())}"
     created_id = None
     try:
@@ -459,13 +459,13 @@ def test_users(token: str) -> None:
         )
         if r.status_code == 200:
             created_id = r.json().get("id")
-            ok(f"POST /users -> User '{test_username}' (id={created_id}) erstellt")
+            ok(f"POST /users -> User '{test_username}' (id={created_id}) created")
         else:
             fail("POST /users", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
         fail("POST /users", str(e))
 
-    # 8c. Duplikat-User verhindern
+    # 8c. Prevent duplicate user
     if created_id:
         try:
             r = _post(
@@ -476,16 +476,16 @@ def test_users(token: str) -> None:
                 ok(f"POST /users (Duplikat) -> 400 Bad Request")
             else:
                 fail(
-                    "POST /users (Duplikat)", f"Erwartet 400, erhalten {r.status_code}"
+                    "POST /users (Duplikat)", f"Expected 400, received {r.status_code}"
                 )
         except Exception as e:
             fail("POST /users (Duplikat)", str(e))
 
-        # 8d. User loeschen
+        # 8d. Delete user
         try:
             r = _delete(f"/users/{created_id}")
             if r.status_code == 200:
-                ok(f"DELETE /users/{created_id} -> User geloescht")
+                ok(f"DELETE /users/{created_id} -> User deleted")
             else:
                 fail(
                     f"DELETE /users/{created_id}",
@@ -496,13 +496,13 @@ def test_users(token: str) -> None:
 
 
 def cleanup_platforms(token: str, platform_ids: list) -> None:
-    """Raeumt erstellte Test-Platforms auf."""
+    """Raeumt createde Test-Platforms auf."""
     section("9. Cleanup")
     for pid in platform_ids:
         try:
             r = _delete(f"/platforms/{pid}")
             if r.status_code == 200:
-                ok(f"DELETE /platforms/{pid} -> bereinigt")
+                ok(f"DELETE /platforms/{pid} -> cleaned up")
             else:
                 fail(f"DELETE /platforms/{pid}", f"HTTP {r.status_code}")
         except Exception as e:
@@ -510,22 +510,22 @@ def cleanup_platforms(token: str, platform_ids: list) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TEIL 2: UNIT TESTS - BUSINESS LOGIC
+# PART 2: UNIT TESTS - BUSINESS LOGIC
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
 def test_worker_utilities() -> None:
-    """Testet Hilfsfunktionen aus worker.py (ohne DB/Celery)."""
+    """Testet Helper functions aus worker.py (ohne DB/Celery)."""
     section("10. Worker Utility Functions")
 
-    # Temporaer sys.path anpassen damit lokale Module importiert werden koennen
+    # Temporarily adjust sys.path so local modules can be imported
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
     # format_cv_for_prompt
     try:
-        # Modulimport mit gemockten Abhaengigkeiten
+        # Module import with mocked dependencies
         with patch.dict(
             "sys.modules",
             {
@@ -561,15 +561,15 @@ def test_worker_utilities() -> None:
             }
 
             result = w.format_cv_for_prompt(cv_json)
-            assert "Senior Dev" in result, "Erfahrung fehlt"
-            assert "TechCorp" in result, "Firma fehlt"
-            assert "JobAgent" in result, "Projekt fehlt"
-            assert "B.Sc. Informatik" in result, "Ausbildung fehlt"
-            ok("format_cv_for_prompt -> Alle CV-Felder korrekt formatiert")
+            assert "Senior Dev" in result, "Erfahrung is missing"
+            assert "TechCorp" in result, "Firma is missing"
+            assert "JobAgent" in result, "Projekt is missing"
+            assert "B.Sc. Informatik" in result, "Education is missing"
+            ok("format_cv_for_prompt -> All CV fields formatted correctly")
     except Exception as e:
         fail("format_cv_for_prompt", str(e))
 
-    # format_cv_for_prompt mit leerem Input
+    # format_cv_for_prompt with empty input
     try:
         with patch.dict(
             "sys.modules",
@@ -584,14 +584,14 @@ def test_worker_utilities() -> None:
             import worker as w
 
             result = w.format_cv_for_prompt(None)
-            assert "Keine" in result, "Leerer Input nicht korrekt behandelt"
-            ok("format_cv_for_prompt(None) -> Fallback-Text korrekt")
+            assert "Keine" in result, "Empty input not handled correctly"
+            ok("format_cv_for_prompt(None) -> Fallback text correct")
     except Exception as e:
         fail("format_cv_for_prompt(None)", str(e))
 
 
 def test_notification_gmail() -> None:
-    """Testet Gmail-Notification-Adapter via SMTP-Mock."""
+    """Tests Gmail notification adapter via SMTP mock."""
     section("11. Notification - Gmail Adapter")
 
     server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -618,7 +618,7 @@ def test_notification_gmail() -> None:
             title="Python Developer",
             company="TestCorp GmbH",
             match_score=87.5,
-            reasoning="Sehr gute Uebereinstimmung mit Erfahrung.",
+            reasoning="Very good match with experience.",
             url="https://testcorp.de/jobs/python-dev",
         )
         profile_ok = SimpleNamespace(
@@ -630,16 +630,16 @@ def test_notification_gmail() -> None:
             gmail_app_password=None,
         )
 
-        # 11a. Fehlende Credentials -> sofortiger False-Return
+        # 11a. Missing credentials -> immediate False return
         result = w._send_via_gmail(job, profile_missing)
         if result is False:
-            ok("_send_via_gmail (fehlende Creds) -> False (korrekt)")
+            ok("_send_via_gmail (missing creds) -> False (correct)")
         else:
             fail(
-                "_send_via_gmail (fehlende Creds)", f"Erwartet False, erhalten {result}"
+                "_send_via_gmail (missing creds)", f"Expected False, received {result}"
             )
 
-        # 11b. Erfolgreicher Gmail-Versand via Mock
+        # 11b. successfullyer Gmail-Versand via Mock
         mock_server = MagicMock()
         with patch("smtplib.SMTP_SSL") as mock_smtp_cls:
             mock_smtp_cls.return_value.__enter__ = lambda s: mock_server
@@ -648,18 +648,18 @@ def test_notification_gmail() -> None:
             try:
                 result = w._send_via_gmail(job, profile_ok)
                 if result is True:
-                    ok("_send_via_gmail (Mock SMTP) -> True, E-Mail versendet")
+                    ok("_send_via_gmail (Mock SMTP) -> True, Email sent")
                 else:
                     fail(
                         "_send_via_gmail (Mock SMTP)",
-                        f"Erwartet True, erhalten {result}",
+                        f"Expected True, received {result}",
                     )
             except Exception as e:
                 fail("_send_via_gmail (Mock SMTP)", str(e))
 
 
 def test_notification_pushover() -> None:
-    """Testet Pushover-Notification-Adapter via HTTP-Mock."""
+    """Tests Pushover notification adapter via HTTP mock."""
     section("12. Notification - Pushover Adapter")
 
     server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -686,7 +686,7 @@ def test_notification_pushover() -> None:
             title="DevOps Engineer",
             company="CloudCorp AG",
             match_score=92.0,
-            reasoning="Exzellente Docker-Kenntnisse.",
+            reasoning="Excellent Docker knowledge.",
             url="https://cloudcorp.de/jobs/devops",
         )
         profile_ok = SimpleNamespace(
@@ -698,56 +698,56 @@ def test_notification_pushover() -> None:
             pushover_api_token=None,
         )
 
-        # 12a. Fehlende Credentials
+        # 12a. Missing Credentials
         result = w._send_via_pushover(job, profile_missing)
         if result is False:
-            ok("_send_via_pushover (fehlende Creds) -> False (korrekt)")
+            ok("_send_via_pushover (missing creds) -> False (correct)")
         else:
             fail(
-                "_send_via_pushover (fehlende Creds)",
-                f"Erwartet False, erhalten {result}",
+                "_send_via_pushover (missing creds)",
+                f"Expected False, received {result}",
             )
 
-        # 12b. Erfolgreiche Pushover-Anfrage (HTTP 200)
+        # 12b. successfullye Pushover-Anfrage (HTTP 200)
         mock_response = MagicMock()
         mock_response.status_code = 200
         with patch("requests.post", return_value=mock_response) as mock_post:
             result = w._send_via_pushover(job, profile_ok)
             if result is True:
-                ok("_send_via_pushover (Mock HTTP 200) -> True, Push versendet")
-                # Pruefe dass POST-Payload korrekte Felder enthaelt
+                ok("_send_via_pushover (Mock HTTP 200) -> True, Push sent")
+                # Check dass POST-Payload correcte Felder contains
                 call_kwargs = mock_post.call_args
                 payload = (
                     call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
                 )
-                assert payload.get("token") == "api-token-xyz", "Falscher API-Token"
-                assert payload.get("user") == "user-key-abc", "Falscher User-Key"
+                assert payload.get("token") == "api-token-xyz", "Wrong API token"
+                assert payload.get("user") == "user-key-abc", "Wrong User key"
                 ok(
-                    "_send_via_pushover -> Payload enthaelt korrekten Token und User-Key"
+                    "_send_via_pushover -> Payload contains correcten Token und User-Key"
                 )
             else:
                 fail(
                     "_send_via_pushover (Mock HTTP 200)",
-                    f"Erwartet True, erhalten {result}",
+                    f"Expected True, received {result}",
                 )
 
-        # 12c. Pushover Fehlerfall (HTTP 400)
+        # 12c. Pushover Errorfall (HTTP 400)
         mock_response_err = MagicMock()
         mock_response_err.status_code = 400
         mock_response_err.text = '{"errors":["app token is invalid"]}'
         with patch("requests.post", return_value=mock_response_err):
             result = w._send_via_pushover(job, profile_ok)
             if result is False:
-                ok("_send_via_pushover (Mock HTTP 400) -> False (Fehlerbehandlung)")
+                ok("_send_via_pushover (Mock HTTP 400) -> False (Error handling)")
             else:
                 fail(
                     "_send_via_pushover (Mock HTTP 400)",
-                    f"Erwartet False, erhalten {result}",
+                    f"Expected False, received {result}",
                 )
 
 
 def test_notification_dispatcher() -> None:
-    """Testet den send_notification-Dispatcher."""
+    """Tests the send_notification dispatcher."""
     section("13. Notification - Dispatcher (send_notification)")
 
     server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -774,7 +774,7 @@ def test_notification_dispatcher() -> None:
             title="Test Position",
             company="SmokeTest GmbH",
             match_score=75.0,
-            reasoning="Passt gut.",
+            reasoning="Fits well.",
             url="https://smoketest.de/jobs/1",
         )
         profile = SimpleNamespace(
@@ -784,7 +784,7 @@ def test_notification_dispatcher() -> None:
             pushover_api_token="token",
         )
 
-        # 13a. Explizite Adapter-Liste: nur GMAIL
+        # 13a. Explicit adapter list: nur GMAIL
         with patch.object(
             w, "_send_via_gmail", return_value=True
         ) as mock_gmail, patch.object(
@@ -794,9 +794,9 @@ def test_notification_dispatcher() -> None:
             assert result is True
             assert mock_gmail.call_count == 1
             assert mock_push.call_count == 0
-            ok("send_notification(adapters=['GMAIL']) -> ruft nur Gmail auf")
+            ok("send_notification(adapters=['GMAIL']) -> only calls Gmail")
 
-        # 13b. Explizite Adapter-Liste: GMAIL + PUSHOVER
+        # 13b. Explicit adapter list: GMAIL + PUSHOVER
         with patch.object(
             w, "_send_via_gmail", return_value=True
         ) as mock_gmail, patch.object(
@@ -838,12 +838,12 @@ def test_notification_dispatcher() -> None:
             else:
                 fail(
                     "send_notification (keine Credentials)",
-                    f"Erwartet False, erhalten {result}",
+                    f"Expected False, received {result}",
                 )
 
 
 def test_scraper_utilities() -> None:
-    """Testet Hilfsfunktionen aus scraper_worker.py."""
+    """Testet Helper functions aus scraper_worker.py."""
     section("14. Scraper Utility Functions")
 
     server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -883,13 +883,13 @@ def test_scraper_utilities() -> None:
         """
         try:
             result = sw.get_clean_content(sample_html)
-            assert "Senior Python Developer" in result, "Jobtitel fehlt im Ergebnis"
-            assert "Python-Entwickler" in result, "Jobtext fehlt im Ergebnis"
+            assert "Senior Python Developer" in result, "Jobtitel is missing im Ergebnis"
+            assert "Python-Entwickler" in result, "Jobtext is missing im Ergebnis"
             assert "Nav-Junk" not in result, "Nav-Inhalt nicht entfernt"
             assert "Footer-Junk" not in result, "Footer-Inhalt nicht entfernt"
             assert "alert" not in result, "Script nicht entfernt"
             ok(
-                "get_clean_content -> HTML korrekt bereinigt (Nav/Script/Footer entfernt)"
+                "get_clean_content -> HTML correct cleaned up (Nav/Script/Footer entfernt)"
             )
         except Exception as e:
             fail("get_clean_content", str(e))
@@ -960,11 +960,11 @@ def test_schedule_crawls_logic() -> None:
         try:
             sw.schedule_crawls_task([[], 1, "job-123", 42])
             if mock_send_task.call_count == 0:
-                ok("schedule_crawls_task (leere Links) -> kein Task gesendet (korrekt)")
+                ok("schedule_crawls_task (leere Links) -> kein Task gesendet (correct)")
             else:
                 fail(
                     "schedule_crawls_task (leere Links)",
-                    f"Erwartet 0 Tasks, {mock_send_task.call_count} gesendet",
+                    f"Expected 0 Tasks, {mock_send_task.call_count} gesendet",
                 )
         except Exception as e:
             fail("schedule_crawls_task (leere Links)", str(e))
@@ -983,7 +983,7 @@ def test_schedule_crawls_logic() -> None:
             else:
                 fail(
                     "schedule_crawls_task (mit Links)",
-                    f"Erwartet {len(test_links)} Tasks, erhalten {n}",
+                    f"Expected {len(test_links)} Tasks, received {n}",
                 )
         except Exception as e:
             fail("schedule_crawls_task (mit Links)", str(e))
@@ -1150,7 +1150,7 @@ def test_unit_send_notification_gmail_only():
 
 
 def test_unit_pushover_missing_creds():
-    """pytest: _send_via_pushover mit fehlenden Credentials"""
+    """pytest: _send_via_pushover mit Missingn Credentials"""
     server_dir = os.path.dirname(os.path.abspath(__file__))
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)

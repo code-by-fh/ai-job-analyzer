@@ -22,15 +22,6 @@ export default function UserManagementPage() {
     // Confirm Modal
     const [userToDelete, setUserToDelete] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        if (user && !user.is_admin) {
-            router.push('/');
-            return;
-        }
-        if (token) fetchUsers();
-    }, [isAuthenticated, user, token]);
-
     const fetchUsers = async () => {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
@@ -44,6 +35,15 @@ export default function UserManagementPage() {
             logger.error({ err: e }, "Fetch users failed");
         }
     };
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        if (user && !user.is_admin) {
+            router.push('/');
+            return;
+        }
+        if (token) fetchUsers();
+    }, [isAuthenticated, user, token]);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();

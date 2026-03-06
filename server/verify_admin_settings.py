@@ -2,10 +2,6 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
-from logger import get_logger
-
-logger = get_logger(__name__)
-
 import requests
 import sys
 
@@ -99,10 +95,10 @@ if __name__ == "__main__":
     if token:
         success = verify_settings(token)
         if success:
-            logger.info("\n✅ VERIFICATION PASSED")
+            logger.info("\nVERIFICATION PASSED")
         else:
-            logger.error("\n❌ VERIFICATION FAILED")
+            logger.error("\nVERIFICATION FAILED")
             sys.exit(1)
     else:
-        logger.error("\n❌ VERIFICATION FAILED (Login)")
+        logger.error("\nVERIFICATION FAILED (Login)")
         sys.exit(1)

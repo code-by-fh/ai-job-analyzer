@@ -10,6 +10,15 @@ export default function ThemeToggler() {
     const [mounted, setMounted] = useState(false);
     const { t } = useLanguage();
 
+    const applyTheme = (dark: boolean) => {
+        const root = document.documentElement;
+        if (dark) {
+            root.classList.add('dark');
+        } else {
+            root.classList.remove('dark');
+        }
+    };
+
     useEffect(() => {
         setMounted(true);
         const savedTheme = localStorage.getItem('theme') as Theme | null;
@@ -19,15 +28,6 @@ export default function ThemeToggler() {
         setIsDark(initialDark);
         applyTheme(initialDark);
     }, []);
-
-    const applyTheme = (dark: boolean) => {
-        const root = document.documentElement;
-        if (dark) {
-            root.classList.add('dark');
-        } else {
-            root.classList.remove('dark');
-        }
-    };
 
     const toggleTheme = () => {
         const newDark = !isDark;
