@@ -102,14 +102,11 @@ def cleanup_crawl_job(job_id, user_id, reason="error"):
 
 def fail_crawl_job(job_id: str, user_id: int, error_message: str):
     """
-    Mark a crawl job as failed instead of deleting it, so the user sees the error.
+    Broadcast a crawl failure event and immediately clean up all Redis data.
+    No user confirmation required — the frontend auto-dismisses after a timeout.
     """
     try:
         logger.info(f"Failing crawl job {job_id} (error: {error_message})")
-        r.hset(
-            f"crawl_job:{job_id}",
-            mapping={"status": "failed", "error_message": error_message},
-        )
         r.delete("system:crawling")
 
         r.publish(
@@ -124,7 +121,13 @@ def fail_crawl_job(job_id: str, user_id: int, error_message: str):
                 }
             ),
         )
-        logger.info(f"✅ Mark as failed complete for job {job_id}")
+
+        # Clean up immediately — no lingering failed state
+        r.delete(f"crawl_job:{job_id}")
+        r.delete(f"crawl_job:{job_id}:all_job_titles")
+        r.srem(f"user:{user_id}:active_crawls", job_id)
+
+        logger.info(f"✅ Crawl job {job_id} failed and cleaned up")
     except Exception as e:
         logger.error(f"Error during fail of job {job_id}: {e}")
 
@@ -268,27 +271,11 @@ async def fail_crawl(request: FailCrawlRequest):
         # Revoke running celery task if any
         celery_app.control.revoke(request.job_id, terminate=True, signal="SIGKILL")
 
-        # Keep job data but set status to failed and store the error message
-        r.hset(
-            f"crawl_job:{request.job_id}",
-            mapping={"status": "failed", "error_message": request.error_message},
-        )
-
         logger.info(f"Job {request.job_id} failed due to: {request.error_message}")
 
-        # Publish event for frontend
-        r.publish(
-            "job_updates",
-            json.dumps(
-                {
-                    "type": "crawl_job_failed",
-                    "job_id": request.job_id,
-                    "user_id": request.user_id,
-                    "reason": "error",
-                    "error_message": request.error_message,
-                }
-            ),
-        )
+        # Broadcast error event, then clean up immediately
+        fail_crawl_job(request.job_id, request.user_id, request.error_message)
+
         return {"status": "success", "message": "Crawl job failed"}
     except Exception as e:
         logger.error(f"Error failing job {request.job_id}: {e}")

@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, CheckCircle, Circle } from 'lucide-react';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
+import { CrawlSteps } from './CrawlStatus';
+import { useCrawl } from '../hooks/useCrawl';
 import { logger } from '../lib/logger';
 
 interface Platform {
@@ -26,15 +27,17 @@ interface JobPlatformsManagerProps {
     configuredAdapters?: string[];
 }
 
+type LastRun = { total: number; saved: number; skipped: number; scraping_completed?: number; analysis_completed?: number; status: 'success' | 'failed'; error?: string; timestamp?: string };
+
 const sortByName = (list: Platform[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
 
 export default function JobPlatformsManager({ token, user, initialPlatforms, configuredAdapters = [] }: JobPlatformsManagerProps) {
     const { t } = useLanguage();
     const router = useRouter();
     const [platforms, setPlatforms] = useState<Platform[]>(sortByName(initialPlatforms || []));
-    const [activeJobs, setActiveJobs] = useState<any[]>([]);
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
-    const [lastRunByPlatform, setLastRunByPlatform] = useState<Record<string, { total: number; saved: number; skipped: number; status: 'success' | 'failed'; error?: string }>>({});
+    const [lastRunByPlatform, setLastRunByPlatform] = useState<Record<string, LastRun>>({});
+    const [expandedLog, setExpandedLog] = useState<string | null>(null);
     const [loading, setLoading] = useState(!initialPlatforms);
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
@@ -44,6 +47,57 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [deleteListingsWithPlatform, setDeleteListingsWithPlatform] = useState(false);
     const [keepFavorites, setKeepFavorites] = useState(true);
     const [keepApplications, setKeepApplications] = useState(true);
+
+    // Centralized crawl state via WebSocket (same as /listings)
+    const { activeCrawls } = useCrawl({ user, token });
+
+    // Ref to avoid saving the same completed job twice
+    const savedToLastRunRef = useRef<Set<string>>(new Set());
+
+    // Load persisted last-run data on mount
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('crawl_last_run');
+            if (stored) setLastRunByPlatform(JSON.parse(stored));
+        } catch { }
+    }, []);
+
+    // Detect completed/failed crawls → save to lastRunByPlatform + refresh platforms
+    useEffect(() => {
+        activeCrawls.forEach((job) => {
+            if ((job.show_success === true || job.status === 'failed') && !savedToLastRunRef.current.has(job.job_id)) {
+                savedToLastRunRef.current.add(job.job_id);
+                setLastRunByPlatform(prev => {
+                    const next: Record<string, LastRun> = {
+                        ...prev,
+                        [job.platform]: {
+                            total: job.total ?? 0,
+                            saved: job.jobs_saved ?? 0,
+                            skipped: job.jobs_skipped ?? 0,
+                            scraping_completed: job.scraping_completed ?? 0,
+                            analysis_completed: job.analysis_completed ?? 0,
+                            status: job.status === 'failed' ? 'failed' : 'success',
+                            error: job.error_message,
+                            timestamp: new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        }
+                    };
+                    try { localStorage.setItem('crawl_last_run', JSON.stringify(next)); } catch { }
+                    return next;
+                });
+                fetchPlatforms();
+            }
+        });
+    }, [activeCrawls]);
+
+    // Clear pendingUrls once the crawl shows up in activeCrawls
+    useEffect(() => {
+        if (pendingUrls.size === 0) return;
+        setPendingUrls(prev => {
+            const next = new Set(prev);
+            activeCrawls.forEach(job => next.delete(job.platform));
+            return next;
+        });
+    }, [activeCrawls, pendingUrls.size]);
 
     const fetchPlatforms = async () => {
         if (!token) return;
@@ -62,75 +116,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         }
     };
 
-    const fetchCrawlStatus = async () => {
-        if (!user?.id) return;
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_SCRAPER_URL}/crawl-status?user_id=${user.id}`);
-            const data = await res.json();
-            if (data.jobs) {
-                const active = data.jobs.filter((j: any) =>
-                    j.status !== 'completed' && !(j.total > 0 && j.analysis_completed >= j.total)
-                );
-                setActiveJobs(active);
-
-                // Clear pendingUrls that are now active in activeJobs
-                setPendingUrls(prev => {
-                    const next = new Set(prev);
-                    active.forEach((j: any) => next.delete(j.platform));
-                    return next;
-                });
-
-                // Capture completed/failed jobs as last-run summary
-                const done = data.jobs.filter((j: any) =>
-                    j.show_success === true || j.status === 'failed' ||
-                    (j.total > 0 && j.analysis_completed >= j.total)
-                );
-                if (done.length > 0) {
-                    setLastRunByPlatform(prev => {
-                        const next = { ...prev };
-                        done.forEach((j: any) => {
-                            next[j.platform] = {
-                                total: j.total ?? 0,
-                                saved: j.jobs_saved ?? 0,
-                                skipped: j.jobs_skipped ?? 0,
-                                status: j.status === 'failed' ? 'failed' : 'success',
-                                error: j.error_message,
-                            };
-                        });
-                        try { localStorage.setItem('crawl_last_run', JSON.stringify(next)); } catch { }
-                        return next;
-                    });
-                }
-            }
-        } catch (e) {
-            logger.error({ err: e }, "Failed to fetch crawl status");
-        }
-    };
-
-    useEffect(() => {
-        try {
-            const stored = localStorage.getItem('crawl_last_run');
-            if (stored) setLastRunByPlatform(JSON.parse(stored));
-        } catch { }
-    }, []);
-
     useEffect(() => {
         if (!initialPlatforms) {
             fetchPlatforms();
         }
     }, [token, initialPlatforms]);
 
-    useEffect(() => {
-        if (user?.id) {
-            fetchCrawlStatus();
-            const interval = setInterval(fetchCrawlStatus, 5000);
-            return () => clearInterval(interval);
-        }
-    }, [user?.id]);
-
     const addPlatform = async () => {
         if (!newUrl) return;
-
         try {
             const parsed = new URL(newUrl);
             if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -147,10 +140,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ url: newUrl })
             });
             if (res.ok) {
@@ -165,10 +155,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setStatus(t('error'));
         }
         setTimeout(() => setStatus(''), 3000);
-    };
-
-    const removePlatform = (id: number) => {
-        setPlatformToRemove(id);
     };
 
     const finalizeRemovePlatform = async () => {
@@ -199,23 +185,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             });
             if (res.ok) {
                 setStatus(t('crawlJobsDispatched'));
-                fetchCrawlStatus(); // Try to update faster
                 fetchPlatforms();
             } else {
                 setStatus(t('error'));
-                setPendingUrls(prev => {
-                    const next = new Set(prev);
-                    next.delete(platform.url);
-                    return next;
-                });
+                setPendingUrls(prev => { const next = new Set(prev); next.delete(platform.url); return next; });
             }
         } catch (e) {
             setStatus(t('error'));
-            setPendingUrls(prev => {
-                const next = new Set(prev);
-                next.delete(platform.url);
-                return next;
-            });
+            setPendingUrls(prev => { const next = new Set(prev); next.delete(platform.url); return next; });
         }
         setTimeout(() => setStatus(''), 3000);
     };
@@ -224,10 +201,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(data)
             });
             if (res.ok) {
@@ -242,34 +216,24 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
 
     const toggleAdapter = async (platform: Platform, adapter: string) => {
         const current = platform.notification_adapters || [];
-        const updated = current.includes(adapter)
-            ? current.filter((a) => a !== adapter)
-            : [...current, adapter];
+        const updated = current.includes(adapter) ? current.filter((a) => a !== adapter) : [...current, adapter];
 
-        // Optimistic update — UI reflects the change immediately
         setPlatforms(prev => prev.map(p =>
-            p.id === platform.id
-                ? { ...p, notification_adapters: updated, is_notification_enabled: updated.length > 0 }
-                : p
+            p.id === platform.id ? { ...p, notification_adapters: updated, is_notification_enabled: updated.length > 0 } : p
         ));
 
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ notification_adapters: updated })
             });
             if (!res.ok) {
-                // Revert optimistic update on API error
                 setPlatforms(prev => prev.map(p =>
                     p.id === platform.id ? { ...p, notification_adapters: current, is_notification_enabled: current.length > 0 } : p
                 ));
             }
         } catch {
-            // Revert on network error
             setPlatforms(prev => prev.map(p =>
                 p.id === platform.id ? { ...p, notification_adapters: current, is_notification_enabled: current.length > 0 } : p
             ));
@@ -312,9 +276,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                 onChange={(e) => setKeepFavorites(e.target.checked)}
                                 className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
                             />
-                            <label htmlFor="keepFavoritesCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-                                {t('keepFavorites')}
-                            </label>
+                            <label htmlFor="keepFavoritesCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">{t('keepFavorites')}</label>
                         </div>
                         <div className="flex items-center gap-2">
                             <input
@@ -324,9 +286,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                 onChange={(e) => setKeepApplications(e.target.checked)}
                                 className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
                             />
-                            <label htmlFor="keepApplicationsCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-                                {t('keepApplications')}
-                            </label>
+                            <label htmlFor="keepApplicationsCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">{t('keepApplications')}</label>
                         </div>
                     </div>
                 </div>
@@ -342,25 +302,15 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
 
             <div className="space-y-4">
                 {platforms.map((p) => {
-                    const activeJob = activeJobs.find((job: any) => job.platform === p.url);
+                    const activeJob = Array.from(activeCrawls.values()).find(j => j.platform === p.url);
                     const isBusy = !!activeJob || pendingUrls.has(p.url);
-
                     const lastRun = lastRunByPlatform[p.url];
-
-                    // Step state derived from activeJob
-                    const isFailed = activeJob?.status === 'failed';
-                    const isSearching = activeJob && activeJob.total === 0 && !isFailed;
-                    const isFound = activeJob && activeJob.total > 0;
-                    const isScraping = activeJob && activeJob.scraping_completed > 0 && activeJob.scraping_completed < activeJob.total && !isFailed;
-                    const isScrapingDone = activeJob && activeJob.scraping_completed >= activeJob.total && activeJob.total > 0;
-                    const isAnalyzing = activeJob && ((activeJob.analyzing_jobs?.length > 0) || (activeJob.analysis_completed > 0 && !activeJob.show_success && !isFailed));
-                    const isAnalysisDone = activeJob?.show_success === true;
 
                     return (
                         <div key={p.id} className={`group relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border rounded-2xl p-4 sm:p-5 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/10 ${p.is_active ? 'bg-white/60 dark:bg-slate-900/60 backdrop-blur-md border-slate-200 dark:border-slate-800/80 hover:border-indigo-200 dark:hover:border-indigo-800/60' : 'bg-slate-50/50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-75'}`}>
                             {/* Left: Branding & Info */}
-                            <div className="flex items-center gap-4 min-w-0 flex-1">
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border p-2 transition-transform duration-300 group-hover:scale-105 ${p.is_active ? 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'}`}>
+                            <div className="flex items-start gap-4 min-w-0 flex-1">
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border p-2 transition-transform duration-300 group-hover:scale-105 mt-0.5 ${p.is_active ? 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'}`}>
                                     {p.favicon_url ? (
                                         <img src={p.favicon_url} alt="" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
                                     ) : (
@@ -406,7 +356,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                                 })() : t('neverScanned')}
                                             </span>
                                         </div>
-
                                         <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
                                             <span className="text-blue-500">🔄</span>
                                             <select
@@ -424,66 +373,69 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                         </div>
                                     </div>
 
-                                    {/* Inline Crawl Status */}
-                                    {isBusy && (
-                                        <div className="mt-3 flex items-center gap-1.5 text-[10px] font-medium">
-                                            {/* Step 1: Suche */}
-                                            <div className="flex items-center gap-1">
-                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${isSearching ? 'border-indigo-500 bg-white dark:bg-slate-900' : isFailed && !isFound ? 'border-rose-500 bg-rose-500' : 'border-emerald-500 bg-emerald-500'}`}>
-                                                    {isSearching
-                                                        ? <Loader2 className="w-2.5 h-2.5 text-indigo-500 animate-spin" />
-                                                        : isFailed && !isFound
-                                                            ? <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                            : <CheckCircle className="w-2.5 h-2.5 text-white" />
-                                                    }
-                                                </span>
-                                                <span className={isSearching ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'}>{t('searchingForJobs')}</span>
-                                            </div>
+                                    {/* Last Run Summary (idle only) */}
+                                    {!isBusy && lastRun && (
+                                        <div className="mt-2 space-y-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setExpandedLog(expandedLog === p.url ? null : p.url)}
+                                                className="flex items-center gap-1.5 text-[10px] font-medium cursor-pointer group/log"
+                                            >
+                                                {lastRun.status === 'failed' ? (
+                                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400 group-hover/log:border-rose-400 dark:group-hover/log:border-rose-700 transition-colors">
+                                                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                                                        {lastRun.error ? lastRun.error.slice(0, 60) : t('error')}
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-2 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400 group-hover/log:border-emerald-400 dark:group-hover/log:border-emerald-700 transition-colors">
+                                                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                                        <span>{lastRun.total} {t('jobsFound')}</span>
+                                                        <span className="opacity-40">·</span>
+                                                        <span>{lastRun.saved} {t('jobsSaved')}</span>
+                                                        {lastRun.skipped > 0 && (
+                                                            <>
+                                                                <span className="opacity-40">·</span>
+                                                                <span>{lastRun.skipped} {t('jobsSkipped')}</span>
+                                                            </>
+                                                        )}
+                                                    </span>
+                                                )}
+                                                <svg className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${expandedLog === p.url ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                                            </button>
 
-                                            <span className="text-slate-300 dark:text-slate-700">›</span>
+                                            {/* Expandable Log — reuses CrawlSteps with stored data */}
+                                            {expandedLog === p.url && (
+                                                <div className="pt-1">
+                                                    <CrawlSteps compact job={{
+                                                        job_id: p.url,
+                                                        platform: p.url,
+                                                        total: lastRun.total,
+                                                        scraping_completed: lastRun.scraping_completed ?? 0,
+                                                        analysis_completed: lastRun.analysis_completed ?? 0,
+                                                        jobs_saved: lastRun.saved,
+                                                        jobs_skipped: lastRun.skipped,
+                                                        status: lastRun.status === 'failed' ? 'failed' : 'completed',
+                                                        error_message: lastRun.error,
+                                                        show_success: lastRun.status === 'success',
+                                                    }} />
+                                                    {lastRun.timestamp && (
+                                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">{lastRun.timestamp}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
-                                            {/* Step 2: Gefunden */}
-                                            <div className="flex items-center gap-1">
-                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isFound ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : 'border-emerald-500 bg-emerald-500'}`}>
-                                                    {!isFound
-                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
-                                                        : <CheckCircle className="w-2.5 h-2.5 text-white" />
-                                                    }
-                                                </span>
-                                                <span className={isFound ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}>
-                                                    {isFound ? `${activeJob.total} ${t('jobsFound')}` : t('jobsFound')}
-                                                </span>
-                                            </div>
-
-                                            <span className="text-slate-300 dark:text-slate-700">›</span>
-
-                                            {/* Step 3: Details */}
-                                            <div className="flex items-center gap-1">
-                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isScraping && !isScrapingDone ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : isScrapingDone ? 'border-emerald-500 bg-emerald-500' : 'border-indigo-500 bg-white dark:bg-slate-900'}`}>
-                                                    {!isScraping && !isScrapingDone
-                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
-                                                        : isScrapingDone
-                                                            ? <CheckCircle className="w-2.5 h-2.5 text-white" />
-                                                            : <Loader2 className="w-2.5 h-2.5 text-indigo-500 animate-spin" />
-                                                    }
-                                                </span>
-                                                <span className={isScraping ? 'text-indigo-600 dark:text-indigo-400' : isScrapingDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-400 dark:text-slate-500'}>{t('loadJobDetails')}</span>
-                                            </div>
-
-                                            <span className="text-slate-300 dark:text-slate-700">›</span>
-
-                                            {/* Step 4: Analyse */}
-                                            <div className="flex items-center gap-1">
-                                                <span className={`flex items-center justify-center w-4 h-4 rounded-full border ${!isAnalyzing && !isAnalysisDone ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900' : isAnalysisDone ? 'border-emerald-500 bg-emerald-500' : 'border-amber-500 bg-white dark:bg-slate-900'}`}>
-                                                    {!isAnalyzing && !isAnalysisDone
-                                                        ? <Circle className="w-2.5 h-2.5 text-slate-300 dark:text-slate-600" />
-                                                        : isAnalysisDone
-                                                            ? <CheckCircle className="w-2.5 h-2.5 text-white" />
-                                                            : <Loader2 className="w-2.5 h-2.5 text-amber-500 animate-spin" />
-                                                    }
-                                                </span>
-                                                <span className={isAnalyzing && !isAnalysisDone ? 'text-amber-600 dark:text-amber-400' : isAnalysisDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-400 dark:text-slate-500'}>{t('analysis')}</span>
-                                            </div>
+                                    {/* Live Crawl Steps (active crawl only) */}
+                                    {isBusy && activeJob && (
+                                        <div className="mt-3">
+                                            <CrawlSteps compact job={activeJob} />
+                                        </div>
+                                    )}
+                                    {isBusy && !activeJob && (
+                                        <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 animate-pulse">
+                                            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                            {t('startingCrawler')}
                                         </div>
                                     )}
                                 </div>
@@ -531,7 +483,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                     )}
                                 </button>
 
-                                {/* Modern Toggle Switch for Active state */}
+                                {/* Active Toggle */}
                                 <button
                                     onClick={() => updatePlatform(p.id, { is_active: !p.is_active })}
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ml-2 cursor-pointer ${p.is_active ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}
@@ -578,4 +530,8 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             </div>
         </section>
     );
+
+    function removePlatform(id: number) {
+        setPlatformToRemove(id);
+    }
 }

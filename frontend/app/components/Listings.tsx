@@ -8,7 +8,6 @@ import { useLanguage } from './LanguageProvider';
 // Components
 import ApplicationModal from './ApplicationModal';
 import ConfirmModal from './ConfirmModal';
-import CrawlStatus from './CrawlStatus';
 import FilterBar from './FilterBar';
 import JobCard from './JobCard';
 import SearchHeader from './SearchHeader';
@@ -46,8 +45,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
-    const [initialCrawlStatus, setInitialCrawlStatus] = useState<any[]>([]);
-    const [initialSystemCrawling, setInitialSystemCrawling] = useState(false);
 
     // Generator & Modal
     const [modalOpen, setModalOpen] = useState(false);
@@ -123,8 +120,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 .then(data => {
                     if (data) {
                         setInitialJobs(data.jobs || []);
-                        setInitialCrawlStatus(data.active_crawls || []);
-                        setInitialSystemCrawling(data.system_crawling || false);
                         setInitialDataLoaded(true);
                     }
                 })
@@ -179,29 +174,10 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         if (token) fetchJobs(true);
     }, [user?.id, filterType, token, fetchJobs, setJobs]);
 
-    const {
-        isCrawling,
-        setIsCrawling,
-        activeCrawls,
-        globalError: crawlError,
-        setGlobalError: setCrawlError,
-        fetchCrawlStatus,
-        crawlToCancel,
-        setCrawlToCancel,
-        confirmCancelCrawl
-    } = useCrawl({
-        user,
-        token,
-        onJobUpdate,
-        onNewJob,
-        initialActiveCrawls: initialDataLoaded ? initialCrawlStatus : undefined,
-        initialIsCrawling: initialDataLoaded ? initialSystemCrawling : undefined
-    });
+    const { isCrawling } = useCrawl({ user, token, onJobUpdate, onNewJob });
 
-    const globalError = jobsError || crawlError;
-    const setGlobalError = (msg: string | null) => {
-        if (msg) setJobsError(msg); else { setJobsError(null); setCrawlError(null); }
-    }
+    const globalError = jobsError;
+    const setGlobalError = setJobsError;
     useEffect(() => {
         const urlFilter = searchParams.get('filter');
         const validFilters = ['all', 'favorite', 'no_favorite', 'applications'];
@@ -377,17 +353,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             />
 
             <ConfirmModal
-                isOpen={!!crawlToCancel}
-                onClose={() => setCrawlToCancel(null)}
-                onConfirm={confirmCancelCrawl}
-                title={t('cancelCrawl')}
-                message={t('cancelCrawlConfirm')}
-                confirmText={t('confirm')}
-                cancelText={t('cancel')}
-                isDestructive={true}
-            />
-
-            <ConfirmModal
                 isOpen={!!platformToBulkDelete}
                 onClose={() => { setPlatformToBulkDelete(null); setKeepFavorites(true); setKeepApplications(true); }}
                 onConfirm={handleBulkDeletePlatformJobs}
@@ -489,11 +454,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-300 px-4 py-3 rounded-lg flex items-center justify-between">
                     <span>⚠️ {globalError}</span>
                 </div>
-            )}
-
-            {/* CRAWL STATUS */}
-            {activeCrawls.size > 0 && (
-                <CrawlStatus jobs={Array.from(activeCrawls.values())} onCancel={setCrawlToCancel} />
             )}
 
             {platformIdFilter && (

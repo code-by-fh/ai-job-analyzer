@@ -246,6 +246,15 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
                                 }
                                 return prev;
                             });
+
+                            setTimeout(() => {
+                                setActiveCrawls(prev => {
+                                    const newMap = new Map(prev);
+                                    newMap.delete(data.job_id);
+                                    if (newMap.size === 0) setIsCrawling(false);
+                                    return newMap;
+                                });
+                            }, 5000);
                         }
                     }
                     else if (data.type === "job_skipped") {
