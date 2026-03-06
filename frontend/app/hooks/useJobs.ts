@@ -58,7 +58,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             }
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
 
             if (res.status === 401) { logout(); return; }
@@ -106,7 +106,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobToDelete}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 setJobs(prev => prev.filter(job => job.id !== jobToDelete));
@@ -126,7 +126,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/favorite`, {
                 method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 const data = await res.json();
@@ -145,9 +145,9 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/bulk-delete`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
+                credentials: 'include',
                 body: JSON.stringify({ job_ids: jobIds })
             });
 
@@ -172,9 +172,9 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/update-status`, {
                 method: 'PATCH',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
+                credentials: 'include',
                 body: JSON.stringify({ status: newStatus })
             });
             if (res.ok) {

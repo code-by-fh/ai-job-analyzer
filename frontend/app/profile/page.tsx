@@ -1,5 +1,4 @@
 "use client";
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import DynamicList from '../components/DynamicList';
@@ -9,7 +8,6 @@ import { logger } from '../lib/logger';
 export default function Profile() {
   const { token, refreshUser } = useAuth();
   const { t } = useLanguage();
-  const router = useRouter();
 
   const [formData, setFormData] = useState({
     role: '',
@@ -28,15 +26,9 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (!storedToken) {
-      router.push('/login');
-      return;
-    }
-
     if (token) {
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       })
         .then(res => res.json())
         .then(data => {
@@ -53,7 +45,7 @@ export default function Profile() {
         })
         .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); setLoading(false); });
     }
-  }, [token, router]);
+  }, [token]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -67,8 +59,8 @@ export default function Profile() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
       setStatus(t('saved'));
@@ -92,7 +84,7 @@ export default function Profile() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'include',
         body: uploadData,
       });
 

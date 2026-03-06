@@ -40,9 +40,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
   const handleDownload = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/download`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
       });
       if (!res.ok) throw new Error(t('downloadFailed'));
 

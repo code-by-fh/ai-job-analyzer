@@ -103,7 +103,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         if (!token) return;
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 const data = await res.json();
@@ -140,7 +140,8 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ url: newUrl })
             });
             if (res.ok) {
@@ -162,7 +163,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}?delete_listings=${deleteListingsWithPlatform}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             fetchPlatforms();
         } catch (e) {
@@ -181,7 +182,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}/crawl`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 setStatus(t('crawlJobsDispatched'));
@@ -201,7 +202,8 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(data)
             });
             if (res.ok) {
@@ -225,7 +227,8 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platform.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ notification_adapters: updated })
             });
             if (!res.ok) {

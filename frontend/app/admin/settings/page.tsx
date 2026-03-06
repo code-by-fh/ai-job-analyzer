@@ -26,7 +26,7 @@ export default function AdminSettingsPage() {
     const fetchSettings = async () => {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 const data = await res.json();
@@ -47,8 +47,8 @@ export default function AdminSettingsPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include',
                 body: JSON.stringify({ openrouter_model: model })
             });
             if (res.ok) {

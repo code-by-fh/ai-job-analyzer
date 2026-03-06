@@ -1,5 +1,4 @@
 "use client";
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import PasswordInput from '../components/PasswordInput';
@@ -9,7 +8,6 @@ import { logger } from '../lib/logger';
 export default function Settings() {
   const { user, token } = useAuth();
   const { t } = useLanguage();
-  const router = useRouter();
 
   const [formData, setFormData] = useState({
     gmail_address: '',
@@ -27,15 +25,9 @@ export default function Settings() {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (!storedToken) {
-      router.push('/login');
-      return;
-    }
-
     if (token) {
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       })
         .then(res => res.json())
         .then(data => {
@@ -52,7 +44,7 @@ export default function Settings() {
         })
         .catch(e => { logger.error({ err: e }, "Settings load error"); setLoading(false); });
     }
-  }, [token, router]);
+  }, [token]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -66,8 +58,8 @@ export default function Settings() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
       setSavedData(formData);

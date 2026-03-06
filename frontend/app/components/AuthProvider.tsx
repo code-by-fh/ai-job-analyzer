@@ -13,11 +13,11 @@ interface User {
 export interface AuthContextType {
     user: User | null;
     token: string | null;
-    login: (token: string) => void;
+    login: () => void;
     logout: () => void;
-
     isAuthenticated: boolean;
     refreshUser: () => Promise<void>;
+    isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -25,79 +25,101 @@ const AuthContext = createContext<AuthContextType>({
     token: null,
     login: () => { },
     logout: () => { },
-
     isAuthenticated: false,
-    refreshUser: async () => { }
+    refreshUser: async () => { },
+    isLoading: true,
 });
+
+// Wrapper around fetch that automatically retries after a /auth/refresh on 401
+export async function fetchWithAuth(input: RequestInfo, init: RequestInit = {}): Promise<Response> {
+    const opts: RequestInit = { ...init, credentials: 'include' };
+    let res = await fetch(input, opts);
+    if (res.status === 401) {
+        // Attempt token refresh
+        const refreshRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+        if (refreshRes.ok) {
+            res = await fetch(input, opts);
+        }
+    }
+    return res;
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
+    // token is used as an auth sentinel: null = not authenticated, "__session__" = authenticated
+    // This preserves all existing `if (!token)` guard checks across the codebase without
+    // changing hook signatures.
     const [token, setToken] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    const logout = useCallback(() => {
-        localStorage.removeItem('token');
+    const logout = useCallback(async () => {
+        try {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/logout`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+        } catch { }
         setToken(null);
         setUser(null);
         router.push('/login');
     }, [router]);
 
-    const fetchUserWithLogout = useCallback(async (authToken: string) => {
+    const fetchUserData = useCallback(async (): Promise<boolean> => {
+        setIsLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
-            if (res.ok) {
-                const userData = await res.json();
-
-                let is_profile_complete = false;
-                try {
-                    const resSettings = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
-                        headers: { 'Authorization': `Bearer ${authToken}` }
-                    });
-                    if (resSettings.ok) {
-                        const settingsData = await resSettings.json();
-                        if (settingsData.role && settingsData.role.trim().length > 0) {
-                            is_profile_complete = true;
-                        }
-                    }
-                } catch (e) {
-                    logger.warn({ err: e }, "Failed to fetch settings for profile check");
-                }
-
-                setUser({ ...userData, is_profile_complete });
-            } else {
-                logger.error("Token invalid, logging out");
-                logout();
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/me`);
+            if (!res.ok) {
+                setToken(null);
+                setUser(null);
+                setIsLoading(false);
+                return false;
             }
+            const userData = await res.json();
+
+            let is_profile_complete = false;
+            try {
+                const resSettings = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings`);
+                if (resSettings.ok) {
+                    const settingsData = await resSettings.json();
+                    if (settingsData.role && settingsData.role.trim().length > 0) {
+                        is_profile_complete = true;
+                    }
+                }
+            } catch (e) {
+                logger.warn({ err: e }, "Failed to fetch settings for profile check");
+            }
+
+            setUser({ ...userData, is_profile_complete });
+            setToken("__session__");
+            setIsLoading(false);
+            return true;
         } catch (e) {
             logger.error({ err: e }, "Fetch user failed");
-            logout();
+            setToken(null);
+            setUser(null);
+            setIsLoading(false);
+            return false;
         }
-    }, [logout]);
+    }, []);
 
+    // On mount: probe /me to restore session from existing cookie
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const storedToken = localStorage.getItem('token');
-            if (storedToken) {
-                setToken(storedToken);
-                fetchUserWithLogout(storedToken);
-            }
-        }
-    }, [fetchUserWithLogout]);
+        fetchUserData();
+    }, [fetchUserData]);
 
-    const login = useCallback((newToken: string) => {
-        localStorage.setItem('token', newToken);
-        setToken(newToken);
-        fetchUserWithLogout(newToken);
-        router.push('/');
-    }, [fetchUserWithLogout, router]);
+    const login = useCallback(() => {
+        fetchUserData().then(ok => {
+            if (ok) router.push('/');
+        });
+    }, [fetchUserData, router]);
 
     const refreshUser = useCallback(async () => {
-        if (token) {
-            await fetchUserWithLogout(token);
-        }
-    }, [token, fetchUserWithLogout]);
+        await fetchUserData();
+    }, [fetchUserData]);
 
     const contextValue = useMemo(() => ({
         user,
@@ -105,8 +127,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         login,
         logout,
         isAuthenticated: !!user,
-        refreshUser
-    }), [user, token, login, logout, refreshUser]);
+        refreshUser,
+        isLoading
+    }), [user, token, login, logout, refreshUser, isLoading]);
 
     return (
         <AuthContext.Provider value={contextValue}>

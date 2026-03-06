@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import (
     FastAPI,
     HTTPException,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     UploadFile,
@@ -22,6 +23,9 @@ from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import redis.asyncio as redis_async
 import redis as redis_sync
@@ -52,13 +56,19 @@ from database import (
 )
 from auth import (
     create_access_token,
+    create_refresh_token,
     get_current_user,
     get_current_admin_user,
     verify_password,
     get_password_hash,
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from datetime import timedelta
+
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+limiter = Limiter(key_func=get_remote_address)
 
 # Note: tasks are referenced by name strings
 
@@ -174,8 +184,9 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.username == "admin").first():
-            logger.info("Create default admin user (admin/admin)")
-            hashed_pwd = get_password_hash("admin")
+            admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+            logger.info("Create default admin user")
+            hashed_pwd = get_password_hash(admin_password)
             admin_user = User(
                 username="admin", hashed_password=hashed_pwd, is_admin=True
             )
@@ -191,6 +202,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 allowed_origins = [
     origin.strip()
@@ -201,6 +214,7 @@ logger.info(f"Allowed origins: {allowed_origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -302,8 +316,9 @@ def parse_cv_with_ai(cv_text):
         return None
 
 
-@app.post("/auth/login", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+@app.post("/auth/login")
+@limiter.limit("5/minute")
+async def login_for_access_token(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == form_data.username).first()
@@ -311,15 +326,76 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
             )
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": user.username}, expires_delta=access_token_expires
+        token_data = {"sub": user.username, "tv": user.token_version}
+        access_token = create_access_token(data=token_data)
+        refresh_token = create_refresh_token(data=token_data)
+        response.set_cookie(
+            key="access_token", value=access_token,
+            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
-        return {"access_token": access_token, "token_type": "bearer"}
+        response.set_cookie(
+            key="refresh_token", value=refresh_token,
+            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        )
+        return {"status": "ok"}
     finally:
         db.close()
+
+
+@app.post("/auth/refresh")
+async def refresh_access_token(request: Request, response: Response):
+    from jose import JWTError, jwt
+    from auth import SECRET_KEY, ALGORITHM
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate refresh token",
+    )
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise credentials_exception
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise credentials_exception
+        username: str = payload.get("sub")
+        token_version: int = payload.get("tv", 0)
+        if not username:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user or user.token_version != token_version:
+            raise credentials_exception
+        token_data = {"sub": user.username, "tv": user.token_version}
+        access_token = create_access_token(data=token_data)
+        response.set_cookie(
+            key="access_token", value=access_token,
+            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@app.post("/auth/logout")
+async def logout(response: Response, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user:
+            user.token_version += 1
+            db.commit()
+    finally:
+        db.close()
+    response.delete_cookie(key="access_token", httponly=True, secure=COOKIE_SECURE, samesite="lax")
+    response.delete_cookie(key="refresh_token", httponly=True, secure=COOKIE_SECURE, samesite="lax")
+    return {"status": "logged out"}
 
 
 @app.post("/auth/change-password")

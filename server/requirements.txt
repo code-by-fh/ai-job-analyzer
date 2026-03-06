@@ -19,3 +19,4 @@ requests
 bs4
 markdownify
 playwright
+slowapi

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import UserMenu from './UserMenu';
 import ThemeToggler from './ThemeToggler';
 import LanguageToggler from './LanguageToggler';
@@ -18,8 +18,16 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [showTutorial, setShowTutorial] = useState(false);
-    const { user } = useAuth();
+    const router = useRouter();
+    const { user, isLoading } = useAuth();
     const { t } = useLanguage();
+
+    // Redirect to login if user is not authenticated and not on login page
+    React.useEffect(() => {
+        if (!isLoading && !user && !isLoginPage) {
+            router.push('/login');
+        }
+    }, [isLoading, user, isLoginPage, router]);
 
     // Check for first-time user
     React.useEffect(() => {
@@ -65,6 +73,15 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     <ThemeToggler />
                 </div>
             </>
+        );
+    }
+
+    // Do not render dashboard if we are still checking auth or about to redirect
+    if ((isLoading || !user) && !isLoginPage) {
+        return (
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors duration-300">
+                <div className="w-12 h-12 border-4 border-indigo-200 dark:border-indigo-500/20 border-t-indigo-600 dark:border-t-indigo-500 rounded-full animate-spin"></div>
+            </div>
         );
     }
 

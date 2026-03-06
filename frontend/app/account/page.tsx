@@ -1,5 +1,4 @@
 "use client";
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
@@ -9,7 +8,6 @@ import { useLanguage } from '../components/LanguageProvider';
 export default function Account() {
   const { token, refreshUser } = useAuth();
   const { t } = useLanguage();
-  const router = useRouter();
 
   const [status, setStatus] = useState('');
   const [keepFavorites, setKeepFavorites] = useState(true);
@@ -22,18 +20,11 @@ export default function Account() {
     action: () => Promise<void>;
   } | null>(null);
 
-  useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (!storedToken) {
-      router.push('/login');
-    }
-  }, [router]);
-
   const executeDeleteJobs = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       });
       const data = await res.json();
       setStatus(`${data.count || 0} jobs deleted.`);
@@ -47,7 +38,7 @@ export default function Account() {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       });
       setStatus(t('saved'));
       refreshUser();
@@ -60,7 +51,7 @@ export default function Account() {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       });
       setStatus(t('saved'));
       refreshUser();

@@ -71,42 +71,33 @@ def section(title: str):
 
 # ─── HTTP-Hilfsfunktionen ───────────────────────────────────────────────────────
 
+import requests as _requests_module
+
+_session = _requests_module.Session()
+
 
 def _get(path: str, token: str = None, **kwargs):
-    import requests as req
-
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return req.get(f"{_base_url}{path}", headers=headers, timeout=10, **kwargs)
+    return _session.get(f"{_base_url}{path}", timeout=10, **kwargs)
 
 
 def _post(path: str, data=None, json_data=None, token: str = None, **kwargs):
-    import requests as req
-
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return req.post(
+    return _session.post(
         f"{_base_url}{path}",
         data=data,
         json=json_data,
-        headers=headers,
         timeout=10,
         **kwargs,
     )
 
 
 def _patch(path: str, json_data=None, token: str = None, **kwargs):
-    import requests as req
-
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return req.patch(
-        f"{_base_url}{path}", json=json_data, headers=headers, timeout=10, **kwargs
+    return _session.patch(
+        f"{_base_url}{path}", json=json_data, timeout=10, **kwargs
     )
 
 
 def _delete(path: str, token: str = None, **kwargs):
-    import requests as req
-
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return req.delete(f"{_base_url}{path}", headers=headers, timeout=10, **kwargs)
+    return _session.delete(f"{_base_url}{path}", timeout=10, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -134,26 +125,42 @@ def test_api_reachable() -> bool:
         return False
 
 
-def test_auth(admin_token: list) -> None:
+def test_auth(admin_token: list) -> bool:
     """Testet Login und Token-Validierung."""
     section("2. Authentifizierung")
 
-    # 2a. Login mit gueltigen Credentials
+    # 2a. Rate-Limit-Test: 6 fehlgeschlagene Logins, der 6. sollte 429 zurueckgeben
+    try:
+        last_status = None
+        for i in range(6):
+            r = _post("/auth/login", data={"username": "admin", "password": "wrong_pw"})
+            last_status = r.status_code
+        if last_status == 429:
+            ok("POST /auth/login (Rate Limit) -> 6. fehlerhafter Login gibt 429 Too Many Requests")
+        else:
+            fail(
+                "POST /auth/login (Rate Limit)",
+                f"Erwartet 429 nach 6 Versuchen, erhalten {last_status}",
+            )
+    except Exception as e:
+        fail("POST /auth/login (Rate Limit)", str(e))
+
+    # Session zuruecksetzen und mit gueltigen Credentials neu einloggen
+    _session.cookies.clear()
+
+    # 2b. Login mit gueltigen Credentials (Cookie-basiert)
     try:
         r = _post("/auth/login", data={"username": "admin", "password": "admin"})
-        if r.status_code == 200 and "access_token" in r.json():
-            ok("POST /auth/login (admin/admin) -> Token erhalten")
-            admin_token.append(r.json()["access_token"])
+        if r.status_code == 200:
+            ok("POST /auth/login (admin/admin) -> 200 OK, Cookie gesetzt")
         else:
             fail("POST /auth/login", f"HTTP {r.status_code}: {r.text[:200]}")
-            return
+            return False
     except Exception as e:
         fail("POST /auth/login", str(e))
-        return
+        return False
 
-    token = admin_token[0]
-
-    # 2b. Login mit falschen Credentials
+    # 2c. Login mit falschen Credentials -> 401
     try:
         r = _post("/auth/login", data={"username": "admin", "password": "wrong"})
         if r.status_code == 401:
@@ -166,25 +173,28 @@ def test_auth(admin_token: list) -> None:
     except Exception as e:
         fail("POST /auth/login (falsches PW)", str(e))
 
-    # 2c. GET /me mit Token
+    # 2d. GET /me mit Session-Cookie
     try:
-        r = _get("/me", token=token)
+        r = _get("/me")
         if r.status_code == 200 and r.json().get("username") == "admin":
-            ok("GET /me -> Gibt Admin-User zurueck")
+            ok("GET /me -> Gibt Admin-User zurueck (Cookie-Auth)")
         else:
             fail("GET /me", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
         fail("GET /me", str(e))
 
-    # 2d. Authentifizierter Request ohne Token -> 401
+    # 2e. Authentifizierter Request ohne Cookie -> 401 (neue Session ohne Cookies)
     try:
-        r = _get("/me")
+        tmp_session = _requests_module.Session()
+        r = tmp_session.get(f"{_base_url}/me", timeout=10)
         if r.status_code == 401:
-            ok("GET /me (kein Token) -> 401 Unauthorized")
+            ok("GET /me (kein Cookie) -> 401 Unauthorized")
         else:
-            fail("GET /me (kein Token)", f"Erwartet 401, erhalten {r.status_code}")
+            fail("GET /me (kein Cookie)", f"Erwartet 401, erhalten {r.status_code}")
     except Exception as e:
-        fail("GET /me (kein Token)", str(e))
+        fail("GET /me (kein Cookie)", str(e))
+
+    return True
 
 
 def test_jobs(token: str) -> None:
@@ -193,7 +203,7 @@ def test_jobs(token: str) -> None:
 
     # 3a. Jobs auflisten
     try:
-        r = _get("/jobs", token=token)
+        r = _get("/jobs")
         if r.status_code == 200:
             jobs = r.json()
             ok(f"GET /jobs -> {len(jobs)} Jobs gefunden")
@@ -206,7 +216,7 @@ def test_jobs(token: str) -> None:
 
     # 3b. Jobs mit Filtern
     try:
-        r = _get("/jobs?filter_type=favorites&sort_by=score", token=token)
+        r = _get("/jobs?filter_type=favorites&sort_by=score")
         if r.status_code == 200:
             ok("GET /jobs?filter_type=favorites&sort_by=score -> 200 OK")
         else:
@@ -216,7 +226,7 @@ def test_jobs(token: str) -> None:
 
     # 3c. Job-Domains auflisten
     try:
-        r = _get("/jobs/domains", token=token)
+        r = _get("/jobs/domains")
         if r.status_code == 200:
             ok(f"GET /jobs/domains -> 200 OK")
         else:
@@ -227,7 +237,7 @@ def test_jobs(token: str) -> None:
     # 3d. Nicht existierenden Job abrufen -> 404
     try:
         fake_id = str(uuid.uuid4())
-        r = _get(f"/jobs/{fake_id}", token=token)
+        r = _get(f"/jobs/{fake_id}")
         if r.status_code == 404:
             ok(f"GET /jobs/{{fake_id}} -> 404 Not Found")
         else:
@@ -243,7 +253,7 @@ def test_settings(token: str) -> None:
 
     # 4a. Settings lesen
     try:
-        r = _get("/settings", token=token)
+        r = _get("/settings")
         if r.status_code == 200:
             data = r.json()
             ok(
@@ -283,7 +293,7 @@ def test_settings(token: str) -> None:
         "active_notification_service": "NONE",
     }
     try:
-        r = _post("/settings", json_data=payload, token=token)
+        r = _post("/settings", json_data=payload)
         if r.status_code == 200:
             ok("POST /settings -> Settings gespeichert")
         else:
@@ -293,7 +303,7 @@ def test_settings(token: str) -> None:
 
     # 4c. Settings wieder lesen und pruefen
     try:
-        r = _get("/settings", token=token)
+        r = _get("/settings")
         if r.status_code == 200 and r.json().get("role") == "Smoke Test Engineer":
             ok("GET /settings -> Aktualisierte Settings korrekt gespeichert")
         else:
@@ -312,7 +322,7 @@ def test_platforms(token: str) -> list:
 
     # 5a. Platforms auflisten
     try:
-        r = _get("/platforms", token=token)
+        r = _get("/platforms")
         if r.status_code == 200:
             ok(f"GET /platforms -> {len(r.json())} Platforms gefunden")
         else:
@@ -328,7 +338,6 @@ def test_platforms(token: str) -> list:
                 "url": "https://smoke-test-example.com/jobs",
                 "crawl_interval_minutes": 720,
             },
-            token=token,
         )
         if r.status_code == 200:
             pid = r.json().get("id")
@@ -356,7 +365,6 @@ def test_platforms(token: str) -> list:
                 "is_notification_enabled": True,
                 "notification_adapters": ["GMAIL"],
             },
-            token=token,
         )
         if r.status_code == 200:
             ok(f"PATCH /platforms/{pid} -> interval=360, notification=GMAIL")
@@ -373,7 +381,7 @@ def test_platform_crawl(token: str, platform_id: int) -> None:
     section("6. Crawl-Trigger (Schedule)")
 
     try:
-        r = _post(f"/platforms/{platform_id}/crawl", token=token)
+        r = _post(f"/platforms/{platform_id}/crawl")
         # 200 = gestartet, 503 = Celery nicht verfuegbar
         if r.status_code in (200, 202, 503):
             status_info = (
@@ -401,7 +409,7 @@ def test_admin(token: str) -> None:
 
     # 7a. Admin Settings lesen
     try:
-        r = _get("/admin/settings", token=token)
+        r = _get("/admin/settings")
         if r.status_code == 200:
             model = r.json().get("openrouter_model", "?")
             ok(f"GET /admin/settings -> Model='{model}'")
@@ -415,7 +423,6 @@ def test_admin(token: str) -> None:
         r = _post(
             "/admin/settings",
             json_data={"openrouter_model": "tngtech/deepseek-r1t2-chimera:free"},
-            token=token,
         )
         if r.status_code == 200:
             ok("POST /admin/settings -> Model gesetzt")
@@ -431,7 +438,7 @@ def test_users(token: str) -> None:
 
     # 8a. Users auflisten
     try:
-        r = _get("/users", token=token)
+        r = _get("/users")
         if r.status_code == 200:
             users = r.json()
             ok(f"GET /users -> {len(users)} User(s) gefunden")
@@ -449,7 +456,6 @@ def test_users(token: str) -> None:
         r = _post(
             "/users",
             json_data={"username": test_username, "password": "TestPW123!"},
-            token=token,
         )
         if r.status_code == 200:
             created_id = r.json().get("id")
@@ -465,7 +471,6 @@ def test_users(token: str) -> None:
             r = _post(
                 "/users",
                 json_data={"username": test_username, "password": "pw"},
-                token=token,
             )
             if r.status_code == 400:
                 ok(f"POST /users (Duplikat) -> 400 Bad Request")
@@ -478,7 +483,7 @@ def test_users(token: str) -> None:
 
         # 8d. User loeschen
         try:
-            r = _delete(f"/users/{created_id}", token=token)
+            r = _delete(f"/users/{created_id}")
             if r.status_code == 200:
                 ok(f"DELETE /users/{created_id} -> User geloescht")
             else:
@@ -495,7 +500,7 @@ def cleanup_platforms(token: str, platform_ids: list) -> None:
     section("9. Cleanup")
     for pid in platform_ids:
         try:
-            r = _delete(f"/platforms/{pid}", token=token)
+            r = _delete(f"/platforms/{pid}")
             if r.status_code == 200:
                 ok(f"DELETE /platforms/{pid} -> bereinigt")
             else:
@@ -1207,17 +1212,16 @@ def main():
     if not args.skip_api:
         api_ok = test_api_reachable()
         if api_ok:
-            test_auth(admin_token)
-            if admin_token:
-                token = admin_token[0]
-                test_jobs(token)
-                test_settings(token)
-                platform_ids = test_platforms(token)
+            auth_ok = test_auth(admin_token)
+            if auth_ok:
+                test_jobs(None)
+                test_settings(None)
+                platform_ids = test_platforms(None)
                 if platform_ids:
-                    test_platform_crawl(token, platform_ids[0])
-                test_admin(token)
-                test_users(token)
-                cleanup_platforms(token, platform_ids)
+                    test_platform_crawl(None, platform_ids[0])
+                test_admin(None)
+                test_users(None)
+                cleanup_platforms(None, platform_ids)
         else:
             skip("Alle API-Tests", "API nicht erreichbar")
     else:

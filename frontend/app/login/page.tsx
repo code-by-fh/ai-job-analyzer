@@ -24,12 +24,12 @@ export default function LoginPage() {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                credentials: 'include',
                 body: params
             });
 
             if (res.ok) {
-                const data = await res.json();
-                login(data.access_token);
+                login();
             } else {
                 setError(t('authFailed'));
             }

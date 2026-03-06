@@ -32,7 +32,7 @@ export default function UserManagementPage() {
     const fetchUsers = async () => {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 const data = await res.json();
@@ -50,8 +50,8 @@ export default function UserManagementPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include',
                 body: JSON.stringify({ username: newUsername, password: newPassword })
             });
             if (res.ok) {
@@ -77,7 +77,7 @@ export default function UserManagementPage() {
         try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userToDelete}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             fetchUsers();
         } catch (e) {

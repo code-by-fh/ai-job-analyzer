@@ -25,13 +25,13 @@ export default function OverviewDashboard() {
         if (!token) return;
         Promise.all([
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/statistics`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             }).then(res => {
                 if (res.status === 401) { logout(); return null; }
                 return res.json();
             }),
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             }).then(res => {
                 if (res.status === 401) return null;
                 return res.json();

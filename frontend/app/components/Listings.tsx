@@ -65,7 +65,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?company=${encodeURIComponent(companyToBulkDelete)}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 fetchJobs(true);
@@ -89,7 +89,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToBulkDelete}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
             if (res.ok) {
                 fetchJobs(true);
@@ -111,7 +111,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     useEffect(() => {
         if (token && !initialDataLoaded && !initialPlatformId) {
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             })
                 .then(res => {
                     if (res.status === 401) { logout(); return null; }
@@ -221,10 +221,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     };
 
     useEffect(() => {
-        const t = localStorage.getItem('token');
-        if (!t) router.push('/login');
-    }, [router]);
-    useEffect(() => {
         if (!hasMore || isLoadingMore) return;
 
         const observer = new IntersectionObserver((entries) => {
@@ -298,7 +294,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include',
             });
         } catch (e) {
             setPendingIds(prev => prev.filter(id => id !== job.id));

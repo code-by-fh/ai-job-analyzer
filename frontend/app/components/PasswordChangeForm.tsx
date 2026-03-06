@@ -21,8 +21,8 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include',
                 body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
             });
 
