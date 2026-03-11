@@ -53,6 +53,13 @@ from database import (
     SystemSettings,
     engine,
     Base,
+    CompanyProfile,
+    JobStatusHistory,
+    JobPatchRequest,
+    CompanyAnalyzeRequest,
+    CompanyProfileResponse,
+    JobStatusHistoryEntry,
+    DomainUrlPattern,
 )
 from auth import (
     create_access_token,
@@ -318,7 +325,11 @@ def parse_cv_with_ai(cv_text):
 
 @app.post("/auth/login")
 @limiter.limit("5/minute")
-async def login_for_access_token(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == form_data.username).first()
@@ -331,13 +342,19 @@ async def login_for_access_token(request: Request, response: Response, form_data
         access_token = create_access_token(data=token_data)
         refresh_token = create_refresh_token(data=token_data)
         response.set_cookie(
-            key="access_token", value=access_token,
-            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
             max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
         response.set_cookie(
-            key="refresh_token", value=refresh_token,
-            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
             max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         )
         return {"status": "ok"}
@@ -349,6 +366,7 @@ async def login_for_access_token(request: Request, response: Response, form_data
 async def refresh_access_token(request: Request, response: Response):
     from jose import JWTError, jwt
     from auth import SECRET_KEY, ALGORITHM
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate refresh token",
@@ -374,8 +392,11 @@ async def refresh_access_token(request: Request, response: Response):
         token_data = {"sub": user.username, "tv": user.token_version}
         access_token = create_access_token(data=token_data)
         response.set_cookie(
-            key="access_token", value=access_token,
-            httponly=True, secure=COOKIE_SECURE, samesite="lax",
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
             max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
         return {"status": "ok"}
@@ -393,8 +414,12 @@ async def logout(response: Response, current_user: User = Depends(get_current_us
             db.commit()
     finally:
         db.close()
-    response.delete_cookie(key="access_token", httponly=True, secure=COOKIE_SECURE, samesite="lax")
-    response.delete_cookie(key="refresh_token", httponly=True, secure=COOKIE_SECURE, samesite="lax")
+    response.delete_cookie(
+        key="access_token", httponly=True, secure=COOKIE_SECURE, samesite="lax"
+    )
+    response.delete_cookie(
+        key="refresh_token", httponly=True, secure=COOKIE_SECURE, samesite="lax"
+    )
     return {"status": "logged out"}
 
 
@@ -569,6 +594,43 @@ def get_jobs(
         db.close()
 
 
+@app.get("/jobs/{job_id}")
+def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "company_domain": job.company_domain,
+            "description": job.description,
+            "match_score": job.match_score,
+            "reasoning": job.reasoning,
+            "application_draft": job.application_draft,
+            "interview_prep_material": job.interview_prep_material,
+            "status": job.status,
+            "url": job.url,
+            "is_favorite": job.is_favorite,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "next_follow_up_at": (
+                job.next_follow_up_at.isoformat() if job.next_follow_up_at else None
+            ),
+            "contact_persons": job.contact_persons,
+            "recruiter_info": job.recruiter_info,
+            "salary_benchmark": job.salary_benchmark,
+            "notes": job.notes,
+        }
+    finally:
+        db.close()
+
+
 @app.post("/jobs/{job_id}/generate")
 def trigger_generation(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -638,10 +700,22 @@ def download_application_pdf(
         """
 
         pdf_buffer = BytesIO()
-        pisa_status = pisa.CreatePDF(io.StringIO(styled_html), dest=pdf_buffer)
+        try:
+            # Encoding as utf-8 and using BytesIO is safer for pisa
+            pisa_status = pisa.CreatePDF(
+                BytesIO(styled_html.encode("utf-8")), dest=pdf_buffer, encoding="utf-8"
+            )
 
-        if pisa_status.err:
-            raise HTTPException(status_code=500, detail="Error generating PDF")
+            if pisa_status.err:
+                logger.error(f"Pisa PDF Error: {pisa_status.err}")
+                raise HTTPException(
+                    status_code=500, detail=f"Error generating PDF: {pisa_status.err}"
+                )
+        except Exception as e:
+            logger.error(f"Critical PDF Generation Error for job {job_id}: {e}")
+            raise HTTPException(
+                status_code=500, detail="Internal error during PDF generation"
+            )
 
         pdf_bytes = pdf_buffer.getvalue()
 
@@ -744,6 +818,95 @@ def update_job_status(
         db.rollback()
         logger.error(f"Error updating status: {e}")
         raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        db.close()
+
+
+@app.patch("/jobs/{job_id}")
+def patch_job(
+    job_id: str,
+    request: JobPatchRequest,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        # Track status change for history
+        if request.status is not None and request.status != job.status:
+            history_entry = JobStatusHistory(
+                job_id=job_id,
+                from_status=job.status,
+                to_status=request.status,
+                changed_by=current_user.id,
+                note=request.note,
+            )
+            db.add(history_entry)
+            job.status = request.status
+
+        if request.is_favorite is not None:
+            job.is_favorite = request.is_favorite
+        if request.company_domain is not None:
+            job.company_domain = request.company_domain
+        if request.contact_persons is not None:
+            job.contact_persons = request.contact_persons
+        if request.recruiter_info is not None:
+            job.recruiter_info = request.recruiter_info
+        if request.salary_benchmark is not None:
+            job.salary_benchmark = request.salary_benchmark
+        if request.next_follow_up_at is not None:
+            from datetime import datetime
+
+            job.next_follow_up_at = datetime.fromisoformat(request.next_follow_up_at)
+        if request.notes is not None:
+            job.notes = request.notes
+
+        db.commit()
+        db.refresh(job)
+        return {"status": "updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error patching job: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    finally:
+        db.close()
+
+
+@app.get("/jobs/{job_id}/history")
+def get_job_history(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        history = (
+            db.query(JobStatusHistory)
+            .filter(JobStatusHistory.job_id == job_id)
+            .order_by(JobStatusHistory.changed_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": h.id,
+                "from_status": h.from_status,
+                "to_status": h.to_status,
+                "changed_at": h.changed_at.isoformat() if h.changed_at else None,
+                "note": h.note,
+            }
+            for h in history
+        ]
     finally:
         db.close()
 
@@ -1089,6 +1252,8 @@ def delete_platform(
     keep_applications: bool = True,
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import func
+
     db = SessionLocal()
     try:
         db_platform = (
@@ -1101,18 +1266,39 @@ def delete_platform(
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
 
-        if delete_listings:
-            query = db.query(JobEntry).filter(JobEntry.platform_id == platform_id)
-            if keep_favorites:
-                query = query.filter(JobEntry.is_favorite == False)
-            if keep_applications:
-                query = query.filter(JobEntry.status == "OPEN")
-            query.delete()
+        # Get all domains associated with the platform's jobs
+        domains_to_check = [
+            row[0]
+            for row in db.query(JobEntry.company_domain)
+            .filter(JobEntry.platform_id == platform_id)
+            .distinct()
+            .all()
+            if row[0]
+        ]
 
-        # Set platform_id to NULL in remaining jobs (favorites or non-open status)
-        db.query(JobEntry).filter(JobEntry.platform_id == platform_id).update(
-            {"platform_id": None}
+        # Delete job status history for these jobs
+        job_ids_subquery = (
+            db.query(JobEntry.id).filter(JobEntry.platform_id == platform_id).subquery()
         )
+        db.query(JobStatusHistory).filter(
+            JobStatusHistory.job_id.in_(job_ids_subquery)
+        ).delete(synchronize_session=False)
+
+        # Delete all jobs of this platform unconditionally
+        query = db.query(JobEntry).filter(JobEntry.platform_id == platform_id)
+        query.delete(synchronize_session=False)
+
+        # Delete company profiles that were ONLY associated with these jobs
+        for domain in domains_to_check:
+            other_jobs_using_domain = (
+                db.query(func.count(JobEntry.id))
+                .filter(JobEntry.company_domain == domain)
+                .scalar()
+            )
+            if other_jobs_using_domain == 0:
+                db.query(CompanyProfile).filter(CompanyProfile.domain == domain).delete(
+                    synchronize_session=False
+                )
 
         db.delete(db_platform)
         db.commit()
@@ -1225,6 +1411,151 @@ def get_statistics(current_user: User = Depends(get_current_user)):
             "interviews": interviews,
             "offers": offers,
             "rejected": rejected,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/companies/{domain}")
+def get_company_profile(domain: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        company = (
+            db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
+        )
+        if not company:
+            raise HTTPException(status_code=404, detail="Company profile not found")
+        return {
+            "id": company.id,
+            "domain": company.domain,
+            "name": company.name,
+            "description": company.description,
+            "culture_summary": company.culture_summary,
+            "review_score": company.review_score,
+            "review_source": company.review_source,
+            "salary_benchmark": company.salary_benchmark,
+            "tech_stack": company.tech_stack,
+            "key_artifacts": (
+                company.raw_data.get("key_artifacts", []) if company.raw_data else []
+            ),
+            "swot_analysis": (
+                company.raw_data.get("swot_analysis") if company.raw_data else None
+            ),
+            "comprehensive_report": (
+                company.raw_data.get("comprehensive_report")
+                if company.raw_data
+                else None
+            ),
+            "key_benefits": (
+                company.raw_data.get("key_benefits", []) if company.raw_data else []
+            ),
+            "red_flags": (
+                company.raw_data.get("red_flags", []) if company.raw_data else []
+            ),
+            "company_intelligence": (
+                company.raw_data.get("company_intelligence")
+                if company.raw_data
+                else None
+            ),
+            "analyzed_at": (
+                company.analyzed_at.isoformat() if company.analyzed_at else None
+            ),
+        }
+    finally:
+        db.close()
+
+
+@app.post("/companies/{domain}/analyze")
+def analyze_company(
+    domain: str,
+    request: CompanyAnalyzeRequest = CompanyAnalyzeRequest(),
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        company = (
+            db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
+        )
+        if company and not request.force_refresh:
+            return {
+                "status": "exists",
+                "domain": domain,
+                "message": "Profile already exists. Use force_refresh=true to regenerate.",
+            }
+        celery_app.send_task(
+            "worker.generate_company_profile",
+            args=[domain, current_user.id],
+            queue="ai_queue",
+        )
+        return {
+            "status": "queued",
+            "domain": domain,
+            "message": "Company profile analysis started",
+        }
+    finally:
+        db.close()
+
+
+@app.post("/jobs/{job_id}/interview-prep")
+async def generate_interview_prep_endpoint(
+    job_id: str, current_user: User = Depends(get_current_user)
+):
+    """Triggert AI-Generierung von Interview-Vorbereitung als Background Task."""
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        if job.interview_prep_material:
+            return {
+                "status": "exists",
+                "message": "Interview prep already generated",
+                "job_id": job_id,
+            }
+
+        # Queue Celery task
+        celery_app.send_task(
+            "worker.generate_interview_prep_task",
+            args=[job_id, current_user.id],
+            queue="ai_queue",
+        )
+        return {
+            "status": "queued",
+            "message": "Interview prep generation started",
+            "job_id": job_id,
+        }
+    finally:
+        db.close()
+
+
+@app.post("/jobs/{job_id}/interview-prep/regenerate")
+async def regenerate_interview_prep_endpoint(
+    job_id: str, current_user: User = Depends(get_current_user)
+):
+    """Erzwingt Neugeneration."""
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        celery_app.send_task(
+            "worker.generate_interview_prep_task",
+            args=[job_id, current_user.id],
+            queue="ai_queue",
+        )
+        return {
+            "status": "queued",
+            "message": "Interview prep regeneration started",
+            "job_id": job_id,
         }
     finally:
         db.close()
@@ -1548,20 +1879,77 @@ async def upload_cv(
         db.close()
 
 
-@app.get("/reset")
-def reset_db(current_user: User = Depends(get_current_admin_user)):
-    from sqlalchemy import text
+class AdminWipeRequest(BaseModel):
+    password: str
+    wipe_all_users: bool = False
+
+
+@app.post("/admin/database/wipe")
+def wipe_database(
+    request: AdminWipeRequest, current_user: User = Depends(get_current_admin_user)
+):
+    from sqlalchemy import func
 
     db = SessionLocal()
     try:
-        # Löscht Jobs UND User Settings
-        db.query(JobEntry).delete()
-        db.query(UserProfile).delete()
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if not verify_password(request.password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="Falsches Passwort")
+
+        if request.wipe_all_users:
+            # Delete EVERYTHING (Jobs, History, Platforms, Companies, Patterns)
+            db.query(JobStatusHistory).delete(synchronize_session=False)
+            db.query(JobEntry).delete(synchronize_session=False)
+            db.query(JobPlatform).delete(synchronize_session=False)
+            db.query(CompanyProfile).delete(synchronize_session=False)
+            db.query(DomainUrlPattern).delete(synchronize_session=False)
+        else:
+            # Delete ONLY for admin user
+            admin_id = current_user.id
+
+            # History
+            job_ids = db.query(JobEntry.id).filter(JobEntry.user_id == admin_id)
+            db.query(JobStatusHistory).filter(
+                JobStatusHistory.job_id.in_(job_ids)
+            ).delete(synchronize_session=False)
+
+            # Jobs
+            db.query(JobEntry).filter(JobEntry.user_id == admin_id).delete(
+                synchronize_session=False
+            )
+
+            # Platforms
+            db.query(JobPlatform).filter(JobPlatform.user_id == admin_id).delete(
+                synchronize_session=False
+            )
+
+            # Delete unused companies
+            active_domains = db.query(JobEntry.company_domain).distinct()
+            db.query(CompanyProfile).filter(
+                CompanyProfile.domain.notin_(active_domains)
+            ).delete(synchronize_session=False)
+
+            # Delete unused URL patterns
+            from urllib.parse import urlparse
+
+            active_urls = db.query(JobPlatform.url).all()
+            active_platform_domains = [
+                urlparse(u[0]).netloc for u in active_urls if u[0]
+            ]
+            if active_platform_domains:
+                db.query(DomainUrlPattern).filter(
+                    DomainUrlPattern.domain.notin_(active_platform_domains)
+                ).delete(synchronize_session=False)
+            else:
+                db.query(DomainUrlPattern).delete(synchronize_session=False)
+
         db.commit()
-        return {"status": "cleared (jobs & settings)"}
+        return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Reset Error: {e}")
+        logger.error(f"Wipe Error: {e}")
         db.rollback()
-        return {"status": "error"}
+        raise HTTPException(status_code=500, detail="Datenbankfehler beim Löschen")
     finally:
         db.close()

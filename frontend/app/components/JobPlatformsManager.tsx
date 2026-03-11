@@ -44,9 +44,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
 
     // Confirm Modal
     const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
-    const [deleteListingsWithPlatform, setDeleteListingsWithPlatform] = useState(false);
-    const [keepFavorites, setKeepFavorites] = useState(true);
-    const [keepApplications, setKeepApplications] = useState(true);
 
     // Centralized crawl state via WebSocket (same as /listings)
     const { activeCrawls } = useCrawl({ user, token });
@@ -106,8 +103,26 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 credentials: 'include',
             });
             if (res.ok) {
-                const data = await res.json();
+                const data: Platform[] = await res.json();
                 setPlatforms(sortByName(data));
+
+                // Cleanup lastRun data: remove entries for platforms that no longer exist
+                setLastRunByPlatform(prev => {
+                    const next = { ...prev };
+                    const platformUrls = new Set(data.map(p => p.url));
+                    let changed = false;
+                    Object.keys(next).forEach(url => {
+                        if (!platformUrls.has(url)) {
+                            delete next[url];
+                            changed = true;
+                        }
+                    });
+                    if (changed) {
+                        try { localStorage.setItem('crawl_last_run', JSON.stringify(next)); } catch { }
+                        return next;
+                    }
+                    return prev;
+                });
             }
         } catch (e) {
             logger.error({ err: e }, "Failed to fetch platforms");
@@ -161,7 +176,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const finalizeRemovePlatform = async () => {
         if (!platformToRemove) return;
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}?delete_listings=${deleteListingsWithPlatform}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToRemove}?delete_listings=true&keep_favorites=false&keep_applications=false`, {
                 method: 'DELETE',
                 credentials: 'include',
             });
@@ -171,9 +186,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setTimeout(() => setStatus(''), 3000);
         }
         setPlatformToRemove(null);
-        setDeleteListingsWithPlatform(false);
-        setKeepFavorites(true);
-        setKeepApplications(true);
     };
 
     const triggerCrawl = async (platform: Platform) => {
@@ -249,49 +261,17 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         <section id="platforms-manager" className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <ConfirmModal
                 isOpen={!!platformToRemove}
-                onClose={() => { setPlatformToRemove(null); setDeleteListingsWithPlatform(false); setKeepFavorites(true); setKeepApplications(true); }}
+                onClose={() => { setPlatformToRemove(null); }}
                 onConfirm={finalizeRemovePlatform}
                 title={t('removePlatform')}
                 message={t('areYouCertain')}
                 confirmText={t('remove')}
                 isDestructive
             >
-                <div className="mt-2 flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <div className="flex items-start gap-3">
-                        <input
-                            type="checkbox"
-                            id="deleteListingsCheckbox"
-                            checked={deleteListingsWithPlatform}
-                            onChange={(e) => setDeleteListingsWithPlatform(e.target.checked)}
-                            className="mt-0.5 flex-shrink-0 appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-rose-500 checked:border-rose-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
-                        />
-                        <label htmlFor="deleteListingsCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer leading-tight font-medium">
-                            {t('alsoDeleteListings')}
-                        </label>
-                    </div>
-
-                    <div className={`flex flex-col gap-1.5 pl-7 mt-1 transition-opacity duration-200 ${deleteListingsWithPlatform ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="keepFavoritesCheckbox"
-                                checked={keepFavorites}
-                                onChange={(e) => setKeepFavorites(e.target.checked)}
-                                className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
-                            />
-                            <label htmlFor="keepFavoritesCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">{t('keepFavorites')}</label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="keepApplicationsCheckbox"
-                                checked={keepApplications}
-                                onChange={(e) => setKeepApplications(e.target.checked)}
-                                className="appearance-none w-3.5 h-3.5 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[9px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
-                            />
-                            <label htmlFor="keepApplicationsCheckbox" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">{t('keepApplications')}</label>
-                        </div>
-                    </div>
+                <div className="mt-2 flex flex-col gap-2 p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/50">
+                    <p className="text-sm text-rose-700 dark:text-rose-400 leading-relaxed font-medium">
+                        ⚠️ <strong>Achtung:</strong> Beim Löschen dieser Plattform werden <strong>alle verknüpften Jobs, generierten Bewerbungen, Interview-Materialien und zugehörigen Firmenprofile</strong> restlos und unwiderruflich aus dem System entfernt.
+                    </p>
                 </div>
             </ConfirmModal>
 

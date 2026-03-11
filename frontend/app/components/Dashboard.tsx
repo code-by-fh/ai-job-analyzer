@@ -31,13 +31,13 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     // --- STATE ---
     const [query, setQuery] = useState('');
-    const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
     const [sortBy, setSortBy] = useState<'score' | 'date'>('score');
     const [filterType, setFilterType] = useState(initialFilter);
     const [searchText, setSearchText] = useState('');
     const [domainFilter, setDomainFilter] = useState('');
     const [hasApplication, setHasApplication] = useState(false);
     const [statusFilter, setStatusFilter] = useState('');
+    const [needsAttention, setNeedsAttention] = useState(false);
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
@@ -51,7 +51,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const [modalJobId, setModalJobId] = useState('');
     const [modalJob, setModalJob] = useState<Job | null>(null);
     const [pendingIds, setPendingIds] = useState<string[]>([]);
-
 
     useEffect(() => {
         if (token && !initialDataLoaded) {
@@ -119,6 +118,26 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         if (token) fetchJobs(true);
     }, [user?.id, filterType, token, fetchJobs, setJobs]);
 
+    const refreshJob = useCallback(async (jobId: string) => {
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
+                credentials: 'include',
+            });
+            if (!res.ok) return;
+            const updatedJob = await res.json();
+            setJobs(prev => prev.map(j => j.id === jobId ? { ...j, ...updatedJob } : j));
+        } catch {}
+    }, [setJobs]);
+
+    const onJobEvent = useCallback((event: { type: string; job_id?: string; domain?: string }) => {
+        if (event.type === 'interview_prep_ready' && event.job_id) {
+            refreshJob(event.job_id);
+        }
+        if (event.type === 'company_profile_ready' && event.domain) {
+            jobs.filter(j => j.company_domain === event.domain).forEach(j => refreshJob(j.id));
+        }
+    }, [jobs, refreshJob]);
+
     const {
         isCrawling,
         setIsCrawling,
@@ -134,6 +153,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         token,
         onJobUpdate,
         onNewJob,
+        onJobEvent,
         initialActiveCrawls: initialDataLoaded ? initialCrawlStatus : undefined,
         initialIsCrawling: initialDataLoaded ? initialSystemCrawling : undefined
     });
@@ -177,17 +197,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             if (trigger) observer.unobserve(trigger);
         }
     }, [hasMore, isLoadingMore, jobs]);
-
-    useEffect(() => {
-        if (expandedJobId) {
-            setTimeout(() => {
-                const element = document.getElementById(`job-details-${expandedJobId}`);
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            }, 100);
-        }
-    }, [expandedJobId]);
 
     const startSearch = async () => {
         if (!user?.is_profile_complete) {
@@ -255,6 +264,16 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         setAvailableDomains(sorted);
     }, [jobs]);
 
+    const jobNeedsAttention = (job: Job) => {
+        const followUpDue = !!job.next_follow_up_at && new Date(job.next_follow_up_at) <= new Date();
+        return followUpDue || job.status === 'INTERVIEW';
+    };
+
+    const needsAttentionCount = useMemo(() => {
+        return jobs.filter(jobNeedsAttention).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobs]);
+
     const visibleJobs = useMemo(() => {
         return jobs.filter(job => {
             const q = searchText.toLowerCase();
@@ -262,9 +281,11 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 job.title.toLowerCase().includes(q) ||
                 job.company.toLowerCase().includes(q);
             const matchesDomain = !domainFilter || job.company === domainFilter;
-            return matchesSearch && matchesDomain;
+            const matchesNeedsAttention = !needsAttention || jobNeedsAttention(job);
+            return matchesSearch && matchesDomain && matchesNeedsAttention;
         });
-    }, [jobs, searchText, domainFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobs, searchText, domainFilter, needsAttention]);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -336,6 +357,9 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 setHasApplication={setHasApplication}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
+                needsAttention={needsAttention}
+                setNeedsAttention={setNeedsAttention}
+                needsAttentionCount={needsAttentionCount}
             />
 
             {/* JOB LIST */}
@@ -350,9 +374,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                     <JobCard
                         key={job.id}
                         job={job}
-                        isExpanded={expandedJobId === job.id}
                         isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
-                        onToggleExpand={(id) => setExpandedJobId(prev => prev === id ? null : id)}
                         onGenerate={handleGenerate}
                         onStatusUpdate={handleUpdateStatus}
                         onToggleFavorite={handleToggleFavorite}

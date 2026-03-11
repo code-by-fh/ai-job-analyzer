@@ -428,62 +428,61 @@ def analyze_job_task(job_data):
                         )
             return
 
-        # Check if this is an initial run (skip LLM analysis to avoid unnecessary costs)
-        is_initial_run = False
-        if crawl_job_id:
-            raw = r.hget(f"crawl_job:{crawl_job_id}", "is_initial_run")
-            is_initial_run = raw is not None and int(raw) == 1
-
-        if is_initial_run:
-            logger.info(
-                f"Initial run detected for crawl {crawl_job_id}. Skipping LLM analysis for Job {job_id}."
+        # Determine profile to use (User Specific or Admin/Default)
+        profile = None
+        if user_id:
+            profile = (
+                db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
             )
-            data = {"score": 0, "reason_de": "Initialer Scan (Keine KI-Analyse)"}
+
+        # Fallback to Admin (ID=1) or default if no user speciifed
+        if not profile:
+            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+
+        if profile:
+            cv_text = format_cv_for_prompt(profile.cv_data)
+            profile_str = (
+                f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
+            )
         else:
-            # Determine profile to use (User Specific or Admin/Default)
-            profile = None
-            if user_id:
-                profile = (
-                    db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-                )
+            logger.warning("No user profile found. Using default fallback profile.")
+            profile_str = "Python Dev"
 
-            # Fallback to Admin (ID=1) or default if no user speciifed
-            if not profile:
-                profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        logger.info(f"Sending analysis request to LLM for Job {job_id}...")
+        model = get_current_model()
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }",
+                },
+                {
+                    "role": "user",
+                    "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}",
+                },
+            ],
+            temperature=0.0,
+        )
+        content = (
+            response.choices[0]
+            .message.content.strip()
+            .replace("```json", "")
+            .replace("```", "")
+        )
+        data = json.loads(content)
+        logger.info(
+            f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
+        )
 
-            if profile:
-                cv_text = format_cv_for_prompt(profile.cv_data)
-                profile_str = f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
-            else:
-                logger.warning("No user profile found. Using default fallback profile.")
-                profile_str = "Python Dev"
-
-            logger.info(f"Sending analysis request to LLM for Job {job_id}...")
-            model = get_current_model()
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }",
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}",
-                    },
-                ],
-                temperature=0.0,
-            )
-            content = (
-                response.choices[0]
-                .message.content.strip()
-                .replace("```json", "")
-                .replace("```", "")
-            )
-            data = json.loads(content)
-            logger.info(
-                f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
-            )
+        job_url = job_data.get("url")
+        company_domain = None
+        if job_url:
+            try:
+                parsed = urlparse(job_url)
+                company_domain = parsed.netloc.removeprefix("www.")
+            except Exception:
+                pass
 
         db_job = JobEntry(
             id=job_data["id"],
@@ -491,12 +490,13 @@ def analyze_job_task(job_data):
             company=job_data["company"],
             description=job_data["description"],
             match_score=float(data.get("score", 0)),
-            url=job_data.get("url"),
+            url=job_url,
             reasoning=data.get("reason_de", ""),
             application_draft=None,
             status="OPEN",
             user_id=user_id,
             platform_id=job_data.get("platform_id"),
+            company_domain=company_domain,
         )
 
         db.add(db_job)
@@ -775,6 +775,195 @@ def generate_application_task(job_id, user_id=None):
                 )
         except Exception as db_e:
             logger.error(f"Failed to save error status to DB: {db_e}")
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.generate_interview_prep_task", bind=True, max_retries=2)
+def generate_interview_prep_task(self, job_id: str, user_id: int):
+    """Generiert Interview-Vorbereitung für einen Job via AI."""
+    from intelligence_service import generate_interview_prep, get_model
+
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for interview prep")
+            return
+
+        user_profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        )
+        cv_summary = ""
+        if user_profile and user_profile.cv_data:
+            cv_summary = format_cv_for_prompt(user_profile.cv_data)
+
+        model = get_model(db)
+
+        prep_data = generate_interview_prep(
+            job_title=job.title,
+            company_name=job.company,
+            job_description=job.description or "",
+            cv_summary=cv_summary,
+            model=model,
+        )
+
+        print(prep_data)
+
+        job.interview_prep_material = json.dumps(prep_data, ensure_ascii=False)
+        db.commit()
+
+        # Notify via Redis pub/sub
+        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+        r = redis.from_url(redis_url)
+        r.publish(
+            "job_updates",
+            json.dumps({"type": "interview_prep_ready", "job_id": job_id}),
+        )
+
+        logger.info(f"Interview prep generated for job {job_id}")
+        return {"status": "success", "job_id": job_id}
+
+    except Exception as e:
+        logger.error(f"Interview prep generation failed for {job_id}: {e}")
+        db.rollback()
+        raise self.retry(exc=e, countdown=30)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.generate_company_profile", bind=True, max_retries=2)
+def generate_company_profile(self, domain: str, user_id: int):
+    """Generiert ein Firmenprofil inkl. Gehaltsdaten."""
+    from intelligence_service import generate_company_profile_summary, get_model
+    from api_clients.review_api import get_salary_data
+    from database import CompanyProfile
+    from datetime import datetime, timezone as tz
+
+    db = SessionLocal()
+    try:
+        # Gather job info for this company domain
+        jobs = (
+            db.query(JobEntry).filter(JobEntry.company_domain == domain).limit(3).all()
+        )
+
+        raw_info = f"Domain: {domain}\n"
+        company_name = domain
+        if jobs:
+            company_name = jobs[0].company or domain
+            raw_info += f"Firmenname: {company_name}\n"
+            raw_info += "\nStellenbeschreibungen:\n"
+            for job in jobs:
+                raw_info += f"- {job.title}: {(job.description or '')[:500]}\n"
+
+        model = get_model(db)
+
+        # Generate company profile summary
+        profile_data = generate_company_profile_summary(
+            domain=domain,
+            company_name=company_name,
+            raw_info=raw_info,
+            model=model,
+        )
+
+        # Get salary data
+        job_title = jobs[0].title if jobs else "Software Engineer"
+        salary_data = get_salary_data(job_title)
+
+        # Upsert company profile
+        company = (
+            db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
+        )
+        if not company:
+            company = CompanyProfile(domain=domain)
+            db.add(company)
+
+        company.name = company_name
+        company.description = profile_data.get("description")
+        company.culture_summary = profile_data.get("culture_summary")
+        company.tech_stack = profile_data.get("tech_stack", [])
+        company.salary_benchmark = salary_data
+        company.raw_data = profile_data
+        company.analyzed_at = datetime.now(tz.utc)
+
+        db.commit()
+
+        # Notify
+        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+        r = redis.from_url(redis_url)
+        r.publish(
+            "job_updates",
+            json.dumps({"type": "company_profile_ready", "domain": domain}),
+        )
+
+        logger.info(f"Company profile generated for {domain}")
+        return {"status": "success", "domain": domain}
+
+    except Exception as e:
+        logger.error(f"Company profile generation failed for {domain}: {e}")
+        db.rollback()
+        raise self.retry(exc=e, countdown=60)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.check_follow_ups")
+def check_follow_ups():
+    """
+    Periodischer Task: Prüft fällige Follow-ups und sendet Benachrichtigungen.
+    Wird von Celery Beat ausgeführt (z.B. alle 6 Stunden).
+    """
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        due_jobs = (
+            db.query(JobEntry)
+            .filter(
+                JobEntry.next_follow_up_at <= now,
+                JobEntry.status.in_(["APPLIED", "INTERVIEW"]),
+            )
+            .all()
+        )
+
+        notified_count = 0
+        for job in due_jobs:
+            user_profile = (
+                db.query(UserProfile).filter(UserProfile.user_id == job.user_id).first()
+            )
+            if not user_profile:
+                continue
+
+            message = f"Follow-up fällig: {job.title} bei {job.company}"
+
+            # Use existing notification adapters (same pattern as worker.py)
+            if (
+                user_profile.active_notification_service == "PUSHOVER"
+                and user_profile.pushover_user_key
+            ):
+                try:
+                    resp = requests.post(
+                        "https://api.pushover.net/1/messages.json",
+                        data={
+                            "token": user_profile.pushover_api_token,
+                            "user": user_profile.pushover_user_key,
+                            "message": message,
+                            "title": "Job Follow-up Reminder",
+                        },
+                    )
+                    if resp.status_code == 200:
+                        notified_count += 1
+                    else:
+                        logger.error(f"Pushover notification failed: {resp.text}")
+                except Exception as e:
+                    logger.error(f"Pushover notification failed: {e}")
+
+            # Clear follow_up after notifying (so it doesn't repeat)
+            job.next_follow_up_at = None
+
+        db.commit()
+        logger.info(f"Follow-up check complete: {notified_count} notifications sent")
+        return {"notified": notified_count, "due_jobs": len(due_jobs)}
+
     finally:
         db.close()
 

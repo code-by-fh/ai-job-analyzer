@@ -1,16 +1,30 @@
 import os
-from sqlalchemy import create_engine, Column, String, Text, Float, Integer, JSON, DateTime, Boolean, ForeignKey
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Text,
+    Float,
+    Integer,
+    JSON,
+    DateTime,
+    Boolean,
+    ForeignKey,
+)
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
 from pydantic import BaseModel
 from typing import List, Optional
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@database:5432/jobdb")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://user:password@database:5432/jobdb"
+)
 
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 class User(Base):
     __tablename__ = "users"
@@ -19,6 +33,7 @@ class User(Base):
     hashed_password = Column(String)
     is_admin = Column(Boolean, default=False)
     token_version = Column(Integer, default=0)
+
 
 class JobEntry(Base):
     __tablename__ = "jobs"
@@ -31,33 +46,47 @@ class JobEntry(Base):
     application_draft = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     url = Column(String, nullable=True)
-    status = Column(String, default="OPEN") 
+    status = Column(String, default="OPEN")
     generation_error = Column(String, nullable=True)
     notification_sent = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_favorite = Column(Boolean, default=False)
     platform_id = Column(Integer, ForeignKey("job_platforms.id"), nullable=True)
-    
+    company_domain = Column(String, nullable=True)
+    contact_persons = Column(JSON, nullable=True)
+    interview_prep_material = Column(Text, nullable=True)
+    recruiter_info = Column(JSON, nullable=True)
+    salary_benchmark = Column(JSON, nullable=True)
+    next_follow_up_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+
     platform = relationship("JobPlatform", back_populates="jobs")
+    status_history = relationship(
+        "JobStatusHistory", back_populates="job", order_by="JobStatusHistory.changed_at"
+    )
+
 
 class UserProfile(Base):
     __tablename__ = "user_settings"
-    id = Column(Integer, primary_key=True) 
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     role = Column(String, default="Software Engineer")
     skills = Column(String, default="Python, Docker")
     min_salary = Column(String, default="60000")
     location = Column(String, default="Remote")
     preferences = Column(Text, default="")
-    cv_data = Column(JSON, default={}) 
+    cv_data = Column(JSON, default={})
     job_urls = Column(JSON, default=[])
-    
+
     # Notification Settings
     gmail_address = Column(String, nullable=True)
     gmail_app_password = Column(String, nullable=True)
     pushover_user_key = Column(String, nullable=True)
     pushover_api_token = Column(String, nullable=True)
-    active_notification_service = Column(String, default="NONE") # NONE, GMAIL, PUSHOVER
+    active_notification_service = Column(
+        String, default="NONE"
+    )  # NONE, GMAIL, PUSHOVER
+
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -81,7 +110,7 @@ class JobPlatform(Base):
     url = Column(String, index=True)
     name = Column(String)
     favicon_url = Column(String, nullable=True)
-    crawl_interval_minutes = Column(Integer, default=1440) # Default: 24h
+    crawl_interval_minutes = Column(Integer, default=1440)  # Default: 24h
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
@@ -91,21 +120,57 @@ class JobPlatform(Base):
     user = relationship("User")
     jobs = relationship("JobEntry", back_populates="platform")
 
+
+class CompanyProfile(Base):
+    __tablename__ = "company_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    culture_summary = Column(Text, nullable=True)
+    review_score = Column(Float, nullable=True)
+    review_source = Column(String, nullable=True)
+    salary_benchmark = Column(JSON, nullable=True)
+    tech_stack = Column(JSON, nullable=True)
+    raw_data = Column(JSON, nullable=True)
+    analyzed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class JobStatusHistory(Base):
+    __tablename__ = "job_status_history"
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String, ForeignKey("jobs.id"), nullable=False, index=True)
+    from_status = Column(String, nullable=True)
+    to_status = Column(String, nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(Text, nullable=True)
+
+    job = relationship("JobEntry", back_populates="status_history")
+
+
 class ExperienceItem(BaseModel):
     company: str
     role: str
     duration: str
     description: str
 
+
 class ProjectItem(BaseModel):
     name: str
     tech_stack: str
     description: str
 
+
 class CVDataModel(BaseModel):
     experience: List[ExperienceItem] = []
     projects: List[ProjectItem] = []
     education: str = ""
+
 
 class SettingsData(BaseModel):
     role: str
@@ -115,12 +180,13 @@ class SettingsData(BaseModel):
     preferences: str
     cv_data: CVDataModel
     job_urls: List[str] = []
-    
+
     gmail_address: Optional[str] = None
     gmail_app_password: Optional[str] = None
     pushover_user_key: Optional[str] = None
     pushover_api_token: Optional[str] = None
     active_notification_service: str = "NONE"
+
 
 class NotificationSettingsData(BaseModel):
     gmail_address: Optional[str] = None
@@ -128,15 +194,18 @@ class NotificationSettingsData(BaseModel):
     pushover_user_key: Optional[str] = None
     pushover_api_token: Optional[str] = None
 
+
 class PlatformCreate(BaseModel):
     url: str
     crawl_interval_minutes: int = 1440
+
 
 class PlatformUpdate(BaseModel):
     crawl_interval_minutes: Optional[int] = None
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
+
 
 class PlatformResponse(BaseModel):
     id: int
@@ -152,3 +221,46 @@ class PlatformResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class CompanyProfileResponse(BaseModel):
+    id: int
+    domain: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    culture_summary: Optional[str] = None
+    review_score: Optional[float] = None
+    review_source: Optional[str] = None
+    salary_benchmark: Optional[dict] = None
+    tech_stack: Optional[List[str]] = None
+    analyzed_at: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+class JobStatusHistoryEntry(BaseModel):
+    id: int
+    from_status: Optional[str] = None
+    to_status: str
+    changed_at: str
+    note: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+class JobPatchRequest(BaseModel):
+    status: Optional[str] = None
+    is_favorite: Optional[bool] = None
+    company_domain: Optional[str] = None
+    contact_persons: Optional[list] = None
+    recruiter_info: Optional[dict] = None
+    salary_benchmark: Optional[dict] = None
+    next_follow_up_at: Optional[str] = None
+    note: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CompanyAnalyzeRequest(BaseModel):
+    force_refresh: bool = False

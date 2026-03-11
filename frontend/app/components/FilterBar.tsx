@@ -27,6 +27,9 @@ interface FilterBarProps {
     setHasApplication: (v: boolean) => void;
     statusFilter: string;
     setStatusFilter: (v: string) => void;
+    needsAttention: boolean;
+    setNeedsAttention: (v: boolean) => void;
+    needsAttentionCount?: number;
 }
 
 export default function FilterBar({
@@ -43,16 +46,20 @@ export default function FilterBar({
     setHasApplication,
     statusFilter,
     setStatusFilter,
+    needsAttention,
+    setNeedsAttention,
+    needsAttentionCount = 0,
 }: FilterBarProps) {
     const { t } = useLanguage();
 
-    const hasActiveFilters = searchText || domainFilter || statusFilter || hasApplication;
+    const hasActiveFilters = searchText || domainFilter || statusFilter || hasApplication || needsAttention;
 
     const clearAllFilters = () => {
         setSearchText('');
         setDomainFilter('');
         setStatusFilter('');
         setHasApplication(false);
+        setNeedsAttention(false);
     };
 
     if (filterType === 'applications') return null;
@@ -142,6 +149,23 @@ export default function FilterBar({
                 >
                     <FileText className="w-4 h-4" />
                     {t('withApplication')}
+                </button>
+
+                <button
+                    onClick={() => setNeedsAttention(!needsAttention)}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
+                        needsAttention
+                            ? 'bg-amber-50 border-amber-300 text-amber-600 dark:bg-amber-500/20 dark:border-amber-500/40 dark:text-amber-300'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                >
+                    <span>⏰</span>
+                    {t('needsAttention')}
+                    {needsAttentionCount > 0 && (
+                        <span className="ml-1 bg-amber-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                            {needsAttentionCount}
+                        </span>
+                    )}
                 </button>
 
                 {hasActiveFilters && (

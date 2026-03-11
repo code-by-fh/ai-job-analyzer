@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
@@ -20,6 +21,7 @@ export default function OverviewDashboard() {
     const [stats, setStats] = useState<Statistics | null>(null);
     const [platforms, setPlatforms] = useState<any[]>([]);
     const [configuredAdapters, setConfiguredAdapters] = useState<string[]>([]);
+    const [profileComplete, setProfileComplete] = useState(true);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -42,10 +44,18 @@ export default function OverviewDashboard() {
             if (settingsData?.platforms) setPlatforms(settingsData.platforms);
             if (settingsData?.profile) {
                 const p = settingsData.profile;
-                setConfiguredAdapters([
+
+                // Track configured adapters
+                const adapters = [
                     ...(p.gmail_address && p.gmail_app_password ? ['GMAIL'] : []),
                     ...(p.pushover_user_key && p.pushover_api_token ? ['PUSHOVER'] : []),
-                ]);
+                ];
+                setConfiguredAdapters(adapters);
+
+                // Simple check for profile completeness: role and skills should not be empty
+                // and experience should have at least one entry or some text
+                const isComplete = p.role?.trim() !== "" && p.skills?.trim() !== "";
+                setProfileComplete(isComplete);
             }
             setLoading(false);
         }).catch(err => {
@@ -80,13 +90,63 @@ export default function OverviewDashboard() {
                         <div key={i} className="h-24 rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse" />
                     ))}
                 </div>
-                <div className="h-64 rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse" />
+                <div className="h-64 rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse mt-4" />
             </PageWrapper>
         );
     }
 
+    const showProfileWarning = !profileComplete;
+    const showNotificationWarning = configuredAdapters.length === 0;
+    const hasWarnings = showProfileWarning || showNotificationWarning;
+
     return (
         <PageWrapper>
+            {/* Action Items / Warnings Section */}
+            {hasWarnings && (
+                <div className="mb-8">
+                    <h2 className="text-xs uppercase font-bold text-rose-500 dark:text-rose-400 tracking-widest mb-4 flex items-center gap-2">
+                        <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-ping"></span>
+                        {t('setupRequired')}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {showProfileWarning && (
+                            <div className="p-5 rounded-2xl border border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5 flex items-start gap-4 group transition-all hover:bg-rose-50 dark:hover:bg-rose-500/10">
+                                <div className="text-2xl mt-1">👤</div>
+                                <div className="flex-1">
+                                    <h3 className="font-bold text-slate-800 dark:text-white">{t('profileIncomplete')}</h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                        {t('completeProfileDesc')}
+                                    </p>
+                                    <Link
+                                        href="/profile"
+                                        className="inline-flex items-center gap-2 mt-4 text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 hover:opacity-80 transition-all"
+                                    >
+                                        {t('actionCompleteProfile')} →
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
+                        {showNotificationWarning && (
+                            <div className="p-5 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 flex items-start gap-4 group transition-all hover:bg-amber-50 dark:hover:bg-amber-500/10">
+                                <div className="text-2xl mt-1">🔔</div>
+                                <div className="flex-1">
+                                    <h3 className="font-bold text-slate-800 dark:text-white">{t('noNotificationAdapter')}</h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                        {t('noNotificationAdapterDesc')}
+                                    </p>
+                                    <Link
+                                        href="/settings"
+                                        className="inline-flex items-center gap-2 mt-4 text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 hover:opacity-80 transition-all"
+                                    >
+                                        {t('actionConfigureNotifications')} →
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Statistics Section */}
             <div>
                 <h2 className="text-xs uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">
@@ -109,12 +169,14 @@ export default function OverviewDashboard() {
             </div>
 
             {/* Job Platforms Section */}
-            <JobPlatformsManager
-                token={token}
-                user={user}
-                initialPlatforms={platforms}
-                configuredAdapters={configuredAdapters}
-            />
+            <div className="mt-8">
+                <JobPlatformsManager
+                    token={token}
+                    user={user}
+                    initialPlatforms={platforms}
+                    configuredAdapters={configuredAdapters}
+                />
+            </div>
         </PageWrapper>
     );
 }

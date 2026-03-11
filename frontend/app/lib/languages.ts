@@ -258,6 +258,29 @@ export const translations = {
         selectAllVisible: "Select all visible",
         bulkDelete: "Delete Selected",
         deleteAllFromCompany: "Delete all from {company}",
+
+        // Needs Attention / Follow-up / Prep
+        needsAttention: "Needs Attention",
+        prepMaterialAvailable: "Prep Material",
+        followUpDue: "Follow-up due",
+
+        // Job Details Modal
+        overview: "Overview",
+        application: "Application",
+        interviewPrep: "Interview Prep",
+        companyProfile: "Company",
+        historyTab: "History",
+        noApplication: "No application generated yet",
+        jobDescription: "Show job description",
+
+        // Setup Warnings
+        setupRequired: "Setup Required",
+        profileIncomplete: "Profile Incomplete",
+        noNotificationAdapter: "No Notifications",
+        completeProfileDesc: "Your profile is not fully filled out. Complete it to get better job matches.",
+        noNotificationAdapterDesc: "You haven't configured any notification services. You won't be notified about new jobs.",
+        actionCompleteProfile: "Complete Profile",
+        actionConfigureNotifications: "Configure Notifications",
     },
     de: {
         // Navigation
@@ -515,6 +538,29 @@ export const translations = {
         selectAllVisible: "Alle sichtbaren auswählen",
         bulkDelete: "Ausgewählte löschen",
         deleteAllFromCompany: "Alle von {company} löschen",
+
+        // Needs Attention / Follow-up / Prep
+        needsAttention: "Bedarf Aufmerksamkeit",
+        prepMaterialAvailable: "Prep Material",
+        followUpDue: "Follow-up fällig",
+
+        // Job Details Modal
+        overview: "Übersicht",
+        application: "Bewerbung",
+        interviewPrep: "Interview Prep",
+        companyProfile: "Firma",
+        historyTab: "Verlauf",
+        noApplication: "Noch keine Bewerbung generiert",
+        jobDescription: "Stellenbeschreibung anzeigen",
+
+        // Setup Warnings
+        setupRequired: "Einrichtung erforderlich",
+        profileIncomplete: "Profil unvollständig",
+        noNotificationAdapter: "Keine Benachrichtigungen",
+        completeProfileDesc: "Dein Profil ist noch nicht vollständig ausgefüllt. Ergänze es für bessere Match-Ergebnisse.",
+        noNotificationAdapterDesc: "Du hast noch keine Benachrichtigungsdienste konfiguriert. Du wirst nicht über neue Jobs informiert.",
+        actionCompleteProfile: "Profil vervollständigen",
+        actionConfigureNotifications: "Benachrichtigungen einrichten",
     }
 };
 

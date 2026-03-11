@@ -9,11 +9,12 @@ interface UseCrawlProps {
     token: string | null;
     onJobUpdate?: (data: any) => void;
     onNewJob?: (job: Job, crawlJobId?: string) => void;
+    onJobEvent?: (event: { type: string; job_id?: string; domain?: string }) => void;
     initialActiveCrawls?: CrawlJob[];
     initialIsCrawling?: boolean;
 }
 
-export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCrawls, initialIsCrawling }: UseCrawlProps) {
+export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initialActiveCrawls, initialIsCrawling }: UseCrawlProps) {
     const [isCrawling, setIsCrawling] = useState(initialIsCrawling || false);
 
     const initMap = new Map<string, CrawlJob>();
@@ -92,6 +93,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
     // Refs for callbacks to ensure stability without strictly needing to be in dependency array of effect
     const onJobUpdateRef = useRef(onJobUpdate);
     const onNewJobRef = useRef(onNewJob);
+    const onJobEventRef = useRef(onJobEvent);
 
     // Ref for the connection timer to prevent strict-mode double-invocation issues
     const connectionTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,7 +102,8 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
     useEffect(() => {
         onJobUpdateRef.current = onJobUpdate;
         onNewJobRef.current = onNewJob;
-    }, [onJobUpdate, onNewJob]);
+        onJobEventRef.current = onJobEvent;
+    }, [onJobUpdate, onNewJob, onJobEvent]);
 
     const connectWebSocket = useCallback(() => {
         if (!token || !user) return;
@@ -298,6 +301,9 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, initialActiveCraw
                     }
                     else if (data.type === "job_update") {
                         if (onJobUpdateRef.current) onJobUpdateRef.current(data);
+                    }
+                    else if (data.type === 'interview_prep_ready' || data.type === 'company_profile_ready') {
+                        onJobEventRef.current?.({ type: data.type, job_id: data.job_id, domain: data.domain });
                     }
                     else if (data.type === "global_error") {
                         setGlobalError(data.message);

@@ -13,4 +13,8 @@ export interface Job {
     generation_error?: string;
     user_id?: number;
     platform_id?: number;
+    next_follow_up_at?: string;
+    interview_prep_material?: string;
+    company_domain?: string;
+    notes?: string;
 }
