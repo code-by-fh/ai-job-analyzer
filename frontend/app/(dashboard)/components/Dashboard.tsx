@@ -86,7 +86,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         setJobToDelete,
         confirmDeleteJob,
         handleToggleFavorite,
-        handleUpdateStatus
+        handleUpdateStatus,
+        updateJob
     } = useJobs({
         token,
         logout,
@@ -388,6 +389,9 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 needsAttention={needsAttention}
                 setNeedsAttention={setNeedsAttention}
                 needsAttentionCount={needsAttentionCount}
+                platformFilter={undefined}
+                setPlatformFilter={() => { }}
+                availablePlatforms={[]}
             />
 
             {/* JOB LIST */}
@@ -406,6 +410,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         onGenerate={handleGenerate}
                         onStatusUpdate={handleUpdateStatus}
                         onToggleFavorite={handleToggleFavorite}
+                        onUpdateJob={updateJob}
                     />
                 ))}
 

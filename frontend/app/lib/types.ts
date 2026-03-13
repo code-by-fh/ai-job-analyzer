@@ -10,6 +10,7 @@ export interface Job {
     created_at?: string;
     status?: string;
     is_favorite?: boolean;
+    is_archived?: boolean;
     generation_error?: string;
     user_id?: number;
     platform_id?: number;

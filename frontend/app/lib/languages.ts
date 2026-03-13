@@ -224,6 +224,7 @@ export const translations = {
         // Job list filters
         filterSearchPlaceholder: "Search by title or company...",
         allDomains: "All domains",
+        allPlatforms: "All platforms",
         allStatuses: "All statuses",
         withApplication: "With cover letter",
         clearAllFilters: "Clear all filters",
@@ -263,6 +264,16 @@ export const translations = {
         actionConfigureNotifications: "Configure Notifications",
         found: "found",
         new: "new",
+
+        // Archive
+        archiv: "Archive",
+        archiveJob: "Archive job",
+        archiveConfirm: "Are you sure you want to archive this job?",
+        archiveSelected: "Archive Selected",
+        archiveAllFromCompany: "Archive all from {company}",
+        archiveEmpty: "No archived jobs.",
+        archivePageTitle: "Archive",
+        archivePageSubtitle: "Jobs archived from your listings",
     },
     de: {
         // Navigation
@@ -486,6 +497,7 @@ export const translations = {
         // Job list filters
         filterSearchPlaceholder: "Nach Titel oder Unternehmen suchen...",
         allDomains: "Alle Domains",
+        allPlatforms: "Alle Plattformen",
         allStatuses: "Alle Status",
         withApplication: "Mit Anschreiben",
         clearAllFilters: "Alle Filter löschen",
@@ -525,6 +537,16 @@ export const translations = {
         actionConfigureNotifications: "Benachrichtigungen einrichten",
         found: "gefunden",
         new: "neu",
+
+        // Archive
+        archiv: "Archiv",
+        archiveJob: "Job archivieren",
+        archiveConfirm: "Möchten Sie diesen Job wirklich archivieren?",
+        archiveSelected: "Ausgewählte archivieren",
+        archiveAllFromCompany: "Alle von {company} archivieren",
+        archiveEmpty: "Keine archivierten Jobs.",
+        archivePageTitle: "Archiv",
+        archivePageSubtitle: "Aus den Listings archivierte Jobs",
     }
 };
 

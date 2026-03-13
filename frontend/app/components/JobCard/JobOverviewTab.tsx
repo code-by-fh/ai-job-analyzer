@@ -7,7 +7,7 @@ import type { Job } from '../../lib/types';
 
 interface JobOverviewTabProps {
     job: Job;
-    onTabChange: (tab: 'overview' | 'application' | 'interview' | 'company' | 'status' | null) => void;
+    onTabChange: (tab: 'overview' | 'application' | 'interview' | 'company' | 'status' | 'documents' | null) => void;
 }
 
 export default function JobOverviewTab({ job, onTabChange }: JobOverviewTabProps) {

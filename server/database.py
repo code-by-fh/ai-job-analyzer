@@ -51,6 +51,7 @@ class JobEntry(Base):
     notification_sent = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_favorite = Column(Boolean, default=False)
+    is_archived = Column(Boolean, default=False)
     platform_id = Column(Integer, ForeignKey("job_platforms.id"), nullable=True)
     company_domain = Column(String, nullable=True)
     contact_persons = Column(JSON, nullable=True)
@@ -63,6 +64,9 @@ class JobEntry(Base):
     platform = relationship("JobPlatform", back_populates="jobs")
     status_history = relationship(
         "JobStatusHistory", back_populates="job", order_by="JobStatusHistory.changed_at"
+    )
+    documents = relationship(
+        "JobDocument", back_populates="job", order_by="JobDocument.uploaded_at"
     )
 
 
@@ -138,6 +142,20 @@ class CompanyProfile(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class JobDocument(Base):
+    __tablename__ = "job_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String, ForeignKey("jobs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String, nullable=False)
+    original_filename = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    mime_type = Column(String, nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    job = relationship("JobEntry", back_populates="documents")
 
 
 class JobStatusHistory(Base):
@@ -260,6 +278,7 @@ class JobPatchRequest(BaseModel):
     next_follow_up_at: Optional[str] = None
     note: Optional[str] = None
     notes: Optional[str] = None
+    application_draft: Optional[str] = None
 
 
 class CompanyAnalyzeRequest(BaseModel):

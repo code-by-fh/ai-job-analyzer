@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Check, Copy, Download, FileText, Loader2 } from 'lucide-react';
+import { Check, Copy, Download, FileText, Loader2, Edit2, X, Save } from 'lucide-react';
 import { useLanguage } from '../LanguageProvider';
 import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
@@ -10,6 +10,7 @@ interface JobApplicationTabProps {
     isGenerating: boolean;
     onGenerate: (job: Job) => void;
     onStatusUpdate: (jobId: string, status: JobStatus) => void;
+    onUpdateJob?: (jobId: string, payload: Partial<Job>) => Promise<void>;
     apiBase: string;
 }
 
@@ -18,10 +19,14 @@ export default function JobApplicationTab({
     isGenerating,
     onGenerate,
     onStatusUpdate,
+    onUpdateJob,
     apiBase,
 }: JobApplicationTabProps) {
     const { t } = useLanguage();
     const [copied, setCopied] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [draftContent, setDraftContent] = useState(job.application_draft || '');
+    const [isSaving, setIsSaving] = useState(false);
 
     const handleCopy = () => {
         if (!job.application_draft) return;
@@ -62,6 +67,29 @@ export default function JobApplicationTab({
         }
     };
 
+    const handleEditStart = () => {
+        setDraftContent(job.application_draft || '');
+        setIsEditing(true);
+    };
+
+    const handleEditCancel = () => {
+        setDraftContent(job.application_draft || '');
+        setIsEditing(false);
+    };
+
+    const handleSave = async () => {
+        if (!onUpdateJob) return;
+        setIsSaving(true);
+        try {
+            await onUpdateJob(job.id, { application_draft: draftContent });
+            setIsEditing(false);
+        } catch (e) {
+            console.error('Save error:', e);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             {job.application_draft ? (
@@ -72,37 +100,90 @@ export default function JobApplicationTab({
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">Bewerbungsschreiben</span>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                                onClick={handleCopy}
-                                className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
-                            >
-                                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                <span className="hidden xs:inline">{copied ? 'Kopiert' : (t('copyText') || 'Kopieren')}</span>
-                            </button>
-                            <button
-                                onClick={handleDownload}
-                                className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                                <span>{t('saveAsPdf') || 'PDF'}</span>
-                            </button>
+                            {!isEditing && (
+                                <button
+                                    onClick={handleEditStart}
+                                    className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                                >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    <span className="hidden xs:inline">{t('edit' as any) || 'Bearbeiten'}</span>
+                                </button>
+                            )}
+                            {isEditing && (
+                                <>
+                                    <button
+                                        onClick={handleEditCancel}
+                                        disabled={isSaving}
+                                        className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-50"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                        <span className="hidden xs:inline">{t('cancel' as any) || 'Abbrechen'}</span>
+                                    </button>
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={isSaving}
+                                        className="p-2 text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-emerald-500/20 whitespace-nowrap disabled:opacity-50"
+                                    >
+                                        {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        <span className="hidden xs:inline">{t('save' as any) || 'Speichern'}</span>
+                                    </button>
+                                </>
+                            )}
+                            {!isEditing && (
+                                <>
+                                    <button
+                                        onClick={handleCopy}
+                                        className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                                    >
+                                        {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                        <span className="hidden xs:inline">{copied ? 'Kopiert' : (t('copyText') || 'Kopieren')}</span>
+                                    </button>
+                                    <button
+                                        onClick={handleDownload}
+                                        className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>{t('saveAsPdf') || 'PDF'}</span>
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
-                    <div className="bg-white dark:bg-slate-900/40 p-8 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-inner font-serif">
-                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-800 dark:prose-p:text-slate-300 prose-headings:text-slate-900 dark:prose-headings:text-slate-100 leading-relaxed italic">
-                            <ReactMarkdown>{job.application_draft}</ReactMarkdown>
+
+                    {isEditing ? (
+                        <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl border-2 border-indigo-200 dark:border-indigo-500/30 shadow-lg relative">
+                            <textarea
+                                value={draftContent}
+                                onChange={(e) => setDraftContent(e.target.value)}
+                                className="w-full min-h-[500px] bg-transparent border-0 focus:ring-0 p-0 text-slate-700 dark:text-slate-200 font-serif leading-relaxed text-sm md:text-base resize-y"
+                                placeholder="Bewerbungsschreiben hier bearbeiten..."
+                            />
                         </div>
-                    </div>
+                    ) : (
+                        <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif relative">
+                            <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
+                                <ReactMarkdown>{job.application_draft}</ReactMarkdown>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
-                <div className="flex flex-col items-center justify-center py-8 gap-4">
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">{t('noApplication') || 'Noch keine Bewerbung generiert.'}</p>
+                <div className="flex flex-col items-center justify-center py-12 gap-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                    <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-indigo-500" />
+                    </div>
+                    <div className="text-center px-6 space-y-1">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Bewerbungsschreiben</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                            KI-generiertes und auf dich abgestimmtes Anschreiben
+                        </p>
+                    </div>
                     <button
                         onClick={() => onGenerate(job)}
                         disabled={isGenerating}
-                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-500 transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                        className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                     >
-                        {isGenerating && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {isGenerating && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />}
                         {t('generateApplication') || 'Bewerbung generieren'}
                     </button>
                 </div>

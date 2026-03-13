@@ -1,5 +1,5 @@
 "use client";
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Archive } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../../components/AuthProvider';
@@ -23,9 +23,10 @@ interface ListingsProps {
     initialFilter: 'all' | 'favorite' | 'no_favorite' | 'applications';
     initialPlatformId?: number;
     initialPlatformName?: string;
+    isArchived?: boolean;
 }
 
-export default function Listings({ initialFilter, initialPlatformId, initialPlatformName }: ListingsProps) {
+export default function Listings({ initialFilter, initialPlatformId, initialPlatformName, isArchived = false }: ListingsProps) {
     const { user, token, logout } = useAuth();
     const { t } = useLanguage();
     const router = useRouter();
@@ -52,7 +53,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [modalJobId, setModalJobId] = useState('');
     const [modalJob, setModalJob] = useState<Job | null>(null);
     const [pendingIds, setPendingIds] = useState<string[]>([]);
-    const [platformToBulkDelete, setPlatformToBulkDelete] = useState<number | null>(null);
     const [companyToBulkDelete, setCompanyToBulkDelete] = useState<string | null>(null);
     const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
     const [keepFavorites, setKeepFavorites] = useState(true);
@@ -60,6 +60,16 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [needsAttention, setNeedsAttention] = useState(searchParams.get('attention') === 'true');
+    const [platforms, setPlatforms] = useState<{ id: number; name: string }[]>([]);
+
+    useEffect(() => {
+        if (token) {
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, { credentials: 'include' })
+                .then(res => res.ok ? res.json() : [])
+                .then(data => setPlatforms(data.map((p: any) => ({ id: p.id, name: p.name }))))
+                .catch(err => logger.error({ err }, "Failed to fetch platforms"));
+        }
+    }, [token]);
 
     const handleBulkDeleteCompanyJobs = async () => {
         if (!companyToBulkDelete) return;
@@ -85,32 +95,9 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         }
     };
 
-    const handleBulkDeletePlatformJobs = async () => {
-        if (!platformToBulkDelete) return;
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformToBulkDelete}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
-                method: 'DELETE',
-                credentials: 'include',
-            });
-            if (res.ok) {
-                fetchJobs(true);
-            } else {
-                setGlobalError('Failed to delete jobs');
-                setTimeout(() => setGlobalError(null), 3000);
-            }
-        } catch (e) {
-            setGlobalError('Error deleting jobs');
-            setTimeout(() => setGlobalError(null), 3000);
-        } finally {
-            setPlatformToBulkDelete(null);
-            setKeepFavorites(true);
-            setKeepApplications(true);
-        }
-    };
-
 
     useEffect(() => {
-        if (token && !initialDataLoaded && !initialPlatformId) {
+        if (token && !initialDataLoaded && !initialPlatformId && !isArchived) {
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`, {
                 credentials: 'include',
             })
@@ -142,6 +129,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         confirmDeleteJob,
         handleToggleFavorite,
         handleUpdateStatus,
+        updateJob,
         bulkDeleteJobs
     } = useJobs({
         token,
@@ -152,6 +140,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         statusFilter,
         initialJobs: initialDataLoaded ? initialJobs : undefined,
         platformId: platformIdFilter,
+        isArchived,
     });
 
     const onJobUpdate = useCallback((data: any) => {
@@ -237,12 +226,12 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             const newQuery = params.toString();
             const currentQuery = searchParams.toString();
 
-            if (newQuery !== currentQuery) {
+            if (!isArchived && newQuery !== currentQuery) {
                 router.replace(`/listings${newQuery ? `?${newQuery}` : ''}`, { scroll: false });
             }
         }, 400); // 400ms debounce
         return () => clearTimeout(timer);
-    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, needsAttention, platformIdFilter, platformNameFilter, router, searchParams]);
+    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, needsAttention, platformIdFilter, platformNameFilter, isArchived, router, searchParams]);
 
     const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
         setSelectedJobIds([]); // Clear selections on filter change
@@ -392,60 +381,22 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 isOpen={!!jobToDelete}
                 onClose={() => setJobToDelete(null)}
                 onConfirm={confirmDeleteJob}
-                title={t('deleteJob')}
-                message={t('deleteConfirm')}
-                confirmText={t('delete')}
+                title={t('archiveJob')}
+                message={t('archiveConfirm')}
+                confirmText={t('archiv')}
                 cancelText={t('cancel')}
-                isDestructive={true}
+                isDestructive={false}
             />
-
-            <ConfirmModal
-                isOpen={!!platformToBulkDelete}
-                onClose={() => { setPlatformToBulkDelete(null); setKeepFavorites(true); setKeepApplications(true); }}
-                onConfirm={handleBulkDeletePlatformJobs}
-                title={t('deleteAllFromPlatform')}
-                message={t('areYouCertain')}
-                confirmText={t('delete')}
-                cancelText={t('cancel')}
-                isDestructive={true}
-            >
-                <div className="mt-2 flex flex-col gap-1.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="keepFavoritesBulkCheckbox"
-                            checked={keepFavorites}
-                            onChange={(e) => setKeepFavorites(e.target.checked)}
-                            className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
-                        />
-                        <label htmlFor="keepFavoritesBulkCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
-                            {t('keepFavorites')}
-                        </label>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                        <input
-                            type="checkbox"
-                            id="keepApplicationsBulkCheckbox"
-                            checked={keepApplications}
-                            onChange={(e) => setKeepApplications(e.target.checked)}
-                            className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
-                        />
-                        <label htmlFor="keepApplicationsBulkCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
-                            {t('keepApplications')}
-                        </label>
-                    </div>
-                </div>
-            </ConfirmModal>
 
             <ConfirmModal
                 isOpen={!!companyToBulkDelete}
                 onClose={() => { setCompanyToBulkDelete(null); setKeepFavorites(true); setKeepApplications(true); }}
                 onConfirm={handleBulkDeleteCompanyJobs}
-                title={t('deleteAllFromCompany').replace('{company}', companyToBulkDelete || '')}
+                title={t('archiveAllFromCompany').replace('{company}', companyToBulkDelete || '')}
                 message={t('areYouCertain')}
-                confirmText={t('delete')}
+                confirmText={t('archiv')}
                 cancelText={t('cancel')}
-                isDestructive={true}
+                isDestructive={false}
             >
                 <div className="mt-2 flex flex-col gap-1.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center gap-2">
@@ -479,22 +430,30 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 isOpen={isBulkDeleteModalOpen}
                 onClose={() => setIsBulkDeleteModalOpen(false)}
                 onConfirm={confirmBulkDelete}
-                title={t('bulkDelete')}
+                title={t('archiveSelected')}
                 message={t('areYouCertain')}
-                confirmText={t('delete')}
+                confirmText={t('archiv')}
                 cancelText={t('cancel')}
-                isDestructive={true}
+                isDestructive={false}
             />
 
-            <SearchHeader
-                jobCount={jobs.length}
-                query={query}
-                setQuery={setQuery}
-                onSearch={startSearch}
-                isCrawling={isCrawling}
-                isProfileComplete={!!user?.is_profile_complete}
-                headlineMsgkey="jobIntelligence"
-            />
+            {!isArchived && (
+                <SearchHeader
+                    jobCount={jobs.length}
+                    query={query}
+                    setQuery={setQuery}
+                    onSearch={startSearch}
+                    isCrawling={isCrawling}
+                    isProfileComplete={!!user?.is_profile_complete}
+                    headlineMsgkey="jobIntelligence"
+                />
+            )}
+            {isArchived && (
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{t('archivePageTitle')}</h1>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('archivePageSubtitle')}</p>
+                </div>
+            )}
 
             {/* GLOBAL ERROR BANNER */}
             {globalError && (
@@ -503,30 +462,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 </div>
             )}
 
-            {platformIdFilter && (
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-xl text-sm text-indigo-700 dark:text-indigo-300 flex-wrap">
-                    <span className="text-base">🏢</span>
-                    <span className="font-semibold whitespace-nowrap">{platformNameFilter || `Platform #${platformIdFilter}`}</span>
 
-                    <div className="ml-auto flex items-center gap-3">
-                        <button
-                            onClick={() => setPlatformToBulkDelete(platformIdFilter)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-500/30 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            {t('deleteAllFromPlatform')}
-                        </button>
-
-                        <button
-                            onClick={() => { setPlatformIdFilter(undefined); setPlatformNameFilter(undefined); }}
-                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-200 transition-colors cursor-pointer border-l border-indigo-200 dark:border-indigo-500/30 pl-3"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                            {t('clearAllFilters')}
-                        </button>
-                    </div>
-                </div>
-            )}
 
             <FilterBar
                 filterType={filterType}
@@ -545,11 +481,17 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 needsAttention={needsAttention}
                 setNeedsAttention={setNeedsAttention}
                 needsAttentionCount={needsAttentionCount}
+                platformFilter={platformIdFilter}
+                setPlatformFilter={(id) => {
+                    setPlatformIdFilter(id);
+                    setPlatformNameFilter(id ? platforms.find(p => p.id === id)?.name : undefined);
+                }}
+                availablePlatforms={platforms}
             />
 
             {/* JOB LIST */}
             <div className="grid gap-6">
-                {visibleJobs.length > 0 && (
+                {visibleJobs.length > 0 && !isArchived && (
                     <div className="flex justify-start items-center px-1 mb-[-4px]">
                         <label className="group/cb relative flex items-center justify-center cursor-pointer gap-2.5">
                             <input
@@ -584,7 +526,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
 
                 {visibleJobs.length === 0 && !isCrawling && (
                     <div className="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-                        <p className="text-slate-400 dark:text-slate-500">{t('systemWaiting')}</p>
+                        <p className="text-slate-400 dark:text-slate-500">{isArchived ? t('archiveEmpty') : t('systemWaiting')}</p>
                     </div>
                 )}
 
@@ -598,6 +540,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                         onToggleFavorite={handleToggleFavorite}
                         isSelected={selectedJobIds.includes(job.id)}
                         onSelect={handleSelectJob}
+                        onUpdateJob={updateJob}
                     />
                 ))}
 
@@ -610,7 +553,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             </div>
 
             {/* Bulk Actions Floating Bar */}
-            {selectedJobIds.length > 0 && (
+            {selectedJobIds.length > 0 && !isArchived && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300">
                     <div className="bg-white dark:bg-slate-900 shadow-2xl dark:shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-800 rounded-full px-6 py-3 flex items-center gap-4">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -628,8 +571,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                                             className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 cursor-pointer active:scale-95 whitespace-nowrap border border-indigo-200/50 dark:border-indigo-500/30"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            <span className="hidden sm:inline">{t('deleteAllFromCompany').replace('{company}', companies[0] as string)}</span>
-                                            <span className="sm:hidden">{t('deleteAllFromCompany').replace(' {company}', '')}</span>
+                                            <span className="hidden sm:inline">{t('archiveAllFromCompany').replace('{company}', companies[0] as string)}</span>
+                                            <span className="sm:hidden">{t('archiveAllFromCompany').replace(' {company}', '')}</span>
                                         </button>
                                     </>
                                 );
@@ -644,13 +587,13 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                             className={`
                                 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all
                                 ${isBulkDeleting
-                                    ? 'bg-rose-100 text-rose-400 dark:bg-rose-900/30'
-                                    : 'bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:text-rose-400 cursor-pointer active:scale-95'
+                                    ? 'bg-indigo-100 text-indigo-400 dark:bg-indigo-900/30'
+                                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 cursor-pointer active:scale-95'
                                 }
                             `}
                         >
-                            {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                            {t('bulkDelete')}
+                            {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                            {t('archiveSelected')}
                         </button>
                         <button
                             onClick={() => setSelectedJobIds([])}

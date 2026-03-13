@@ -161,40 +161,6 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                     „{guidance.nudge}&quot;
                 </p>
             </div>
-
-            {/* Status History */}
-            <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-3">Verlauf</p>
-                {historyLoading ? (
-                    <div className="flex items-center justify-center py-5">
-                        <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-                    </div>
-                ) : history?.length ? (
-                    <div className="space-y-1.5">
-                        {history.map((h: any, i: number) => (
-                            <div key={i} className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
-                                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                                    {new Date(h.changed_at).toLocaleString('de-DE')}
-                                </span>
-                                <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                    {h.from_status && (
-                                        <>
-                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${STATUS_META[h.from_status]?.pillCls || 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-transparent'}`}>
-                                                {STATUS_META[h.from_status]?.icon}
-                                            </span>
-                                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">→</span>
-                                        </>
-                                    )}
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${STATUS_META[h.to_status]?.pillCls || 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border-transparent'}`}>
-                                        {STATUS_META[h.to_status]?.icon} {h.to_status}
-                                    </span>
-                                </div>
-                                {h.note && <span className="text-[10px] text-slate-400 dark:text-slate-500 italic ml-auto truncate max-w-[30%]">{h.note}</span>}
-                            </div>
-                        ))}
-                    </div>
-                ) : null}
-            </div>
         </div>
     );
 }

@@ -58,6 +58,12 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         labelKey: 'account',
         matchType: 'startsWith',
     },
+    {
+        href: '/archive',
+        icon: '🗂️',
+        labelKey: 'archiv',
+        matchType: 'startsWith',
+    },
 ];
 
 export const ADMIN_NAV_ITEMS: NavItemConfig[] = [

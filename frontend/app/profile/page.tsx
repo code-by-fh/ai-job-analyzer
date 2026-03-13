@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import DynamicList from './components/DynamicList';
 import PageWrapper from '../components/PageWrapper';
@@ -7,10 +7,27 @@ import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { logger } from '../lib/logger';
 
+type Tab = 'target' | 'resume';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+function Field({ label, icon, children }: { label: string; icon: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+        <span>{icon}</span> {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = "w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all";
+
 export default function Profile() {
   const { token, refreshUser } = useAuth();
   const { t } = useLanguage();
 
+  const [activeTab, setActiveTab] = useState<Tab>('target');
   const [formData, setFormData] = useState({
     role: '',
     skills: '',
@@ -24,14 +41,14 @@ export default function Profile() {
     },
   });
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   useEffect(() => {
     if (token) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
-        credentials: 'include',
-      })
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, { credentials: 'include' })
         .then(res => res.json())
         .then(data => {
           const profileData = data.profile || {};
@@ -49,278 +66,283 @@ export default function Profile() {
     }
   }, [token]);
 
+  const completion = useCallback(() => {
+    const fields = [formData.role, formData.skills, formData.min_salary, formData.location, formData.preferences];
+    const filled = fields.filter(Boolean).length + (formData.cv_data.experience.length > 0 ? 1 : 0);
+    return Math.round((filled / 6) * 100);
+  }, [formData]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus(t('saving'));
+  const handleSubmit = async () => {
+    setSaveStatus('saving');
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(formData)
+        body: JSON.stringify(formData),
       });
-      setStatus(t('saved'));
+      setSaveStatus('saved');
       refreshUser();
-      setTimeout(() => setStatus(''), 2000);
+      setTimeout(() => setSaveStatus('idle'), 2500);
     } catch {
-      setStatus(t('error'));
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-
-    const file = e.target.files[0];
+  const processUpload = async (file: File) => {
     setUploading(true);
-    setStatus(t('analyzingPdf'));
-
+    setUploadMessage(t('analyzingPdf'));
     const uploadData = new FormData();
     uploadData.append("file", file);
-
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
         method: 'POST',
         credentials: 'include',
         body: uploadData,
       });
-
-      if (!res.ok) throw new Error(t('uploadFailed'));
-
+      if (!res.ok) throw new Error('Upload failed');
       const result = await res.json();
       const data = result.data;
-
-      setFormData({
-        role: data.role || formData.role || '',
-        skills: data.skills || formData.skills || '',
-        min_salary: data.min_salary || formData.min_salary || '',
-        location: data.location || formData.location || '',
-        preferences: formData.preferences || '',
+      setFormData(prev => ({
+        role: data.role || prev.role || '',
+        skills: data.skills || prev.skills || '',
+        min_salary: data.min_salary || prev.min_salary || '',
+        location: data.location || prev.location || '',
+        preferences: prev.preferences || '',
         cv_data: data.cv_data || { experience: [], projects: [], education: '' },
-      });
-
-      setStatus(t('importSuccess'));
+      }));
+      setUploadMessage(t('importSuccess'));
+      setTimeout(() => setUploadMessage(''), 3000);
     } catch (error) {
       logger.error({ err: error }, "CV upload failed");
-      setStatus(t('importFailed'));
+      setUploadMessage(t('importFailed'));
+      setTimeout(() => setUploadMessage(''), 3000);
     } finally {
       setUploading(false);
     }
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) processUpload(e.target.files[0]);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file?.type === 'application/pdf') processUpload(file);
+  };
+
+  // Experience handlers
   const handleExpChange = (idx: number, field: string, val: string) => {
     const newExp = [...formData.cv_data.experience];
     newExp[idx] = { ...newExp[idx], [field]: val };
     setFormData({ ...formData, cv_data: { ...formData.cv_data, experience: newExp } });
   };
-  const addExp = () => {
-    setFormData({
-      ...formData,
-      cv_data: {
-        ...formData.cv_data,
-        experience: [...formData.cv_data.experience, { company: '', role: '', duration: '', description: '' }]
-      }
-    });
-  };
-  const removeExp = (idx: number) => {
-    const newExp = formData.cv_data.experience.filter((_, i) => i !== idx);
-    setFormData({ ...formData, cv_data: { ...formData.cv_data, experience: newExp } });
-  };
+  const addExp = () => setFormData({ ...formData, cv_data: { ...formData.cv_data, experience: [...formData.cv_data.experience, { company: '', role: '', duration: '', description: '' }] } });
+  const removeExp = (idx: number) => setFormData({ ...formData, cv_data: { ...formData.cv_data, experience: formData.cv_data.experience.filter((_, i) => i !== idx) } });
 
+  // Project handlers
   const handleProjChange = (idx: number, field: string, val: string) => {
     const newProj = [...formData.cv_data.projects];
     newProj[idx] = { ...newProj[idx], [field]: val };
     setFormData({ ...formData, cv_data: { ...formData.cv_data, projects: newProj } });
   };
-  const addProj = () => {
-    setFormData({
-      ...formData,
-      cv_data: {
-        ...formData.cv_data,
-        projects: [...formData.cv_data.projects, { name: '', tech_stack: '', description: '' }]
-      }
-    });
-  };
-  const removeProj = (idx: number) => {
-    const newProj = formData.cv_data.projects.filter((_, i) => i !== idx);
-    setFormData({ ...formData, cv_data: { ...formData.cv_data, projects: newProj } });
-  };
+  const addProj = () => setFormData({ ...formData, cv_data: { ...formData.cv_data, projects: [...formData.cv_data.projects, { name: '', tech_stack: '', description: '' }] } });
+  const removeProj = (idx: number) => setFormData({ ...formData, cv_data: { ...formData.cv_data, projects: formData.cv_data.projects.filter((_, i) => i !== idx) } });
 
-  if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse">{t('loadingProfile')}</div>;
+  if (loading) return (
+    <PageWrapper>
+      <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+          <p className="text-slate-500 dark:text-slate-400 text-sm">{t('loadingProfile')}</p>
+        </div>
+      </div>
+    </PageWrapper>
+  );
+
+  const pct = completion();
+  const pctColor = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+  const pctTextColor = pct >= 80 ? 'text-emerald-500' : pct >= 50 ? 'text-amber-500' : 'text-rose-500';
 
   return (
     <PageWrapper>
-
-      {/* PAGE HEADER */}
       <PageHeader title="Profil & Lebenslauf" subtitle={t('profileSubtitle')} />
 
-      <div className="flex flex-col gap-8">
+      {/* Profile Completion */}
+      <div className="glass-card rounded-2xl p-4 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Profil-Vollständigkeit</span>
+          <span className={`text-sm font-bold tabular-nums ${pctTextColor}`}>{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${pctColor}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
 
-        {/* CV Upload Section */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20 hover:shadow-2xl hover:shadow-indigo-500/40 transition-all duration-300">
-          <div className="relative z-10">
-            <h2 className="text-xl font-bold mb-2">{t('uploadCv')}</h2>
-            <p className="text-indigo-100 text-sm mb-6">{t('dropPdf')}</p>
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
+        {(['target', 'resume'] as Tab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
+              activeTab === tab
+                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            {tab === 'target' ? '🎯 Ziel-Job' : '📄 Lebenslauf'}
+          </button>
+        ))}
+      </div>
 
-            <div className="relative">
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileUpload}
-                disabled={uploading}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
-                id="pdf-upload-input"
-              />
-              <div
-                className={`w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}
-              >
-                {uploading ? t('analyzing') : `📂 ${t('selectPdf')}`}
-              </div>
+      {/* TAB: Target Job */}
+      {activeTab === 'target' && (
+        <div className="glass-card rounded-2xl p-6 sm:p-8">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6">{t('targetParameters')}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <Field label={t('targetRole')} icon="💼">
+              <input name="role" value={formData.role} onChange={handleChange} className={inputCls} placeholder="e.g. Backend Engineer" />
+            </Field>
+            <Field label={t('skillsComma')} icon="⚡">
+              <input name="skills" value={formData.skills} onChange={handleChange} className={inputCls} placeholder="Python, AWS, React..." />
+            </Field>
+            <Field label={t('minSalary')} icon="💰">
+              <input name="min_salary" value={formData.min_salary} onChange={handleChange} className={inputCls} placeholder="70.000 €" />
+            </Field>
+            <Field label={t('location')} icon="📍">
+              <input name="location" value={formData.location} onChange={handleChange} className={inputCls} placeholder="Berlin, Remote..." />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label={t('preferencesNatural')} icon="✨">
+                <textarea name="preferences" value={formData.preferences} onChange={handleChange} className={`${inputCls} min-h-[100px] resize-none`} rows={3} />
+              </Field>
             </div>
           </div>
-          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
         </div>
+      )}
 
-        {/* Separator */}
-        <div className="h-px bg-slate-200 dark:bg-slate-800 my-2" />
+      {/* TAB: Resume */}
+      {activeTab === 'resume' && (
+        <div className="space-y-6">
 
-        {/* Profile Details Section */}
-        <div className="space-y-8">
-
-          {/* TARGET PARAMETERS CARD */}
-          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <span>🎯</span> {t('targetParameters')}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('targetRole')}</label>
-                <input
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  placeholder="e.g. Backend Engineer"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('skillsComma')}</label>
-                <input
-                  name="skills"
-                  value={formData.skills}
-                  onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  placeholder="Python, AWS, React..."
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('minSalary')}</label>
-                <input
-                  name="min_salary"
-                  value={formData.min_salary}
-                  onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('location')}</label>
-                <input
-                  name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t('preferencesNatural')}</label>
-                <textarea
-                  name="preferences"
-                  value={formData.preferences}
-                  onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[80px]"
-                  rows={2}
-                />
-              </div>
+          {/* CV Upload Drop Zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 ${
+              dragOver
+                ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 scale-[1.01]'
+                : uploading
+                  ? 'border-purple-300 dark:border-purple-500/40 bg-purple-50/30 dark:bg-purple-500/5'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20'
+            }`}
+          >
+            <input
+              type="file" accept=".pdf" onChange={handleFileUpload} disabled={uploading}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+            />
+            <div className="flex flex-col items-center justify-center py-10 px-6 text-center pointer-events-none select-none">
+              {uploading ? (
+                <>
+                  <div className="w-12 h-12 border-4 border-purple-400/30 border-t-purple-500 rounded-full animate-spin mb-4" />
+                  <p className="font-semibold text-purple-600 dark:text-purple-400">{t('analyzing')}</p>
+                  <p className="text-xs text-slate-400 mt-1">{uploadMessage}</p>
+                </>
+              ) : uploadMessage ? (
+                <>
+                  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3 text-2xl">✅</div>
+                  <p className="font-semibold text-emerald-600 dark:text-emerald-400">{uploadMessage}</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4 text-2xl">📤</div>
+                  <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{t('uploadCv')}</p>
+                  <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{t('dropPdf')}</p>
+                  <div className="mt-4 px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl">
+                    {t('selectPdf')}
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
-              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
-              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-                {t('saveChanges')}
-              </button>
-            </div>
-          </section>
+          </div>
 
-          {/* EXPERIENCE */}
-          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
+          {/* Experience */}
+          <div className="glass-card rounded-2xl p-6 sm:p-8">
             <DynamicList
               title={t('experience')}
               items={formData.cv_data.experience}
-              onAdd={addExp}
-              onRemove={removeExp}
-              onChange={handleExpChange}
+              onAdd={addExp} onRemove={removeExp} onChange={handleExpChange}
               fields={[
                 { name: 'company', placeholder: t('company') },
                 { name: 'role', placeholder: t('role') },
                 { name: 'duration', placeholder: t('duration') },
-                { name: 'description', placeholder: t('description'), type: 'textarea' }
+                { name: 'description', placeholder: t('description'), type: 'textarea' },
               ]}
             />
-            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
-              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
-              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-                {t('saveChanges')}
-              </button>
-            </div>
-          </section>
+          </div>
 
-          {/* KEY PROJECTS */}
-          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
+          {/* Projects */}
+          <div className="glass-card rounded-2xl p-6 sm:p-8">
             <DynamicList
               title={t('keyProjects')}
               items={formData.cv_data.projects}
-              onAdd={addProj}
-              onRemove={removeProj}
-              onChange={handleProjChange}
+              onAdd={addProj} onRemove={removeProj} onChange={handleProjChange}
               fields={[
                 { name: 'name', placeholder: t('projectName') },
                 { name: 'tech_stack', placeholder: t('techStack') },
-                { name: 'description', placeholder: t('description'), type: 'textarea' }
+                { name: 'description', placeholder: t('description'), type: 'textarea' },
               ]}
             />
-            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
-              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
-              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-                {t('saveChanges')}
-              </button>
-            </div>
-          </section>
+          </div>
 
-          {/* EDUCATION */}
-          <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+          {/* Education */}
+          <div className="glass-card rounded-2xl p-6 sm:p-8">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
               <span>🎓</span> {t('education')}
             </h2>
             <textarea
               value={formData.cv_data.education}
               onChange={(e) => setFormData({ ...formData, cv_data: { ...formData.cv_data, education: e.target.value } })}
-              className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[120px]"
+              className={`${inputCls} min-h-[120px] resize-none`}
               placeholder="University, Degree..."
+              rows={4}
             />
-            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 mt-4">
-              {status && <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm animate-pulse text-center sm:text-left">{status}</span>}
-              <button onClick={handleSubmit} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer">
-                {t('saveChanges')}
-              </button>
-            </div>
-          </section>
-
+          </div>
         </div>
+      )}
 
+      {/* Sticky Save Bar */}
+      <div className="sticky bottom-4 mt-8 flex justify-end pointer-events-none">
+        <div className="glass-card rounded-2xl px-4 py-3 flex items-center gap-4 shadow-xl pointer-events-auto">
+          {saveStatus !== 'idle' && (
+            <span className={`text-sm font-semibold ${
+              saveStatus === 'saved' ? 'text-emerald-500' :
+              saveStatus === 'error' ? 'text-rose-500' :
+              'text-slate-400 animate-pulse'
+            }`}>
+              {saveStatus === 'saving' ? t('saving') : saveStatus === 'saved' ? t('saved') : t('error')}
+            </span>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={saveStatus === 'saving'}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition active:scale-95 cursor-pointer text-sm whitespace-nowrap"
+          >
+            {saveStatus === 'saving' ? '...' : t('saveChanges')}
+          </button>
+        </div>
       </div>
     </PageWrapper>
   );

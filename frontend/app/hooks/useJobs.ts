@@ -12,9 +12,10 @@ interface UseJobsProps {
     statusFilter: string;
     initialJobs?: Job[];
     platformId?: number;
+    isArchived?: boolean;
 }
 
-export function useJobs({ token, logout, filterType, sortBy, hasApplication, statusFilter, initialJobs, platformId }: UseJobsProps) {
+export function useJobs({ token, logout, filterType, sortBy, hasApplication, statusFilter, initialJobs, platformId, isArchived = false }: UseJobsProps) {
     const [jobs, setJobs] = useState<Job[]>(initialJobs || []);
 
     const offsetRef = useRef(initialJobs ? 10 : 0);
@@ -56,6 +57,9 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             if (platformId) {
                 queryParams.append('platform_id', platformId.toString());
             }
+            if (isArchived) {
+                queryParams.append('is_archived', 'true');
+            }
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`, {
                 credentials: 'include',
@@ -86,7 +90,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         } finally {
             setIsLoadingMore(false);
         }
-    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, logout]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, isArchived, logout]);
 
     useEffect(() => {
         if (token) {
@@ -98,7 +102,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
             }
             fetchJobs(true);
         }
-    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, fetchJobs]);
+    }, [token, filterType, sortBy, hasApplication, statusFilter, platformId, isArchived, fetchJobs]);
 
     const confirmDeleteJob = async () => {
         if (!jobToDelete) return;
@@ -192,6 +196,31 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         }
     };
 
+    const updateJob = async (jobId: string, payload: Partial<Job>) => {
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                setJobs(prev => prev.map(job =>
+                    job.id === jobId ? { ...job, ...payload } : job
+                ));
+            } else {
+                const errorData = await res.json().catch(() => ({}));
+                logger.error({ status: res.status, errorData }, 'Failed to update job');
+                setGlobalError(`Fehler beim Aktualisieren: ${res.status} ${errorData.detail || ''}`);
+            }
+        } catch (e) {
+            logger.error({ err: e }, 'Error updating job');
+            setGlobalError('Netzwerkfehler beim Aktualisieren');
+        }
+    };
+
     return {
         jobs,
         setJobs,
@@ -205,6 +234,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         confirmDeleteJob,
         handleToggleFavorite,
         handleUpdateStatus,
+        updateJob,
         bulkDeleteJobs
     };
 }

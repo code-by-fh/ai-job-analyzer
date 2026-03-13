@@ -60,6 +60,7 @@ from database import (
     CompanyProfileResponse,
     JobStatusHistoryEntry,
     DomainUrlPattern,
+    JobDocument,
 )
 from auth import (
     create_access_token,
@@ -74,6 +75,7 @@ from auth import (
 from datetime import timedelta
 
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -553,10 +555,14 @@ def get_jobs(
     has_application: Optional[bool] = None,
     status_filter: Optional[str] = None,
     platform_id: Optional[int] = None,
+    is_archived: bool = False,
 ):
     db = SessionLocal()
     try:
-        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        query = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.is_archived == is_archived,
+        )
 
         # Filtering
         if filter_type == "favorite":
@@ -743,12 +749,12 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        db.delete(job)
+        job.is_archived = True
         db.commit()
-        return {"status": "deleted"}
+        return {"status": "archived"}
     except Exception as e:
         db.rollback()
-        logger.error(f"Error deleting job: {e}")
+        logger.error(f"Error archiving job: {e}")
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         db.close()
@@ -773,13 +779,15 @@ def delete_bulk_jobs(
             JobEntry.user_id == current_user.id, JobEntry.id.in_(request.job_ids)
         )
 
-        deleted_count = query.delete(synchronize_session=False)
+        archived_count = query.update({"is_archived": True}, synchronize_session=False)
         db.commit()
-        return {"status": "deleted", "count": deleted_count}
+        return {"status": "archived", "count": archived_count}
     except Exception as e:
         db.rollback()
-        logger.error(f"Fehler beim Bulk-Löschen der Jobs: {e}")
-        raise HTTPException(status_code=500, detail="Datenbankfehler beim Bulk-Löschen")
+        logger.error(f"Fehler beim Bulk-Archivieren der Jobs: {e}")
+        raise HTTPException(
+            status_code=500, detail="Datenbankfehler beim Bulk-Archivieren"
+        )
     finally:
         db.close()
 
@@ -866,6 +874,8 @@ def patch_job(
             job.next_follow_up_at = datetime.fromisoformat(request.next_follow_up_at)
         if request.notes is not None:
             job.notes = request.notes
+        if request.application_draft is not None:
+            job.application_draft = request.application_draft
 
         db.commit()
         db.refresh(job)
@@ -1053,13 +1063,14 @@ def delete_all_jobs(
             query = query.filter(JobEntry.is_favorite == False)
         if keep_applications:
             query = query.filter(JobEntry.status == "OPEN")
+        query = query.filter(JobEntry.is_archived == False)
 
-        deleted_count = query.delete(synchronize_session=False)
+        archived_count = query.update({"is_archived": True}, synchronize_session=False)
         db.commit()
-        return {"status": "deleted", "count": deleted_count}
+        return {"status": "archived", "count": archived_count}
     except Exception as e:
         db.rollback()
-        logger.error(f"Fehler beim Löschen der Jobs: {e}")
+        logger.error(f"Fehler beim Archivieren der Jobs: {e}")
         raise HTTPException(status_code=500, detail="Datenbankfehler")
     finally:
         db.close()
@@ -1580,7 +1591,10 @@ def get_dashboard_data(
     db = SessionLocal()
     try:
         # 1. Fetch Jobs
-        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        query = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.is_archived == False,
+        )
         if filter_type == "favorite":
             query = query.filter(JobEntry.is_favorite == True)
         elif filter_type == "no_favorite":
@@ -1951,5 +1965,217 @@ def wipe_database(
         logger.error(f"Wipe Error: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Datenbankfehler beim Löschen")
+    finally:
+        db.close()
+
+
+# ── JOB DOCUMENTS ──────────────────────────────────────────────────────────────
+
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/plain",
+}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@app.post("/jobs/{job_id}/documents")
+async def upload_job_document(
+    job_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+
+        mime = file.content_type or "application/octet-stream"
+        if mime not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=415, detail=f"File type not allowed: {mime}"
+            )
+
+        import uuid
+
+        ext = os.path.splitext(file.filename or "file")[1]
+        stored_filename = f"{uuid.uuid4().hex}{ext}"
+        upload_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id)
+        os.makedirs(upload_path, exist_ok=True)
+        file_path = os.path.join(upload_path, stored_filename)
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        doc = JobDocument(
+            job_id=job_id,
+            user_id=current_user.id,
+            filename=stored_filename,
+            original_filename=file.filename or stored_filename,
+            file_size=len(content),
+            mime_type=mime,
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        return {
+            "id": doc.id,
+            "original_filename": doc.original_filename,
+            "file_size": doc.file_size,
+            "mime_type": doc.mime_type,
+            "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Document upload error: {e}")
+        raise HTTPException(status_code=500, detail="Upload failed")
+    finally:
+        db.close()
+
+
+@app.get("/jobs/{job_id}/documents")
+def list_job_documents(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        docs = (
+            db.query(JobDocument)
+            .filter(JobDocument.job_id == job_id)
+            .order_by(JobDocument.uploaded_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": d.id,
+                "original_filename": d.original_filename,
+                "file_size": d.file_size,
+                "mime_type": d.mime_type,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            }
+            for d in docs
+        ]
+    finally:
+        db.close()
+
+
+@app.get("/jobs/{job_id}/documents/{doc_id}/download")
+def download_job_document(
+    job_id: str, doc_id: int, current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        doc = (
+            db.query(JobDocument)
+            .filter(
+                JobDocument.id == doc_id,
+                JobDocument.job_id == job_id,
+                JobDocument.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        with open(file_path, "rb") as f:
+            data = f.read()
+        from fastapi.responses import Response as FastAPIResponse
+
+        return FastAPIResponse(
+            content=data,
+            media_type=doc.mime_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.get("/jobs/{job_id}/documents/{doc_id}/view")
+def view_job_document(
+    job_id: str, doc_id: int, current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        doc = (
+            db.query(JobDocument)
+            .filter(
+                JobDocument.id == doc_id,
+                JobDocument.job_id == job_id,
+                JobDocument.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        with open(file_path, "rb") as f:
+            data = f.read()
+        from fastapi.responses import Response as FastAPIResponse
+
+        return FastAPIResponse(
+            content=data,
+            media_type=doc.mime_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'inline; filename="{doc.original_filename}"'
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.delete("/jobs/{job_id}/documents/{doc_id}")
+def delete_job_document(
+    job_id: str, doc_id: int, current_user: User = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        doc = (
+            db.query(JobDocument)
+            .filter(
+                JobDocument.id == doc_id,
+                JobDocument.job_id == job_id,
+                JobDocument.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        db.delete(doc)
+        db.commit()
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Document delete error: {e}")
+        raise HTTPException(status_code=500, detail="Delete failed")
     finally:
         db.close()

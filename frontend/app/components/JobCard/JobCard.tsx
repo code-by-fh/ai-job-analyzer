@@ -13,6 +13,7 @@ import JobApplicationTab from './JobApplicationTab';
 import JobInterviewTab from './JobInterviewTab';
 import JobCompanyTab from './JobCompanyTab';
 import JobStatusTab from './JobStatusTab';
+import JobDocumentsTab from './JobDocumentsTab';
 
 const TABS: { id: TabType & string; labelKey: string; labelFallback: string; shortLabel: string }[] = [
     { id: 'overview', labelKey: 'overview', labelFallback: 'Übersicht', shortLabel: 'Info' },
@@ -20,6 +21,7 @@ const TABS: { id: TabType & string; labelKey: string; labelFallback: string; sho
     { id: 'interview', labelKey: 'interviewPrep', labelFallback: 'Interview', shortLabel: 'Int.' },
     { id: 'company', labelKey: 'companyProfile', labelFallback: 'Firma', shortLabel: 'Firma' },
     { id: 'status', labelKey: '', labelFallback: 'Status', shortLabel: 'Status' },
+    { id: 'documents', labelKey: '', labelFallback: 'Unterlagen', shortLabel: 'Docs' },
 ];
 
 export default function JobCard({
@@ -30,6 +32,7 @@ export default function JobCard({
     onToggleFavorite,
     isSelected = false,
     onSelect,
+    onUpdateJob,
     apiBase = process.env.NEXT_PUBLIC_API_URL || '',
 }: JobCardProps) {
     const { t } = useLanguage();
@@ -145,11 +148,12 @@ export default function JobCard({
             <div className="px-4 sm:px-5 py-4 border-b border-slate-100 dark:border-slate-800/50">
                 {activeTab === 'overview' && <JobOverviewTab job={job} onTabChange={setActiveTab} />}
                 {activeTab === 'application' && (
-                    <JobApplicationTab job={job} isGenerating={isGenerating} onGenerate={onGenerate} onStatusUpdate={onStatusUpdate} apiBase={apiBase} />
+                    <JobApplicationTab job={job} isGenerating={isGenerating} onGenerate={onGenerate} onStatusUpdate={onStatusUpdate} onUpdateJob={onUpdateJob} apiBase={apiBase} />
                 )}
                 {activeTab === 'interview' && <JobInterviewTab job={job} apiBase={apiBase} />}
                 {activeTab === 'company' && <JobCompanyTab job={job} apiBase={apiBase} />}
                 {activeTab === 'status' && <JobStatusTab job={job} apiBase={apiBase} onStatusUpdate={onStatusUpdate} setActiveTab={setActiveTab} />}
+                {activeTab === 'documents' && <JobDocumentsTab job={job} apiBase={apiBase} />}
             </div>
 
             {/* ── DESCRIPTION TOGGLE ── */}

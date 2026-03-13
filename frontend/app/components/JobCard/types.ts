@@ -24,7 +24,8 @@ export interface JobCardProps {
     onToggleFavorite: (jobId: string, currentStatus: boolean) => void;
     isSelected?: boolean;
     onSelect?: (jobId: string, selected: boolean) => void;
+    onUpdateJob?: (jobId: string, payload: Partial<Job>) => Promise<void>;
     apiBase?: string;
 }
 
-export type TabType = 'overview' | 'application' | 'interview' | 'company' | 'status' | null;
+export type TabType = 'overview' | 'application' | 'interview' | 'company' | 'status' | 'documents' | null;
