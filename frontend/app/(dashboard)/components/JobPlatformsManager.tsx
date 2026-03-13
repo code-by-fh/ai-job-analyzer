@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLanguage } from './LanguageProvider';
-import ConfirmModal from './ConfirmModal';
+import { useLanguage } from '../../components/LanguageProvider';
+import ConfirmModal from '../../components/ConfirmModal';
 import { CrawlSteps } from './CrawlStatus';
-import { useCrawl } from '../hooks/useCrawl';
-import { logger } from '../lib/logger';
+import { useCrawl } from '../../hooks/useCrawl';
+import { logger } from '../../lib/logger';
 
 interface Platform {
     id: number;
@@ -339,72 +339,70 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                                 })() : t('neverScanned')}
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
-                                            <span className="text-blue-500">🔄</span>
+                                        <div className="relative flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors group/select">
+                                            <span className="text-blue-500 group-hover/select:rotate-12 transition-transform">🔄</span>
                                             <select
                                                 value={p.crawl_interval_minutes}
                                                 onChange={(e) => updatePlatform(p.id, { crawl_interval_minutes: parseInt(e.target.value) })}
-                                                className="bg-transparent text-[11px] font-medium text-slate-700 dark:text-slate-300 border-none p-0 pr-4 focus:ring-0 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors"
+                                                className="appearance-none bg-transparent text-[11px] font-medium text-slate-700 dark:text-slate-300 border-none p-0 pr-5 focus:ring-0 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors dark:[color-scheme:dark]"
                                                 title="Scan Interval"
                                             >
-                                                <option value={60}>{t('everyHour')}</option>
-                                                <option value={360}>{t('every6Hours')}</option>
-                                                <option value={720}>{t('every12Hours')}</option>
-                                                <option value={1440}>{t('every24Hours')}</option>
-                                                <option value={10080}>{t('everyWeek')}</option>
+                                                <option value={60} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{t('everyHour')}</option>
+                                                <option value={360} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{t('every6Hours')}</option>
+                                                <option value={720} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{t('every12Hours')}</option>
+                                                <option value={1440} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{t('every24Hours')}</option>
+                                                <option value={10080} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{t('everyWeek')}</option>
                                             </select>
+                                            <svg className="absolute right-2 w-2.5 h-2.5 text-slate-400 group-hover/select:text-indigo-500 pointer-events-none transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                                            </svg>
                                         </div>
-                                    </div>
 
-                                    {/* Last Run Summary (idle only) */}
-                                    {!isBusy && lastRun && (
-                                        <div className="mt-2 space-y-1.5">
+                                        {/* Last Run Summary (inlined into stats) */}
+                                        {!isBusy && lastRun && (
                                             <button
                                                 type="button"
                                                 onClick={() => setExpandedLog(expandedLog === p.url ? null : p.url)}
-                                                className="flex items-center gap-1.5 text-[10px] font-medium cursor-pointer group/log"
+                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${lastRun.status === 'failed'
+                                                    ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200/50 dark:border-rose-800/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20'
+                                                    : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/50 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
+                                                    }`}
                                             >
                                                 {lastRun.status === 'failed' ? (
-                                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400 group-hover/log:border-rose-400 dark:group-hover/log:border-rose-700 transition-colors">
+                                                    <div className="flex items-center gap-1.5">
                                                         <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
-                                                        {lastRun.error ? lastRun.error.slice(0, 60) : t('error')}
-                                                    </span>
+                                                        <span className="truncate max-w-[120px]">{lastRun.error ? lastRun.error : t('error')}</span>
+                                                    </div>
                                                 ) : (
-                                                    <span className="flex items-center gap-2 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400 group-hover/log:border-emerald-400 dark:group-hover/log:border-emerald-700 transition-colors">
+                                                    <div className="flex items-center gap-1.5">
                                                         <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                                                        <span>{lastRun.total} {t('jobsFound')}</span>
+                                                        <span>{lastRun.total} {t('found')}</span>
                                                         <span className="opacity-40">·</span>
-                                                        <span>{lastRun.saved} {t('jobsSaved')}</span>
-                                                        {lastRun.skipped > 0 && (
-                                                            <>
-                                                                <span className="opacity-40">·</span>
-                                                                <span>{lastRun.skipped} {t('jobsSkipped')}</span>
-                                                            </>
-                                                        )}
-                                                    </span>
+                                                        <span className="font-bold">{lastRun.saved} {t('new')}</span>
+                                                    </div>
                                                 )}
-                                                <svg className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${expandedLog === p.url ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                                                <svg className={`w-3 h-3 opacity-60 transition-transform duration-200 ${expandedLog === p.url ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
                                             </button>
+                                        )}
+                                    </div>
 
-                                            {/* Expandable Log — reuses CrawlSteps with stored data */}
-                                            {expandedLog === p.url && (
-                                                <div className="pt-1">
-                                                    <CrawlSteps compact job={{
-                                                        job_id: p.url,
-                                                        platform: p.url,
-                                                        total: lastRun.total,
-                                                        scraping_completed: lastRun.scraping_completed ?? 0,
-                                                        analysis_completed: lastRun.analysis_completed ?? 0,
-                                                        jobs_saved: lastRun.saved,
-                                                        jobs_skipped: lastRun.skipped,
-                                                        status: lastRun.status === 'failed' ? 'failed' : 'completed',
-                                                        error_message: lastRun.error,
-                                                        show_success: lastRun.status === 'success',
-                                                    }} />
-                                                    {lastRun.timestamp && (
-                                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">{lastRun.timestamp}</p>
-                                                    )}
-                                                </div>
+                                    {/* Expandable Log — reuses CrawlSteps with stored data */}
+                                    {!isBusy && lastRun && expandedLog === p.url && (
+                                        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/50 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <CrawlSteps compact job={{
+                                                job_id: p.url,
+                                                platform: p.url,
+                                                total: lastRun.total,
+                                                scraping_completed: lastRun.scraping_completed ?? 0,
+                                                analysis_completed: lastRun.analysis_completed ?? 0,
+                                                jobs_saved: lastRun.saved,
+                                                jobs_skipped: lastRun.skipped,
+                                                status: lastRun.status === 'failed' ? 'failed' : 'completed',
+                                                error_message: lastRun.error,
+                                                show_success: lastRun.status === 'success',
+                                            }} />
+                                            {lastRun.timestamp && (
+                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 ml-1">{lastRun.timestamp}</p>
                                             )}
                                         </div>
                                     )}

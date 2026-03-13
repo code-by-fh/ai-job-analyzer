@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useLanguage } from './LanguageProvider';
-import PasswordInput from './PasswordInput';
+import { useLanguage } from '../../components/LanguageProvider';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function PasswordChangeForm({ token }: { token: string | null }) {
     const { t } = useLanguage();

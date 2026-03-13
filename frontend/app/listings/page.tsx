@@ -1,5 +1,5 @@
 
-import Listings from '../components/Listings';
+import Listings from './components/Listings';
 
 interface PageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;

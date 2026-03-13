@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
-import DynamicList from '../components/DynamicList';
+import DynamicList from './components/DynamicList';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
@@ -159,10 +159,38 @@ export default function Profile() {
       {/* PAGE HEADER */}
       <PageHeader title="Profil & Lebenslauf" subtitle={t('profileSubtitle')} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="flex flex-col gap-8">
 
-        {/* LEFT COLUMN */}
-        <div className="space-y-8 lg:col-span-2">
+        {/* CV Upload Section */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20 hover:shadow-2xl hover:shadow-indigo-500/40 transition-all duration-300">
+          <div className="relative z-10">
+            <h2 className="text-xl font-bold mb-2">{t('uploadCv')}</h2>
+            <p className="text-indigo-100 text-sm mb-6">{t('dropPdf')}</p>
+
+            <div className="relative">
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={handleFileUpload}
+                disabled={uploading}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                id="pdf-upload-input"
+              />
+              <div
+                className={`w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}
+              >
+                {uploading ? t('analyzing') : `📂 ${t('selectPdf')}`}
+              </div>
+            </div>
+          </div>
+          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+        </div>
+
+        {/* Separator */}
+        <div className="h-px bg-slate-200 dark:bg-slate-800 my-2" />
+
+        {/* Profile Details Section */}
+        <div className="space-y-8">
 
           {/* TARGET PARAMETERS CARD */}
           <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
@@ -291,33 +319,6 @@ export default function Profile() {
             </div>
           </section>
 
-        </div>
-
-        {/* RIGHT COLUMN - CV Upload */}
-        <div className="space-y-8">
-          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20 hover:shadow-2xl hover:shadow-indigo-500/40 transition-all duration-300">
-            <div className="relative z-10">
-              <h2 className="text-xl font-bold mb-2">{t('uploadCv')}</h2>
-              <p className="text-indigo-100 text-sm mb-6">{t('dropPdf')}</p>
-
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
-                  disabled={uploading}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
-                  id="pdf-upload-input"
-                />
-                <div
-                  className={`w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 rounded-xl font-bold transition flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}
-                >
-                  {uploading ? t('analyzing') : `📂 ${t('selectPdf')}`}
-                </div>
-              </div>
-            </div>
-            <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
-          </div>
         </div>
 
       </div>

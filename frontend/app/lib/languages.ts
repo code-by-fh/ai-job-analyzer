@@ -23,7 +23,6 @@ export const translations = {
         signOut: "Sign Out",
         profile: "Profile",
         help: "Help",
-        showTutorial: "Show Tutorial",
         signedInAs: "Signed in as",
         member: "Member",
         admin: "Admin",
@@ -178,25 +177,6 @@ export const translations = {
         passwordUpdated: "Password updated!",
         networkError: "Network Error",
 
-        // Tutorial
-        tutorialWelcomeTitle: "Welcome to AI JobAgent!",
-        tutorialWelcomeDesc: "Your personal assistant for automated job searching. Let us show you how to get the best out of the app.",
-        tutorialNavTitle: "Navigation",
-        tutorialNavDesc: "Here you can find the dashboard, your settings, and the admin area.",
-        tutorialAnalysisTitle: "Market Analysis",
-        tutorialAnalysisDesc: "Enter a keyword here to start a targeted real-time analysis of the market. The AI finds matching jobs immediately.",
-        tutorialSortTitle: "Sorting",
-        tutorialSortDesc: "Sort the results by relevance (AI score) or by the publication date.",
-        tutorialResultsTitle: "Intelligent Results",
-        tutorialResultsDesc: "Every job is analyzed. The score shows you how well the position matches your profile.",
-        tutorialAppsTitle: "Manage Applications",
-        tutorialAppsDesc: "Track your progress here. You can update the status of each job from 'Applied' to 'Interview' or 'Accepted'.",
-        stepOf: "STEP {n} OF {m}",
-        back: "Back",
-        skip: "Skip",
-        next: "Next",
-        start: "Start",
-
         // Job Platforms
         jobPlatforms: "Job Platforms",
         platformsSubtitle: "Manage URLs and automated scan intervals",
@@ -281,6 +261,8 @@ export const translations = {
         noNotificationAdapterDesc: "You haven't configured any notification services. You won't be notified about new jobs.",
         actionCompleteProfile: "Complete Profile",
         actionConfigureNotifications: "Configure Notifications",
+        found: "found",
+        new: "new",
     },
     de: {
         // Navigation
@@ -303,7 +285,6 @@ export const translations = {
         signOut: "Abmelden",
         profile: "Profil",
         help: "Hilfe",
-        showTutorial: "Tutorial anzeigen",
         signedInAs: "Angemeldet als",
         member: "Mitglied",
         admin: "Administrator",
@@ -458,25 +439,6 @@ export const translations = {
         passwordUpdated: "Passwort aktualisiert!",
         networkError: "Netzwerkfehler",
 
-        // Tutorial
-        tutorialWelcomeTitle: "Willkommen beim AI JobAgent!",
-        tutorialWelcomeDesc: "Dein persönlicher Assistent für die automatisierte Jobsuche. Lass uns dir zeigen, wie du das Beste aus der App herausholst.",
-        tutorialNavTitle: "Navigation",
-        tutorialNavDesc: "Hier findest du das Dashboard, deine Einstellungen und den Admin-Bereich.",
-        tutorialAnalysisTitle: "Markt-Analyse",
-        tutorialAnalysisDesc: "Gib hier ein Keyword ein, um eine gezielte Echtzeit-Analyse des Marktes zu starten. Die KI findet passende Stellen sofort.",
-        tutorialSortTitle: "Sortierung",
-        tutorialSortDesc: "Sortiere die Ergebnisse nach Relevanz (KI-Score) oder nach dem Datum der Veröffentlichung.",
-        tutorialResultsTitle: "Intelligente Ergebnisse",
-        tutorialResultsDesc: "Jeder Job wird analysiert. Der Score zeigt dir, wie gut die Stelle zu deinem Profil passt.",
-        tutorialAppsTitle: "Bewerbungen verwalten",
-        tutorialAppsDesc: "Verfolge hier deinen Fortschritt. Du kannst den Status jeder Bewerbung von 'Beworben' bis 'Angenommen' aktualisieren.",
-        stepOf: "SCHRITT {n} VON {m}",
-        back: "Zurück",
-        skip: "Überspringen",
-        next: "Weiter",
-        start: "Starten",
-
         // Job Platforms
         jobPlatforms: "Job-Plattformen",
         platformsSubtitle: "URLs und automatisierte Scan-Intervalle verwalten",
@@ -561,6 +523,8 @@ export const translations = {
         noNotificationAdapterDesc: "Du hast noch keine Benachrichtigungsdienste konfiguriert. Du wirst nicht über neue Jobs informiert.",
         actionCompleteProfile: "Profil vervollständigen",
         actionConfigureNotifications: "Benachrichtigungen einrichten",
+        found: "gefunden",
+        new: "neu",
     }
 };
 

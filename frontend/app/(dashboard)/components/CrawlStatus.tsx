@@ -1,5 +1,5 @@
 import { Loader2, ExternalLink, CheckCircle, Circle, Pause } from 'lucide-react';
-import { useLanguage } from './LanguageProvider';
+import { useLanguage } from '../../components/LanguageProvider';
 
 export interface CrawlJob {
     job_id: string;
@@ -48,11 +48,10 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
 
             {/* Step 1: Suche */}
             <div className={`flex items-center ${gap}`}>
-                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${
-                    isSearching ? 'border-indigo-600 bg-white dark:bg-slate-900'
-                    : isFailed && job.total === 0 ? 'border-rose-500 bg-rose-500'
-                    : 'border-emerald-500 bg-emerald-500'
-                }`}>
+                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${isSearching ? 'border-indigo-600 bg-white dark:bg-slate-900'
+                        : isFailed && job.total === 0 ? 'border-rose-500 bg-rose-500'
+                            : 'border-emerald-500 bg-emerald-500'
+                    }`}>
                     {isSearching ? (
                         <Loader2 className={`${ii} text-indigo-600 animate-spin`} />
                     ) : isFailed && job.total === 0 ? (
@@ -70,10 +69,9 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
 
             {/* Step 2: Gefunden */}
             <div className={`flex items-center ${gap}`}>
-                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${
-                    !isFound ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                    : 'border-emerald-500 bg-emerald-500'
-                }`}>
+                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isFound ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                        : 'border-emerald-500 bg-emerald-500'
+                    }`}>
                     {!isFound ? (
                         <Circle className={`${ii} text-slate-300 dark:text-slate-600`} />
                     ) : (
@@ -92,11 +90,10 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
 
             {/* Step 3: Details laden */}
             <div className={`flex items-center ${gap}`}>
-                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${
-                    !isScraping && !isScrapingDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                    : isScrapingDone ? 'border-emerald-500 bg-emerald-500'
-                    : 'border-indigo-600 bg-white dark:bg-slate-900'
-                }`}>
+                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isScraping && !isScrapingDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                        : isScrapingDone ? 'border-emerald-500 bg-emerald-500'
+                            : 'border-indigo-600 bg-white dark:bg-slate-900'
+                    }`}>
                     {!isScraping && !isScrapingDone ? (
                         <Circle className={`${ii} text-slate-300 dark:text-slate-600`} />
                     ) : isScrapingDone ? (
@@ -119,11 +116,10 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
 
             {/* Step 4: Analyse */}
             <div className={`flex items-center ${gap}`}>
-                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${
-                    !isAnalyzing && !isAnalysisDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                    : isAnalysisDone ? 'border-emerald-500 bg-emerald-500'
-                    : 'border-amber-600 bg-white dark:bg-slate-900'
-                }`}>
+                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isAnalyzing && !isAnalysisDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                        : isAnalysisDone ? 'border-emerald-500 bg-emerald-500'
+                            : 'border-amber-600 bg-white dark:bg-slate-900'
+                    }`}>
                     {!isAnalyzing && !isAnalysisDone ? (
                         <Pause className={`${ii} text-slate-300 dark:text-slate-600`} />
                     ) : isAnalysisDone ? (

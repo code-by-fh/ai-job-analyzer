@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logger } from '../lib/logger';
-import { CrawlJob } from '../components/CrawlStatus';
+import { CrawlJob } from '../(dashboard)/components/CrawlStatus';
 import { AuthContextType } from '../components/AuthProvider';
 import { Job } from '../lib/types';
 

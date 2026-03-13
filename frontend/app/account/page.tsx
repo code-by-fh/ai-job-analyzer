@@ -4,7 +4,7 @@ import { useAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
-import PasswordChangeForm from '../components/PasswordChangeForm';
+import PasswordChangeForm from './components/PasswordChangeForm';
 import { useLanguage } from '../components/LanguageProvider';
 
 export default function Account() {

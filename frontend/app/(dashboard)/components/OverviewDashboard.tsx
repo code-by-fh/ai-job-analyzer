@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from './AuthProvider';
-import { useLanguage } from './LanguageProvider';
+import { useAuth } from '../../components/AuthProvider';
+import { useLanguage } from '../../components/LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
-import PageWrapper from './PageWrapper';
-import { logger } from '../lib/logger';
+import PageWrapper from '../../components/PageWrapper';
+import { logger } from '../../lib/logger';
 
 interface Statistics {
     total_jobs: number;

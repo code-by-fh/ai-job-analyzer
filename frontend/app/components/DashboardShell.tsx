@@ -8,250 +8,360 @@ import ThemeToggler from './ThemeToggler';
 import LanguageToggler from './LanguageToggler';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
-import TutorialModal from './TutorialModal';
-import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS } from '../lib/navigation';
+import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS, NavItemConfig } from '../lib/navigation';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const isLoginPage = pathname === '/login';
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [showTutorial, setShowTutorial] = useState(false);
+    const [moreOpen, setMoreOpen] = useState(false);
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const { t } = useLanguage();
 
-    // Redirect to login if user is not authenticated and not on login page
     React.useEffect(() => {
         if (!isLoading && !user && !isLoginPage) {
             router.push('/login');
         }
     }, [isLoading, user, isLoginPage, router]);
 
-    // Check for first-time user
-    React.useEffect(() => {
-        const hasSeen = localStorage.getItem('hasSeenTutorial');
-        if (!hasSeen && user) {
-            setShowTutorial(true);
-        }
-    }, [user]);
+    // Close "more" panel on navigation
+    React.useEffect(() => { setMoreOpen(false); }, [pathname]);
 
-    const handleCloseTutorial = () => {
-        localStorage.setItem('hasSeenTutorial', 'true');
-        setShowTutorial(false);
-    };
-
-    const isActive = (item: typeof MAIN_NAV_ITEMS[0]) => {
+    const isActive = (item: NavItemConfig) => {
         const itemPath = item.href.split('?')[0];
-        if (item.matchType === 'startsWith') {
-            return pathname.startsWith(itemPath);
-        }
+        if (item.matchType === 'startsWith') return pathname.startsWith(itemPath);
         if (pathname !== itemPath) return false;
-
         if (item.filterParam !== undefined) {
             const currentFilter = searchParams.get('filter');
-            if (item.filterParam === null) {
-                return currentFilter !== 'applications';
-            }
+            if (item.filterParam === null) return currentFilter !== 'applications';
             return currentFilter === item.filterParam;
         }
         return true;
     };
 
-    // If it's the login page, render clean layout without dashboard chrome
     if (isLoginPage) {
         return (
             <>
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">{children}</div>
-                {/* Language Toggle - Fixed bottom right (stacked) */}
-                <div className="fixed bottom-16 right-4 z-50">
-                    <LanguageToggler />
-                </div>
-                {/* Theme Toggle - Fixed bottom right */}
-                <div className="fixed bottom-4 right-4 z-50">
-                    <ThemeToggler />
-                </div>
+                <div className="fixed bottom-16 right-4 z-50"><LanguageToggler /></div>
+                <div className="fixed bottom-4 right-4 z-50"><ThemeToggler /></div>
             </>
         );
     }
 
-    // Do not render dashboard if we are still checking auth or about to redirect
     if ((isLoading || !user) && !isLoginPage) {
         return (
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors duration-300">
-                <div className="w-12 h-12 border-4 border-indigo-200 dark:border-indigo-500/20 border-t-indigo-600 dark:border-t-indigo-500 rounded-full animate-spin"></div>
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+                <div className="w-10 h-10 border-4 border-indigo-200 dark:border-indigo-500/20 border-t-indigo-600 dark:border-t-indigo-500 rounded-full animate-spin" />
             </div>
         );
     }
 
+    const initial = user.username.charAt(0).toUpperCase();
+    const label = (item: NavItemConfig) => item.labelKey ? t(item.labelKey) : (item.labelLiteral || '');
+    const hasAdmin = Boolean(user?.is_admin);
+    const adminActive = hasAdmin && ADMIN_NAV_ITEMS.some(item => isActive(item));
+
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
 
-            {/* DESKTOP SIDEBAR */}
+            {/* ── DESKTOP SIDEBAR ── */}
             <aside className={`
                 hidden md:flex flex-col fixed inset-y-0 left-0 z-50
-                bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl
+                bg-white dark:bg-slate-900
                 border-r border-slate-200 dark:border-slate-800
-                transition-all duration-300
-                ${sidebarCollapsed ? 'w-20' : 'w-64'}
+                transition-all duration-300 ease-in-out
+                ${sidebarCollapsed ? 'w-[68px]' : 'w-56'}
             `}>
-                {/* Header with collapse button */}
-                <div className="p-6 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 flex items-center justify-center text-white font-bold flex-shrink-0">
-                        AI
+                {/* Logo row */}
+                <div className={`
+                    flex items-center h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0
+                    ${sidebarCollapsed ? 'justify-center' : 'justify-between'}
+                `}>
+                    <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm">
+                            AI
+                        </div>
+                        {!sidebarCollapsed && (
+                            <span className="font-bold text-slate-900 dark:text-white text-sm whitespace-nowrap">
+                                Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span>
+                            </span>
+                        )}
                     </div>
                     {!sidebarCollapsed && (
-                        <div className="min-w-0">
-                            <h1 className="font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span></h1>
-                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">{t('deepIntelligence')}</p>
-                        </div>
-                    )}
-                </div>
-
-                <nav id="sidebar-nav" className="flex-1 px-4 py-4 space-y-1">
-                    {MAIN_NAV_ITEMS.map(item => (
-                        <NavLink
-                            key={item.href}
-                            href={item.href}
-                            icon={item.icon}
-                            label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
-                            active={isActive(item)}
-                            collapsed={sidebarCollapsed}
-                        />
-                    ))}
-                    {user?.is_admin && ADMIN_NAV_ITEMS.map(item => (
-                        <NavLink
-                            key={item.href}
-                            href={item.href}
-                            icon={item.icon}
-                            label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
-                            active={isActive(item)}
-                            collapsed={sidebarCollapsed}
-                        />
-                    ))}
-                </nav>
-
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-                    {!sidebarCollapsed ? (
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                                <UserMenu onShowTutorial={() => setShowTutorial(true)} />
-                            </div>
-                            <button
-                                onClick={() => setSidebarCollapsed(true)}
-                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0 cursor-pointer"
-                                title={t('collapseSidebar')}
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-                                </svg>
-                            </button>
-                        </div>
-                    ) : (
                         <button
-                            onClick={() => setSidebarCollapsed(false)}
-                            className="w-full p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                            title={t('expandSidebar')}
+                            onClick={() => setSidebarCollapsed(true)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer flex-shrink-0"
+                            title={t('collapseSidebar')}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 mx-auto rotate-180">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
                             </svg>
                         </button>
                     )}
                 </div>
+
+                {/* Nav items */}
+                <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+                    {MAIN_NAV_ITEMS.map(item => (
+                        <SidebarLink
+                            key={item.href}
+                            href={item.href}
+                            icon={item.icon}
+                            label={label(item)}
+                            active={isActive(item)}
+                            collapsed={sidebarCollapsed}
+                        />
+                    ))}
+                    {hasAdmin && (
+                        <>
+                            <div className={`py-3 ${sidebarCollapsed ? '' : 'px-2'}`}>
+                                {sidebarCollapsed
+                                    ? <div className="h-px bg-slate-200 dark:bg-slate-800" />
+                                    : <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Admin</p>
+                                }
+                            </div>
+                            {ADMIN_NAV_ITEMS.map(item => (
+                                <SidebarLink
+                                    key={item.href}
+                                    href={item.href}
+                                    icon={item.icon}
+                                    label={label(item)}
+                                    active={isActive(item)}
+                                    collapsed={sidebarCollapsed}
+                                />
+                            ))}
+                        </>
+                    )}
+                </nav>
+
+                {/* Footer */}
+                <div className="border-t border-slate-200 dark:border-slate-800 p-2 flex-shrink-0">
+                    {sidebarCollapsed ? (
+                        <div className="flex flex-col items-center gap-1">
+                            <button
+                                onClick={() => setSidebarCollapsed(false)}
+                                className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                title={t('expandSidebar')}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 rotate-180">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                                </svg>
+                            </button>
+                            <CollapsedLogout />
+                        </div>
+                    ) : (
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2.5 px-2 py-1.5">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                                    {initial}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate leading-none">{user.username}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 leading-none">{user.is_admin ? t('admin') : t('member')}</p>
+                                </div>
+                            </div>
+                            <UserMenu />
+                        </div>
+                    )}
+                </div>
             </aside>
 
-            {/* MOBILE HEADER */}
-            <div className="md:hidden fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
+            {/* ── MOBILE TOP BAR ── */}
+            <header className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shadow-sm">
                         AI
                     </div>
-                    <span className="font-bold text-slate-900 dark:text-white">JobAgent</span>
+                    <span className="font-bold text-slate-900 dark:text-white text-sm">
+                        Job<span className="text-indigo-600 dark:text-indigo-400">Agent</span>
+                    </span>
                 </div>
-                <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-slate-600 dark:text-slate-300">
-                    {mobileMenuOpen ? '✕' : '☰'}
-                </button>
+                {/* User info right side */}
+                <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                        {initial}
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{user.username}</span>
+                </div>
+            </header>
+
+            {/* ── MOBILE "MORE" PANEL (slides up above bottom nav) ── */}
+            {moreOpen && (
+                <div
+                    className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+                    onClick={() => setMoreOpen(false)}
+                />
+            )}
+            <div className={`
+                md:hidden fixed left-0 right-0 z-50 transition-all duration-300 ease-in-out
+                bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800
+                rounded-t-2xl shadow-2xl
+                ${moreOpen ? 'bottom-16 opacity-100' : 'bottom-16 opacity-0 pointer-events-none translate-y-full'}
+            `}>
+                <div className="px-4 pt-4 pb-3">
+                    {/* Drag handle */}
+                    <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4" />
+
+                    {/* Admin items */}
+                    {hasAdmin && (
+                        <>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Admin</p>
+                            <div className="space-y-0.5 mb-4">
+                                {ADMIN_NAV_ITEMS.map(item => (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={() => setMoreOpen(false)}
+                                        className={`
+                                            flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
+                                            ${isActive(item)
+                                                ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }
+                                        `}
+                                    >
+                                        <span className="text-lg">{item.icon}</span>
+                                        <span>{label(item)}</span>
+                                    </Link>
+                                ))}
+                            </div>
+                            <div className="h-px bg-slate-100 dark:bg-slate-800 mb-4" />
+                        </>
+                    )}
+
+                    {/* Theme & Language row */}
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-3">Einstellungen</p>
+                    <div className="flex items-center justify-between px-2 mb-3">
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('switchDark')}</span>
+                        <ThemeToggler />
+                    </div>
+                    <div className="flex items-center justify-between px-2 mb-3">
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('switchLanguage')}</span>
+                        <LanguageToggler />
+                    </div>
+
+                    <div className="h-px bg-slate-100 dark:bg-slate-800 mb-3" />
+
+                    {/* Logout */}
+                    <UserMenu />
+                </div>
             </div>
 
-            {/* MOBILE MENU OVERLAY */}
-            {mobileMenuOpen && (
-                <div className="md:hidden fixed inset-0 z-40 bg-slate-50 dark:bg-slate-950 pt-16 px-6 pb-6 animate-in fade-in slide-in-from-top-10 duration-200">
-                    <nav className="flex flex-col space-y-4">
-                        {MAIN_NAV_ITEMS.map(item => (
-                            <NavLink
-                                key={item.href}
-                                href={item.href}
-                                icon={item.icon}
-                                label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
-                                active={isActive(item)}
-                                onClick={() => setMobileMenuOpen(false)}
-                            />
-                        ))}
-                        {user?.is_admin && ADMIN_NAV_ITEMS.map(item => (
-                            <NavLink
-                                key={item.href}
-                                href={item.href}
-                                icon={item.icon}
-                                label={item.labelKey ? t(item.labelKey) : (item.labelLiteral || '')}
-                                active={isActive(item)}
-                                onClick={() => setMobileMenuOpen(false)}
-                            />
-                        ))}
-                        <div className="pt-8 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                            <UserMenu onShowTutorial={() => setShowTutorial(true)} />
-                        </div>
-                    </nav>
-                </div>
-            )}
+            {/* ── MOBILE BOTTOM NAV ── */}
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-stretch">
+                {MAIN_NAV_ITEMS.map(item => {
+                    const active = isActive(item);
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`
+                                flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors duration-200
+                                ${active
+                                    ? 'text-indigo-600 dark:text-indigo-400'
+                                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                                }
+                            `}
+                        >
+                            {active && (
+                                <span className="absolute top-0 inset-x-0 flex justify-center">
+                                    <span className="w-8 h-0.5 bg-indigo-500 rounded-b-full" />
+                                </span>
+                            )}
+                            <span className={`text-[22px] leading-none transition-transform duration-200 ${active ? 'scale-110' : ''}`}>
+                                {item.icon}
+                            </span>
+                            <span className="text-[10px] font-medium leading-none">{label(item)}</span>
+                        </Link>
+                    );
+                })}
 
-            {/* MAIN CONTENT AREA */}
-            <main className={`flex-1 w-full transition-all duration-300 ${sidebarCollapsed ? 'md:pl-20' : 'md:pl-64'}`}>
-                <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 md:pt-8 min-h-screen">
+                {/* More button */}
+                <button
+                    onClick={() => setMoreOpen(v => !v)}
+                    className={`
+                        flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors duration-200 cursor-pointer
+                        ${moreOpen || adminActive
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                        }
+                    `}
+                >
+                    {(moreOpen || adminActive) && (
+                        <span className="absolute top-0 inset-x-0 flex justify-center">
+                            <span className="w-8 h-0.5 bg-indigo-500 rounded-b-full" />
+                        </span>
+                    )}
+                    <span className={`text-[22px] leading-none transition-transform duration-200 ${moreOpen ? 'rotate-45 scale-110' : ''}`}>
+                        ⚙️
+                    </span>
+                    <span className="text-[10px] font-medium leading-none">Mehr</span>
+                </button>
+            </nav>
+
+            {/* ── MAIN CONTENT ── */}
+            <main className={`flex-1 w-full transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'md:pl-[68px]' : 'md:pl-56'}`}>
+                <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 md:pt-8 pb-24 md:pb-8 min-h-screen">
                     {children}
                 </div>
             </main>
 
-            {/* Toggles - Fixed bottom right */}
-            <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 items-end">
+            {/* Toggles – Desktop only */}
+            <div className="hidden md:flex fixed bottom-4 right-4 z-50 flex-col gap-3 items-end">
                 <LanguageToggler />
                 <ThemeToggler />
             </div>
 
-            {/* Tutorial Modal */}
-            <TutorialModal
-                isOpen={showTutorial}
-                onClose={handleCloseTutorial}
-            />
         </div>
     );
 }
 
-function NavLink({ href, icon, label, active, collapsed, onClick }: { href: string, icon: string, label: string, active: boolean, collapsed?: boolean, onClick?: () => void }) {
+function CollapsedLogout() {
+    const { logout } = useAuth();
+    const { t } = useLanguage();
+    return (
+        <button
+            onClick={logout}
+            className="w-full flex justify-center p-2 rounded-lg text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer"
+            title={t('signOut')}
+        >
+            <span className="text-base leading-none">🚪</span>
+        </button>
+    );
+}
+
+function SidebarLink({ href, icon, label, active, collapsed, onClick }: {
+    href: string;
+    icon: string;
+    label: string;
+    active: boolean;
+    collapsed?: boolean;
+    onClick?: () => void;
+}) {
     return (
         <Link
             href={href}
             onClick={onClick}
+            title={collapsed ? label : undefined}
             className={`
-                flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group
-                ${collapsed ? 'justify-center' : ''}
+                flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group relative
+                ${collapsed ? 'justify-center px-2' : ''}
                 ${active
-                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 shadow-sm dark:shadow-none ring-1 ring-indigo-200 dark:ring-indigo-500/20'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
                 }
             `}
-            title={collapsed ? label : undefined}
         >
-            <span className={`text-lg transition-transform duration-300 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>{icon}</span>
-            {!collapsed && (
-                <>
-                    <span>{label}</span>
-                    {active && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
-                    )}
-                </>
+            {active && !collapsed && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-indigo-500 dark:bg-indigo-400 rounded-r-full" />
             )}
+            <span className={`text-base leading-none flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>
+                {icon}
+            </span>
+            {!collapsed && <span className="truncate">{label}</span>}
         </Link>
     );
 }

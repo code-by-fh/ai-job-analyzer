@@ -2,22 +2,22 @@
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useAuth } from './AuthProvider';
-import { useLanguage } from './LanguageProvider';
+import { useAuth } from '../../components/AuthProvider';
+import { useLanguage } from '../../components/LanguageProvider';
 
 // Components
-import ApplicationModal from './ApplicationModal';
-import ConfirmModal from './ConfirmModal';
+import ApplicationModal from '../../components/ApplicationModal';
+import ConfirmModal from '../../components/ConfirmModal';
 import CrawlStatus from './CrawlStatus';
-import FilterBar from './FilterBar';
-import JobCard from './JobCard';
-import SearchHeader from './SearchHeader';
+import FilterBar from '../../components/FilterBar';
+import JobCard from '../../components/JobCard/JobCard';
+import SearchHeader from '../../components/SearchHeader';
 
 // Hooks & Types
-import { useCrawl } from '../hooks/useCrawl';
-import { useJobs } from '../hooks/useJobs';
-import { Job } from '../lib/types';
-import { logger } from '../lib/logger';
+import { useCrawl } from '../../hooks/useCrawl';
+import { useJobs } from '../../hooks/useJobs';
+import { Job } from '../../lib/types';
+import { logger } from '../../lib/logger';
 
 interface DashboardProps {
     initialFilter: 'all' | 'favorite' | 'no_favorite' | 'applications';
@@ -31,13 +31,13 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     // --- STATE ---
     const [query, setQuery] = useState('');
-    const [sortBy, setSortBy] = useState<'score' | 'date'>('score');
+    const [sortBy, setSortBy] = useState<'score' | 'date'>((searchParams.get('sort') as any) || 'score');
     const [filterType, setFilterType] = useState(initialFilter);
-    const [searchText, setSearchText] = useState('');
-    const [domainFilter, setDomainFilter] = useState('');
-    const [hasApplication, setHasApplication] = useState(false);
-    const [statusFilter, setStatusFilter] = useState('');
-    const [needsAttention, setNeedsAttention] = useState(false);
+    const [searchText, setSearchText] = useState(searchParams.get('search') || '');
+    const [domainFilter, setDomainFilter] = useState(searchParams.get('domain') || '');
+    const [hasApplication, setHasApplication] = useState(searchParams.get('application') === 'true');
+    const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+    const [needsAttention, setNeedsAttention] = useState(searchParams.get('attention') === 'true');
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
@@ -126,7 +126,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             if (!res.ok) return;
             const updatedJob = await res.json();
             setJobs(prev => prev.map(j => j.id === jobId ? { ...j, ...updatedJob } : j));
-        } catch {}
+        } catch { }
     }, [setJobs]);
 
     const onJobEvent = useCallback((event: { type: string; job_id?: string; domain?: string }) => {
@@ -162,22 +162,50 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const setGlobalError = (msg: string | null) => {
         if (msg) setJobsError(msg); else { setJobsError(null); setCrawlError(null); }
     }
+    // Sync URL -> State (for back button / browser navigation)
     useEffect(() => {
-        const urlFilter = searchParams.get('filter');
-        const validFilters = ['all', 'favorite', 'no_favorite', 'applications'];
-        const target = validFilters.includes(urlFilter || '') ? (urlFilter as any) : 'all';
+        const urlParams = {
+            filter: searchParams.get('filter') || 'all',
+            sort: searchParams.get('sort') || 'score',
+            search: searchParams.get('search') || '',
+            domain: searchParams.get('domain') || '',
+            status: searchParams.get('status') || '',
+            application: searchParams.get('application') === 'true',
+            attention: searchParams.get('attention') === 'true',
+        };
 
-        if (filterType !== target) {
-            setFilterType(target);
-        }
-    }, [searchParams, filterType]);
+        if (urlParams.filter !== filterType) setFilterType(urlParams.filter as any);
+        if (urlParams.sort !== sortBy) setSortBy(urlParams.sort as any);
+        if (urlParams.search !== searchText) setSearchText(urlParams.search);
+        if (urlParams.domain !== domainFilter) setDomainFilter(urlParams.domain);
+        if (urlParams.status !== statusFilter) setStatusFilter(urlParams.status);
+        if (urlParams.application !== hasApplication) setHasApplication(urlParams.application);
+        if (urlParams.attention !== needsAttention) setNeedsAttention(urlParams.attention);
+    }, [searchParams]);
+
+    // Sync State -> URL
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const params = new URLSearchParams();
+            if (filterType !== 'all') params.set('filter', filterType);
+            if (sortBy !== 'score') params.set('sort', sortBy);
+            if (searchText) params.set('search', searchText);
+            if (domainFilter) params.set('domain', domainFilter);
+            if (statusFilter) params.set('status', statusFilter);
+            if (hasApplication) params.set('application', 'true');
+            if (needsAttention) params.set('attention', 'true');
+
+            const newQuery = params.toString();
+            const currentQuery = searchParams.toString();
+
+            if (newQuery !== currentQuery) {
+                router.replace(`/${newQuery ? `?${newQuery}` : ''}`, { scroll: false });
+            }
+        }, 400); // 400ms debounce
+        return () => clearTimeout(timer);
+    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, needsAttention, router, searchParams]);
 
     const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
-        if (newFilter === 'all') {
-            router.push('/');
-        } else {
-            router.push(`/?filter=${newFilter}`);
-        }
         setFilterType(newFilter);
     };
 
@@ -271,7 +299,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     const needsAttentionCount = useMemo(() => {
         return jobs.filter(jobNeedsAttention).length;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jobs]);
 
     const visibleJobs = useMemo(() => {
@@ -284,7 +312,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             const matchesNeedsAttention = !needsAttention || jobNeedsAttention(job);
             return matchesSearch && matchesDomain && matchesNeedsAttention;
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jobs, searchText, domainFilter, needsAttention]);
 
     return (

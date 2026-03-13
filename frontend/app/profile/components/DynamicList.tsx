@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
-import { useLanguage } from './LanguageProvider';
-import ConfirmModal from './ConfirmModal';
+import { useLanguage } from '../../components/LanguageProvider';
+import ConfirmModal from '../../components/ConfirmModal';
 
 interface DynamicListProps {
   title: string;
