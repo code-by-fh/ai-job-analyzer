@@ -3,7 +3,7 @@ import json
 import logging
 import io
 import sys
-from openai import OpenAI
+from openai import OpenAI, NotFoundError, AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 from pypdf import PdfReader
 import redis
 from celery_config import celery_app
@@ -307,17 +307,32 @@ Antworte NUR mit validem JSON (kein Markdown):
 - "job_urls": Alle URLs aus der gegebenen Liste, die diesem Pattern entsprechen
 """
     sample = urls_list[:150]
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}",
-            },
-        ],
-        temperature=0.0,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}",
+                },
+            ],
+            temperature=0.0,
+        )
+    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
+        from intelligence_service import store_ai_404_error
+        if isinstance(e, AuthenticationError):
+            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+        elif isinstance(e, RateLimitError):
+            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        elif isinstance(e, NotFoundError):
+            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+        elif isinstance(e, APIConnectionError):
+            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+        else:
+            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+        logger.error(f"OpenRouter error in _detect_url_pattern_with_ai: {e}")
+        return "", []
     content = (
         response.choices[0]
         .message.content.strip()
@@ -652,6 +667,8 @@ def analyze_job_task(job_data):
             }
         )
 
+        from intelligence_service import clear_ai_404_error
+        clear_ai_404_error()
         r.publish("job_updates", payload)
         logger.info(f"✅ WebSocket Event 'new_job' published for {db_job.title}")
 
@@ -752,6 +769,32 @@ def analyze_job_task(job_data):
                     )
                     r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
+    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
+        from intelligence_service import store_ai_404_error
+        if isinstance(e, AuthenticationError):
+            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+        elif isinstance(e, RateLimitError):
+            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        elif isinstance(e, NotFoundError):
+            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+        elif isinstance(e, APIConnectionError):
+            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+        else:
+            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+        logger.error(f"OpenRouter API error in analyze_job_task for Job {job_id}: {e}")
+        db.rollback()
+        crawl_job_id = job_data.get("crawl_job_id")
+        if crawl_job_id:
+            try:
+                import requests as _req
+                SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
+                _req.post(
+                    f"{SCRAPER_URL}/fail-crawl",
+                    json={"job_id": crawl_job_id, "user_id": user_id, "error_message": str(e)},
+                    timeout=5,
+                )
+            except Exception as cleanup_e:
+                logger.error(f"Failed to trigger cleanup: {cleanup_e}")
     except Exception as e:
         logger.error(f"Analyze Error for Job {job_id}: {e}", exc_info=True)
         db.rollback()
@@ -879,6 +922,8 @@ def generate_application_task(job_id, user_id=None):
         db.commit()
         logger.info(f"Anschreiben für Job {job_id} in DB gespeichert.")
 
+        from intelligence_service import clear_ai_404_error
+        clear_ai_404_error()
         r.publish(
             "job_updates",
             json.dumps(
@@ -893,6 +938,35 @@ def generate_application_task(job_id, user_id=None):
         )
         logger.info(f"✅ WebSocket Event 'job_update' für {job.id} gesendet.")
 
+    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
+        from intelligence_service import store_ai_404_error
+        if isinstance(e, AuthenticationError):
+            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+        elif isinstance(e, RateLimitError):
+            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        elif isinstance(e, NotFoundError):
+            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+        elif isinstance(e, APIConnectionError):
+            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+        else:
+            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+        logger.error(f"OpenRouter API error in generate_application_task for Job {job_id}: {e}")
+        db.rollback()
+        try:
+            job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.generation_error = "OpenRouter model not found (404)"
+                db.commit()
+                r.publish("job_updates", json.dumps({
+                    "type": "job_update",
+                    "job_id": job.id,
+                    "status": "FAILED",
+                    "error": "OpenRouter model not found (404)",
+                    "user_id": job.user_id,
+                }))
+        except Exception as db_e:
+            logger.error(f"Failed to save 404 error status: {db_e}")
     except Exception as e:
         logger.error(f"CRASH BEI GENERIERUNG für Job {job_id}: {e}", exc_info=True)
         db.rollback()
@@ -968,6 +1042,11 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
         logger.info(f"Interview prep generated for job {job_id}")
         return {"status": "success", "job_id": job_id}
 
+    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError):
+        # store_ai_404_error already called inside intelligence_service
+        logger.error(f"OpenRouter API error in generate_interview_prep_task for {job_id}, not retrying.")
+        db.rollback()
+        return {"status": "failed", "reason": "api_error"}
     except Exception as e:
         logger.error(f"Interview prep generation failed for {job_id}: {e}")
         db.rollback()
@@ -996,9 +1075,54 @@ def generate_company_profile(self, domain: str, user_id: int):
         if jobs:
             company_name = jobs[0].company or domain
             raw_info += f"Firmenname: {company_name}\n"
-            raw_info += "\nStellenbeschreibungen:\n"
-            for job in jobs:
-                raw_info += f"- {job.title}: {(job.description or '')[:500]}\n"
+
+        # Web research phase: fetch real online content about the company
+        try:
+            from scraper_worker import get_html_with_browser, get_clean_content
+            from urllib.parse import quote_plus
+            from bs4 import BeautifulSoup as _BS
+
+            # 1. Search DuckDuckGo for company info pages
+            search_q = quote_plus(f"{company_name} Unternehmen Über uns Investor Relations Geschichte")
+            search_html = get_html_with_browser(
+                f"https://html.duckduckgo.com/html/?q={search_q}"
+            )
+
+            candidate_urls: list[str] = []
+            if search_html:
+                soup = _BS(search_html, "html.parser")
+                for link in soup.select("a.result__a"):
+                    href = link.get("href", "")
+                    if href.startswith("http") and any(
+                        kw in href.lower()
+                        for kw in ["about", "investor", "history", "ueber", "unternehmen", "company", "konzern"]
+                    ):
+                        candidate_urls.append(href)
+
+            # 2. Always try common company pages directly
+            for path in ["/about", "/about-us", "/ueber-uns", "/investor-relations", "/company", "/unternehmen"]:
+                candidate_urls.insert(0, f"https://{domain}{path}")
+
+            # 3. Fetch and clean up to 3 pages
+            pages_fetched = 0
+            seen: set[str] = set()
+            for url in candidate_urls[:8]:
+                if pages_fetched >= 3 or url in seen:
+                    continue
+                seen.add(url)
+                try:
+                    html = get_html_with_browser(url)
+                    if html:
+                        clean = get_clean_content(html)
+                        if clean and len(clean) > 300:
+                            raw_info += f"\n\n--- Webinhalt: {url} ---\n{clean[:6000]}\n"
+                            pages_fetched += 1
+                except Exception as _fe:
+                    logger.warning(f"Web fetch failed for {url}: {_fe}")
+
+            logger.info(f"Web research: fetched {pages_fetched} page(s) for {company_name}")
+        except Exception as web_err:
+            logger.warning(f"Web research skipped for {domain}: {web_err}")
 
         model = get_model(db)
 
@@ -1043,6 +1167,11 @@ def generate_company_profile(self, domain: str, user_id: int):
         logger.info(f"Company profile generated for {domain}")
         return {"status": "success", "domain": domain}
 
+    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError):
+        # store_ai_404_error already called inside intelligence_service
+        logger.error(f"OpenRouter API error in generate_company_profile for {domain}, not retrying.")
+        db.rollback()
+        return {"status": "failed", "reason": "api_error"}
     except Exception as e:
         logger.error(f"Company profile generation failed for {domain}: {e}")
         db.rollback()

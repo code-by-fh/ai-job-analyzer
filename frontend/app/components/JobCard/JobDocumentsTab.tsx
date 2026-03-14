@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { StickyNote, Paperclip, Upload, Trash2, Download, FileText, FileImage, File, CheckSquare, Square, Plus, X, Eye, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import type { Job } from '../../lib/types';
+import { useNotification } from '../NotificationProvider';
 
 interface JobDocument {
     id: number;
@@ -165,6 +166,7 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
     const [notesSaved, setNotesSaved] = useState(false);
     const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    const { showError } = useNotification();
     const [documents, setDocuments] = useState<JobDocument[]>([]);
     const [docsLoading, setDocsLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
@@ -194,10 +196,13 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
         try {
             const res = await fetch(`${apiBase}/jobs/${job.id}/documents`, { credentials: 'include' });
             if (res.ok) setDocuments(await res.json());
-        } catch { /* ignore */ } finally {
+            else showError(`GET /jobs/${job.id}/documents → HTTP ${res.status}`);
+        } catch {
+            showError(`GET /jobs/${job.id}/documents fehlgeschlagen`);
+        } finally {
             setDocsLoading(false);
         }
-    }, [apiBase, job.id]);
+    }, [apiBase, job.id, showError]);
 
     useEffect(() => { loadDocuments(); }, [loadDocuments]);
 
@@ -207,15 +212,22 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
         if (notesTimer.current) clearTimeout(notesTimer.current);
         notesTimer.current = setTimeout(async () => {
             setNotesSaving(true);
+            setNotesSaveError(false);
             try {
-                await fetch(`${apiBase}/jobs/${job.id}`, {
+                const res = await fetch(`${apiBase}/jobs/${job.id}`, {
                     method: 'PATCH',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ notes: value }),
                 });
-                setNotesSaved(true);
-                setTimeout(() => setNotesSaved(false), 2000);
+                if (res.ok) {
+                    setNotesSaved(true);
+                    setTimeout(() => setNotesSaved(false), 2000);
+                } else {
+                    showError(`PATCH /jobs/${job.id} → HTTP ${res.status}`);
+                }
+            } catch {
+                showError(`PATCH /jobs/${job.id} fehlgeschlagen`);
             } finally {
                 setNotesSaving(false);
             }
@@ -264,7 +276,10 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
                 credentials: 'include',
             });
             if (res.ok) setDocuments(prev => prev.filter(d => d.id !== docId));
-        } catch { /* ignore */ }
+            else showError(`DELETE /jobs/${job.id}/documents/${docId} → HTTP ${res.status}`);
+        } catch {
+            showError(`DELETE /jobs/${job.id}/documents/${docId} fehlgeschlagen`);
+        }
     };
 
     const addTodo = () => {

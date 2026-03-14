@@ -19,12 +19,6 @@ export default function JobOverviewTab({ job, onTabChange }: JobOverviewTabProps
 
     return (
         <div className="space-y-4">
-            {job.generation_error && (
-                <div className="p-3 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-200 dark:border-rose-500/30 text-xs text-rose-700 dark:text-rose-300">
-                    <span className="font-bold">Generierungsfehler:</span> {job.generation_error}
-                </div>
-            )}
-
             <div className="flex flex-col sm:flex-row gap-4">
 
                 {/* ── KI-ANALYSE ── */}

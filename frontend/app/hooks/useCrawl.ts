@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { logger } from '../lib/logger';
 import { CrawlJob } from '../(dashboard)/components/CrawlStatus';
 import { AuthContextType } from '../components/AuthProvider';
+import { useNotification } from '../components/NotificationProvider';
 import { Job } from '../lib/types';
 
 interface UseCrawlProps {
@@ -12,9 +13,10 @@ interface UseCrawlProps {
     onJobEvent?: (event: { type: string; job_id?: string; domain?: string }) => void;
     initialActiveCrawls?: CrawlJob[];
     initialIsCrawling?: boolean;
+    initialAiError?: string | null;
 }
 
-export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initialActiveCrawls, initialIsCrawling }: UseCrawlProps) {
+export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initialActiveCrawls, initialIsCrawling, initialAiError }: UseCrawlProps) {
     const [isCrawling, setIsCrawling] = useState(initialIsCrawling || false);
 
     const initMap = new Map<string, CrawlJob>();
@@ -28,6 +30,14 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
 
     const [activeCrawls, setActiveCrawls] = useState<Map<string, CrawlJob>>(initMap);
     const [globalError, setGlobalError] = useState<string | null>(null);
+    const [aiError, setAiError] = useState<string | null>(initialAiError ?? null);
+    const { showError } = useNotification();
+
+    // Show persisted AI error from Redis on initial load
+    useEffect(() => {
+        if (initialAiError) showError(initialAiError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialAiError]);
 
     // WebSocket Ref to persist across renders without triggering effects
     const wsRef = useRef<WebSocket | null>(null);
@@ -309,6 +319,13 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                         setGlobalError(data.message);
                         setTimeout(() => setGlobalError(null), 8000);
                     }
+                    else if (data.type === "ai_error") {
+                        setAiError(data.message);
+                        showError(data.message);
+                    }
+                    else if (data.type === "ai_error_cleared") {
+                        setAiError(null);
+                    }
                 } catch (e) {
                     logger.error({ err: e }, "Error parsing WS message");
                 }
@@ -360,6 +377,8 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
         setActiveCrawls,
         globalError,
         setGlobalError,
+        aiError,
+        setAiError,
         fetchCrawlStatus,
         crawlToCancel,
         setCrawlToCancel,

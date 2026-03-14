@@ -1,15 +1,60 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
 import PasswordChangeForm from './components/PasswordChangeForm';
 import { useLanguage } from '../components/LanguageProvider';
+import { useNotification } from '../components/NotificationProvider';
+import { ShieldCheck, AlertTriangle, Trash2, RotateCcw, Lock } from 'lucide-react';
+import type { ReactNode } from 'react';
+
+// Reusable Card Component for Premium Look
+function AccountCard({ title, subtitle, icon, children, variant = 'default' }: {
+  title: string;
+  subtitle?: string;
+  icon: ReactNode;
+  children: ReactNode;
+  variant?: 'default' | 'danger';
+}) {
+  const styles = {
+    default: {
+      card: 'bg-white dark:bg-slate-900/50 border-slate-200/60 dark:border-slate-800/60',
+      iconContainer: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+      title: 'text-slate-900 dark:text-white',
+    },
+    danger: {
+      card: 'bg-rose-50/50 dark:bg-rose-500/5 border-rose-200/50 dark:border-rose-500/10',
+      iconContainer: 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400',
+      title: 'text-rose-800 dark:text-rose-400',
+    }
+  };
+
+  const s = styles[variant];
+
+  return (
+    <section className={`rounded-3xl border ${s.card} shadow-sm transition-all duration-300 hover:shadow-md overflow-hidden`}>
+      <div className="p-6 sm:p-8">
+        <div className="flex items-center gap-4 mb-8">
+          <div className={`p-3 rounded-2xl ${s.iconContainer}`}>
+            {icon}
+          </div>
+          <div>
+            <h2 className={`text-xl font-bold tracking-tight ${s.title}`}>{title}</h2>
+            {subtitle && <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">{subtitle}</p>}
+          </div>
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
 
 export default function Account() {
   const { token, refreshUser } = useAuth();
   const { t } = useLanguage();
+  const { showError } = useNotification();
 
   const [status, setStatus] = useState('');
   const [keepFavorites, setKeepFavorites] = useState(true);
@@ -31,8 +76,8 @@ export default function Account() {
       const data = await res.json();
       setStatus(`${data.count || 0} jobs deleted.`);
       setTimeout(() => window.location.href = "/", 1000);
-    } catch {
-      setStatus(t('error'));
+    } catch (e: any) {
+      showError(e?.message || t('error'));
     }
   };
 
@@ -44,8 +89,8 @@ export default function Account() {
       });
       setStatus(t('saved'));
       refreshUser();
-    } catch {
-      setStatus(t('error'));
+    } catch (e: any) {
+      showError(e?.message || t('error'));
     }
   };
 
@@ -58,8 +103,8 @@ export default function Account() {
       setStatus(t('saved'));
       refreshUser();
       setTimeout(() => window.location.href = "/", 1000);
-    } catch {
-      setStatus(t('error'));
+    } catch (e: any) {
+      showError(e?.message || t('error'));
     }
   };
 
@@ -95,7 +140,6 @@ export default function Account() {
 
   return (
     <PageWrapper>
-
       <ConfirmModal
         isOpen={!!confirmAction}
         onClose={() => { setConfirmAction(null); setKeepFavorites(true); setKeepApplications(true); }}
@@ -108,26 +152,26 @@ export default function Account() {
         isDestructive
       >
         {confirmAction?.type === 'DELETE_JOBS' && (
-          <div className="mt-2 flex flex-col gap-1.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-2">
+          <div className="mt-4 space-y-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 id="keepFavoritesCheckbox"
                 checked={keepFavorites}
                 onChange={(e) => setKeepFavorites(e.target.checked)}
-                className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               <label htmlFor="keepFavoritesCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
                 {t('keepFavorites')}
               </label>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 id="keepApplicationsCheckbox"
                 checked={keepApplications}
                 onChange={(e) => setKeepApplications(e.target.checked)}
-                className="appearance-none w-4 h-4 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 checked:bg-indigo-500 checked:border-indigo-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors"
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               <label htmlFor="keepApplicationsCheckbox" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
                 {t('keepApplications')}
@@ -137,50 +181,63 @@ export default function Account() {
         )}
       </ConfirmModal>
 
-      {/* PAGE HEADER */}
-      <PageHeader title="Account" subtitle={`${t('security')} & ${t('dangerZone')}`} />
+      <PageHeader
+        title="Account"
+        subtitle={t('security') + " & " + t('dangerZone')}
+      />
 
-      <div className="max-w-2xl space-y-8">
+      <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        {/* Account Status Messages */}
+        {status && (
+          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-sm font-bold flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            {status}
+          </div>
+        )}
 
         {/* SECURITY */}
-        <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-            <span>🔒</span> {t('security')}
-          </h2>
+        <AccountCard
+          title={t('security')}
+          subtitle="Passwort & Zugriff"
+          icon={<Lock className="w-6 h-6" />}
+        >
           <PasswordChangeForm token={token} />
-        </section>
+        </AccountCard>
 
         {/* DANGER ZONE */}
-        <section className="bg-rose-50/80 dark:bg-rose-500/5 backdrop-blur-xl rounded-2xl border border-rose-200/60 dark:border-rose-500/20 shadow-sm hover:shadow-md transition-all duration-300 p-6 sm:p-8">
-          <h2 className="text-lg font-bold text-rose-700 dark:text-rose-400 mb-6 flex items-center gap-2">
-            <span>⚠️</span> {t('dangerZone')}
-          </h2>
-          {status && <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-4">{status}</p>}
-          <div className="space-y-3">
+        <AccountCard
+          title={t('dangerZone')}
+          subtitle="Daten & Konto löschen"
+          icon={<AlertTriangle className="w-6 h-6" />}
+          variant="danger"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
-              type="button"
               onClick={requestDeleteJobs}
-              className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
+              className="flex items-center justify-center gap-2 px-6 py-4 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-2xl font-bold text-sm transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-sm"
             >
+              <Trash2 className="w-4 h-4" />
               {t('deleteAllJobs')}
             </button>
             <button
-              type="button"
               onClick={requestDeleteProfile}
-              className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl font-medium text-sm transition cursor-pointer"
+              className="flex items-center justify-center gap-2 px-6 py-4 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-2xl font-bold text-sm transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-sm"
             >
+              <Trash2 className="w-4 h-4" />
               {t('deleteProfileOnly')}
             </button>
             <button
-              type="button"
               onClick={requestFactoryReset}
-              className="w-full px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition cursor-pointer"
+              className="sm:col-span-2 flex items-center justify-center gap-2 px-6 py-5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-rose-500/25 transition-all duration-300 hover:scale-[1.01] active:scale-98 cursor-pointer ring-offset-2 focus:ring-2 ring-rose-500"
             >
+              <RotateCcw className="w-5 h-5" />
               {t('factoryReset')}
             </button>
           </div>
-        </section>
-
+          <p className="mt-6 text-center text-xs text-rose-600/60 dark:text-rose-400/40 font-medium">
+            Diese Aktionen sind endgültig und können nicht rückgängig gemacht werden.
+          </p>
+        </AccountCard>
       </div>
     </PageWrapper>
   );

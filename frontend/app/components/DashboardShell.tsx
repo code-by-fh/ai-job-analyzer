@@ -8,6 +8,8 @@ import ThemeToggler from './ThemeToggler';
 import LanguageToggler from './LanguageToggler';
 import { useAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
+import { useNotification } from './NotificationProvider';
+import AIErrorBanner from './AIErrorBanner';
 import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS, NavItemConfig } from '../lib/navigation';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -19,6 +21,16 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const { t } = useLanguage();
+    const { errorDetail, clearError, showError } = useNotification();
+
+    // Restore persisted AI error banner on any page reload
+    React.useEffect(() => {
+        if (!user) return;
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => { if (data.ai_error) showError(data.ai_error); })
+            .catch(() => {});
+    }, [user]);
 
     React.useEffect(() => {
         if (!isLoading && !user && !isLoginPage) {
@@ -305,6 +317,15 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             {/* ── MAIN CONTENT ── */}
             <main className={`flex-1 w-full transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'md:pl-[68px]' : 'md:pl-56'}`}>
                 <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 md:pt-8 pb-24 md:pb-8 min-h-screen">
+                    {errorDetail && (
+                        <div className="mb-6">
+                            <AIErrorBanner
+                                detail={errorDetail}
+                                isAdmin={Boolean(user?.is_admin)}
+                                onDismiss={clearError}
+                            />
+                        </div>
+                    )}
                     {children}
                 </div>
             </main>

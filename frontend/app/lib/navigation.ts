@@ -59,6 +59,12 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         matchType: 'startsWith',
     },
     {
+        href: '/companies',
+        icon: '🏢',
+        labelKey: 'companies',
+        matchType: 'startsWith',
+    },
+    {
         href: '/archive',
         icon: '🗂️',
         labelKey: 'archiv',

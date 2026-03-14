@@ -3,9 +3,37 @@ import json
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
-from openai import OpenAI
+from openai import OpenAI, NotFoundError, AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
+import redis as _redis_sync
 
 logger = logging.getLogger(__name__)
+
+AI_404_REDIS_KEY = "system:ai_404_error"
+
+
+def _get_redis():
+    return _redis_sync.from_url(
+        os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
+        decode_responses=True,
+    )
+
+
+def store_ai_404_error(message: str) -> None:
+    try:
+        r = _get_redis()
+        r.set(AI_404_REDIS_KEY, message)
+        r.publish("job_updates", json.dumps({"type": "ai_error", "message": message}))
+    except Exception as e:
+        logger.error(f"Failed to store AI 404 error: {e}")
+
+
+def clear_ai_404_error() -> None:
+    try:
+        r = _get_redis()
+        r.delete(AI_404_REDIS_KEY)
+        r.publish("job_updates", json.dumps({"type": "ai_error_cleared"}))
+    except Exception as e:
+        logger.error(f"Failed to clear AI 404 error: {e}")
 
 
 def get_ai_client():
@@ -168,13 +196,35 @@ Antworte NUR mit validem JSON ohne Markdown-Wrapper!"""
             content = content.split("```")[1]
             if content.startswith("json"):
                 content = content[4:]
-        return json.loads(content)
+        result = json.loads(content)
+        clear_ai_404_error()
+        return result
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse interview prep JSON: {e}")
         return {
             "error": str(e),
             "raw_response": content if "content" in locals() else "",
         }
+    except AuthenticationError as e:
+        logger.error(f"OpenRouter 401 in generate_interview_prep: {e}")
+        store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+        raise
+    except RateLimitError as e:
+        logger.error(f"OpenRouter 429 in generate_interview_prep: {e}")
+        store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        raise
+    except NotFoundError as e:
+        logger.error(f"OpenRouter 404 in generate_interview_prep: {e}")
+        store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+        raise
+    except APIConnectionError as e:
+        logger.error(f"OpenRouter connection error in generate_interview_prep: {e}")
+        store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+        raise
+    except APIStatusError as e:
+        logger.error(f"OpenRouter API error {e.status_code} in generate_interview_prep: {e}")
+        store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+        raise
     except Exception as e:
         logger.error(f"Interview prep generation error: {e}")
         raise
@@ -197,12 +247,15 @@ def generate_company_profile_summary(
 
     prompt = f"""Du handelst als ein Team aus: erfahrenen Wirtschaftsjournalisten (Handelsblatt, WiWo), einem Top-Unternehmensberater (McKinsey-Niveau), einem Experten für Organisationspsychologie und einem Employer-Branding-Spezialisten mit Fokus auf Kununu/Glassdoor-Analyse.
 
-Deine Aufgabe ist die Erstellung einer detaillierten Business-Analyse für eine Bewerbungsentscheidung:
+Deine Aufgabe ist die Erstellung einer detaillierten Business-Analyse des UNTERNEHMENS SELBST — unabhängig von einer konkreten Stellenausschreibung.
+Fokus: wirtschaftliche Stabilität, strategische Ausrichtung, Marktposition, Meilensteine und Unternehmenskultur.
+Erwähne KEINE spezifischen Stellen, Jobtitel oder Stellenbeschreibungen.
+
 **Unternehmen:** {company_name}
 **Domain:** {domain}
 **Zeitraum:** Aktuelle Daten {year_range}
 
-**ROHDATEN:**
+**ROHDATEN (aus Online-Recherche):**
 {raw_info[:30000]}
 
 ERSTELLE EIN JSON-OBJEKT MIT FOLGENDER STRUKTUR:
@@ -215,14 +268,17 @@ ERSTELLE EIN JSON-OBJEKT MIT FOLGENDER STRUKTUR:
   "red_flags": ["Warnsignal 1"],
   "key_artifacts": [
     {{
-      "title": "Produkt/Projekt",
-      "description": "Details und technischer Kontext"
+      "title": "Meilenstein/Produkt/Initiative",
+      "description": "Strategische Bedeutung, Zeitraum und wirtschaftlicher Impact für das Unternehmen"
     }}
   ],
   "swot_analysis": {{
-    "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
+    "strengths": ["Unternehmensstärke 1", "Unternehmensstärke 2"],
+    "weaknesses": ["Strukturelle Schwäche 1"],
+    "opportunities": ["Marktchance 1"],
+    "threats": ["Externer Risikofaktor 1"]
   }},
-  "comprehensive_report": "Vollständiger RESEARCH REPORT (ca. 1500 Wörter) im White Paper Format (Markdown). Muss enthalten: Executive Summary, Wirtschaftliche Verfassung, Strategische Ausrichtung, Mitarbeiterzufriedenheit, SWOT-Fazit und Quellenangaben.",
+  "comprehensive_report": "Vollständiger RESEARCH REPORT (ca. 1500 Wörter) im White Paper Format (Markdown). Muss enthalten: Executive Summary, Wirtschaftliche Verfassung & Kennzahlen, Strategische Ausrichtung & Zukunftspläne, Unternehmenskultur & Mitarbeiterzufriedenheit, SWOT-Fazit und Quellenangaben. KEIN Bezug auf konkrete Stellen oder Jobtitel.",
   "company_intelligence": {{
     "wirtschaftliche_lage": "Detaillierte Analyse: aktuelle Strategie, Gewinnwarnungen oder Rekordgewinne, größere Umstrukturierungen, M&A-Aktivitäten, Quartalszahlen der letzten 12 Monate",
     "marktposition": {{
@@ -277,7 +333,29 @@ Antworte NUR mit dem JSON-Objekt ohne Markdown-Wrapper!"""
             content = content.split("```")[1]
             if content.startswith("json"):
                 content = content[4:]
-        return json.loads(content)
+        result = json.loads(content)
+        clear_ai_404_error()
+        return result
+    except AuthenticationError as e:
+        logger.error(f"OpenRouter 401 in generate_company_profile_summary: {e}")
+        store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+        raise
+    except RateLimitError as e:
+        logger.error(f"OpenRouter 429 in generate_company_profile_summary: {e}")
+        store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        raise
+    except NotFoundError as e:
+        logger.error(f"OpenRouter 404 in generate_company_profile_summary: {e}")
+        store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+        raise
+    except APIConnectionError as e:
+        logger.error(f"OpenRouter connection error in generate_company_profile_summary: {e}")
+        store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+        raise
+    except APIStatusError as e:
+        logger.error(f"OpenRouter API error {e.status_code} in generate_company_profile_summary: {e}")
+        store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+        raise
     except Exception as e:
         logger.error(f"Company profile generation error: {e}")
         raise

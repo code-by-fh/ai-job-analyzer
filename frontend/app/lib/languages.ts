@@ -265,6 +265,11 @@ export const translations = {
         found: "found",
         new: "new",
 
+        // Companies
+        companies: "Companies",
+        companiesPageTitle: "Company Profiles",
+        companiesPageSubtitle: "Deep intelligence on all companies in your pipeline",
+
         // Archive
         archiv: "Archive",
         archiveJob: "Archive job",
@@ -537,6 +542,11 @@ export const translations = {
         actionConfigureNotifications: "Benachrichtigungen einrichten",
         found: "gefunden",
         new: "neu",
+
+        // Companies
+        companies: "Firmen",
+        companiesPageTitle: "Unternehmensprofile",
+        companiesPageSubtitle: "Deep Intelligence zu allen Firmen in deiner Pipeline",
 
         // Archive
         archiv: "Archiv",

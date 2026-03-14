@@ -261,6 +261,13 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
         db.close()
 
 
+@app.delete("/admin/clear-ai-error")
+def clear_ai_error_endpoint(current_user: User = Depends(get_current_admin_user)):
+    from intelligence_service import clear_ai_404_error
+    clear_ai_404_error()
+    return {"status": "cleared"}
+
+
 @app.post("/admin/settings")
 def update_admin_settings(
     settings: SystemSettingsUpdate, current_user: User = Depends(get_current_admin_user)
@@ -525,7 +532,8 @@ async def get_system_status():
     redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
     r = redis_sync.from_url(redis_url, decode_responses=True)
     is_crawling = r.get("system:crawling")
-    return {"crawling": bool(is_crawling)}
+    ai_error = r.get("system:ai_404_error")
+    return {"crawling": bool(is_crawling), "ai_error": ai_error}
 
 
 @app.get("/jobs/domains")
@@ -1527,6 +1535,36 @@ def get_statistics(current_user: User = Depends(get_current_user)):
         db.close()
 
 
+@app.get("/companies")
+def list_companies(current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        companies = db.query(CompanyProfile).order_by(CompanyProfile.name).all()
+        return [
+            {
+                "id": c.id,
+                "domain": c.domain,
+                "name": c.name,
+                "description": c.description,
+                "culture_summary": c.culture_summary,
+                "review_score": c.review_score,
+                "review_source": c.review_source,
+                "salary_benchmark": c.salary_benchmark,
+                "tech_stack": c.tech_stack,
+                "key_artifacts": (c.raw_data.get("key_artifacts", []) if c.raw_data else []),
+                "swot_analysis": (c.raw_data.get("swot_analysis") if c.raw_data else None),
+                "comprehensive_report": (c.raw_data.get("comprehensive_report") if c.raw_data else None),
+                "key_benefits": (c.raw_data.get("key_benefits", []) if c.raw_data else []),
+                "red_flags": (c.raw_data.get("red_flags", []) if c.raw_data else []),
+                "company_intelligence": (c.raw_data.get("company_intelligence") if c.raw_data else None),
+                "analyzed_at": (c.analyzed_at.isoformat() if c.analyzed_at else None),
+            }
+            for c in companies
+        ]
+    finally:
+        db.close()
+
+
 @app.get("/companies/{domain}")
 def get_company_profile(domain: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -1741,10 +1779,17 @@ def get_dashboard_data(
         except Exception as e:
             logger.error(f"Scraper service error: {e}")
 
+        ai_error = None
+        try:
+            ai_error = r.get("system:ai_404_error")
+        except Exception:
+            pass
+
         return {
             "jobs": jobs,
             "system_crawling": is_crawling,
             "active_crawls": active_crawls,
+            "ai_error": ai_error,
         }
     finally:
         db.close()

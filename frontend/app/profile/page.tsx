@@ -5,6 +5,7 @@ import DynamicList from './components/DynamicList';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
+import { useNotification } from '../components/NotificationProvider';
 import { logger } from '../lib/logger';
 
 type Tab = 'target' | 'resume';
@@ -26,6 +27,7 @@ const inputCls = "w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-20
 export default function Profile() {
   const { token, refreshUser } = useAuth();
   const { t } = useLanguage();
+  const { showError } = useNotification();
 
   const [activeTab, setActiveTab] = useState<Tab>('target');
   const [formData, setFormData] = useState({
@@ -62,7 +64,7 @@ export default function Profile() {
           });
           setLoading(false);
         })
-        .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); setLoading(false); });
+        .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); showError(`GET /settings-view fehlgeschlagen: ${e?.message || e}`); setLoading(false); });
     }
   }, [token]);
 
@@ -88,7 +90,8 @@ export default function Profile() {
       setSaveStatus('saved');
       refreshUser();
       setTimeout(() => setSaveStatus('idle'), 2500);
-    } catch {
+    } catch (e: any) {
+      showError(e?.message || t('error'));
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
@@ -166,6 +169,7 @@ export default function Profile() {
       </div>
     </PageWrapper>
   );
+
 
   const pct = completion();
   const pctColor = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';

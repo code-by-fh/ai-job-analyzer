@@ -42,7 +42,7 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
     };
 
     return (
-        <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
+        <form onSubmit={handleChangePassword} className="space-y-4 w-full">
             <div>
                 <PasswordInput
                     placeholder={t('currentPassword')}

@@ -5,6 +5,7 @@ import "./globals.css";
 import { Suspense } from "react";
 import { AuthProvider } from "./components/AuthProvider";
 import { LanguageProvider } from "./components/LanguageProvider";
+import { NotificationProvider } from "./components/NotificationProvider";
 import DashboardShell from "./components/DashboardShell";
 
 const geistSans = Geist({
@@ -34,11 +35,13 @@ export default function RootLayout({
       >
         <LanguageProvider>
           <AuthProvider>
-            <Suspense>
-              <DashboardShell>
-                {children}
-              </DashboardShell>
-            </Suspense>
+            <NotificationProvider>
+              <Suspense>
+                <DashboardShell>
+                  {children}
+                </DashboardShell>
+              </Suspense>
+            </NotificationProvider>
           </AuthProvider>
         </LanguageProvider>
       </body>

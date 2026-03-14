@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
+import { useNotification } from '../../components/NotificationProvider';
 
 // Components
 import ApplicationModal from '../../components/ApplicationModal';
@@ -26,6 +27,7 @@ interface DashboardProps {
 export default function Dashboard({ initialFilter }: DashboardProps) {
     const { user, token, logout } = useAuth();
     const { t } = useLanguage();
+    const { showError } = useNotification();
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -44,6 +46,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
     const [initialCrawlStatus, setInitialCrawlStatus] = useState<any[]>([]);
     const [initialSystemCrawling, setInitialSystemCrawling] = useState(false);
+    const [initialAiError, setInitialAiError] = useState<string | null>(null);
 
     // Generator & Modal
     const [modalOpen, setModalOpen] = useState(false);
@@ -66,6 +69,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         setInitialJobs(data.jobs || []);
                         setInitialCrawlStatus(data.active_crawls || []);
                         setInitialSystemCrawling(data.system_crawling || false);
+                        setInitialAiError(data.ai_error || null);
                         setInitialDataLoaded(true);
                     }
                 })
@@ -145,6 +149,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         activeCrawls,
         globalError: crawlError,
         setGlobalError: setCrawlError,
+        aiError,
+        setAiError,
         fetchCrawlStatus,
         crawlToCancel,
         setCrawlToCancel,
@@ -156,13 +162,13 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         onNewJob,
         onJobEvent,
         initialActiveCrawls: initialDataLoaded ? initialCrawlStatus : undefined,
-        initialIsCrawling: initialDataLoaded ? initialSystemCrawling : undefined
+        initialIsCrawling: initialDataLoaded ? initialSystemCrawling : undefined,
     });
 
-    const globalError = jobsError || crawlError;
-    const setGlobalError = (msg: string | null) => {
-        if (msg) setJobsError(msg); else { setJobsError(null); setCrawlError(null); }
-    }
+    // Bridge jobs/crawl errors → global notification banner
+    useEffect(() => { if (jobsError) showError(jobsError); }, [jobsError, showError]);
+    useEffect(() => { if (crawlError) showError(crawlError); }, [crawlError, showError]);
+
     // Sync URL -> State (for back button / browser navigation)
     useEffect(() => {
         const urlParams = {
@@ -229,8 +235,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     const startSearch = async () => {
         if (!user?.is_profile_complete) {
-            setGlobalError(t('completeProfileFirst'));
-            setTimeout(() => setGlobalError(null), 3000);
+            showError(t('completeProfileFirst'));
             return;
         }
         if (!query) return;
@@ -238,13 +243,11 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         try {
             const parsed = new URL(query);
             if (!['http:', 'https:'].includes(parsed.protocol)) {
-                setGlobalError(t('invalidUrlProtocol'));
-                setTimeout(() => setGlobalError(null), 3000);
+                showError(t('invalidUrlProtocol'));
                 return;
             }
         } catch (_) {
-            setGlobalError(t('invalidUrl'));
-            setTimeout(() => setGlobalError(null), 3000);
+            showError(t('invalidUrl'));
             return;
         }
 
@@ -360,12 +363,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 headlineMsgkey="jobIntelligence"
             />
 
-            {/* GLOBAL ERROR BANNER */}
-            {globalError && (
-                <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-300 px-4 py-3 rounded-lg flex items-center justify-between">
-                    <span>⚠️ {globalError}</span>
-                </div>
-            )}
 
             {/* CRAWL STATUS */}
             {activeCrawls.size > 0 && (
