@@ -119,6 +119,8 @@ class JobPlatform(Base):
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
     notification_adapters = Column(JSON, default=[])
+    gmail_template = Column(Text, nullable=True)
+    gmail_recipients = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -223,6 +225,8 @@ class PlatformUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
+    gmail_template: Optional[str] = None
+    gmail_recipients: Optional[List[str]] = None
 
 
 class PlatformResponse(BaseModel):
@@ -235,6 +239,8 @@ class PlatformResponse(BaseModel):
     is_active: bool
     is_notification_enabled: bool = False
     notification_adapters: List[str] = []
+    gmail_template: Optional[str] = None
+    gmail_recipients: Optional[List[str]] = None
     job_count: int = 0
 
     class Config:

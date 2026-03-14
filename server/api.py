@@ -1142,6 +1142,8 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
                     "notification_adapters": p.notification_adapters or [],
+                    "gmail_template": p.gmail_template,
+                    "gmail_recipients": p.gmail_recipients,
                     "job_count": count,
                 }
             )
@@ -1226,6 +1228,10 @@ def update_platform(
             db_platform.is_notification_enabled = (
                 len(platform_update.notification_adapters) > 0
             )
+        if "gmail_template" in platform_update.__fields_set__:
+            db_platform.gmail_template = platform_update.gmail_template or None
+        if "gmail_recipients" in platform_update.__fields_set__:
+            db_platform.gmail_recipients = platform_update.gmail_recipients or None
 
         db.commit()
         db.refresh(db_platform)
@@ -1249,8 +1255,102 @@ def update_platform(
             "is_active": db_platform.is_active,
             "is_notification_enabled": db_platform.is_notification_enabled,
             "notification_adapters": db_platform.notification_adapters or [],
+            "gmail_template": db_platform.gmail_template,
+            "gmail_recipients": db_platform.gmail_recipients,
             "job_count": job_count,
         }
+    finally:
+        db.close()
+
+
+class GmailTestRequest(BaseModel):
+    recipients: Optional[List[str]] = None
+    template: Optional[str] = None
+
+
+@app.post("/platforms/{platform_id}/test-gmail")
+def test_gmail_notification(
+    platform_id: int,
+    body: GmailTestRequest = GmailTestRequest(),
+    current_user: User = Depends(get_current_user),
+):
+    from worker import _send_via_gmail_batch
+
+    db = SessionLocal()
+    try:
+        platform = (
+            db.query(JobPlatform)
+            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
+            .first()
+        )
+        if not platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.gmail_address or not profile.gmail_app_password:
+            raise HTTPException(status_code=400, detail="Gmail credentials not configured")
+
+        # Allow caller to override recipients and template without saving
+        class _PlatformProxy:
+            gmail_recipients = body.recipients if body.recipients is not None else platform.gmail_recipients
+            gmail_template = body.template if body.template is not None else platform.gmail_template
+
+        class _FakeJob:
+            id = 0
+            title = "Senior Software Engineer"
+            company = "Acme Corp"
+            match_score = 87.0
+            reasoning = "Strong match based on your Python and FastAPI experience."
+            url = "https://example.com/job/123"
+
+        _send_via_gmail_batch([_FakeJob()], profile, _PlatformProxy())
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("test-gmail failed for platform %s: %s", platform_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/platforms/{platform_id}/test-pushover")
+def test_pushover_notification(
+    platform_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    from worker import _send_via_pushover
+
+    db = SessionLocal()
+    try:
+        platform = (
+            db.query(JobPlatform)
+            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
+            .first()
+        )
+        if not platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.pushover_user_key or not profile.pushover_api_token:
+            raise HTTPException(status_code=400, detail="Pushover credentials not configured")
+
+        class _FakeJob:
+            id = 0
+            title = "Senior Software Engineer"
+            company = "Acme Corp"
+            match_score = 87.0
+            reasoning = "Strong match based on your Python and FastAPI experience."
+            url = "https://example.com/job/123"
+
+        if not _send_via_pushover(_FakeJob(), profile):
+            raise HTTPException(status_code=500, detail="Pushover delivery failed")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("test-pushover failed for platform %s: %s", platform_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
@@ -1714,6 +1814,8 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
                     "notification_adapters": p.notification_adapters or [],
+                    "gmail_template": p.gmail_template,
+                    "gmail_recipients": p.gmail_recipients,
                     "job_count": count,
                 }
             )

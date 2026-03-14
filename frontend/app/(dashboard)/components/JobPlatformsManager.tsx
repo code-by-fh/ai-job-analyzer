@@ -18,6 +18,8 @@ interface Platform {
     job_count: number;
     is_notification_enabled: boolean;
     notification_adapters: string[];
+    gmail_template: string | null;
+    gmail_recipients: string[] | null;
 }
 
 interface JobPlatformsManagerProps {
@@ -44,6 +46,12 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
 
     // Confirm Modal
     const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
+
+    // Gmail Template Modal
+    const [templatePlatform, setTemplatePlatform] = useState<Platform | null>(null);
+    const [templateValue, setTemplateValue] = useState<string>('');
+    const [recipientsValue, setRecipientsValue] = useState<string[]>([]);
+    const [recipientInput, setRecipientInput] = useState<string>('');
 
     // Centralized crawl state via WebSocket (same as /listings)
     const { activeCrawls } = useCrawl({ user, token });
@@ -228,6 +236,85 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         }
     };
 
+    const openTemplateModal = (platform: Platform) => {
+        setTemplatePlatform(platform);
+        setTemplateValue(platform.gmail_template || '');
+        setRecipientsValue(platform.gmail_recipients || []);
+        setRecipientInput('');
+    };
+
+    const saveTemplate = async () => {
+        if (!templatePlatform) return;
+        await updatePlatform(templatePlatform.id, {
+            gmail_template: templateValue || null,
+            gmail_recipients: recipientsValue,
+        });
+        setTemplatePlatform(null);
+    };
+
+    const addRecipient = () => {
+        const email = recipientInput.trim().toLowerCase();
+        if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !recipientsValue.includes(email)) {
+            setRecipientsValue(prev => [...prev, email]);
+        }
+        setRecipientInput('');
+    };
+
+    const [testMailStatus, setTestMailStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
+    const [testMailError, setTestMailError] = useState<string | null>(null);
+    const [pushoverTestStatus, setPushoverTestStatus] = useState<Record<number, 'idle' | 'sending' | 'ok' | 'error'>>({});
+    const [pushoverTestError, setPushoverTestError] = useState<Record<number, string | null>>({});
+
+    const sendTestMail = async () => {
+        if (!templatePlatform) return;
+        setTestMailStatus('sending');
+        setTestMailError(null);
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${templatePlatform.id}/test-gmail`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    recipients: recipientsValue.length > 0 ? recipientsValue : null,
+                    template: templateValue || null,
+                }),
+            });
+            if (res.ok) {
+                setTestMailStatus('ok');
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setTestMailError(body?.detail || `HTTP ${res.status}`);
+                setTestMailStatus('error');
+            }
+        } catch (e: any) {
+            setTestMailError(e?.message || 'Network error');
+            setTestMailStatus('error');
+        }
+        setTimeout(() => setTestMailStatus('idle'), 5000);
+    };
+
+    const sendTestPushover = async (platformId: number) => {
+        setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'sending' }));
+        setPushoverTestError(prev => ({ ...prev, [platformId]: null }));
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${platformId}/test-pushover`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (res.ok) {
+                setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'ok' }));
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setPushoverTestError(prev => ({ ...prev, [platformId]: body?.detail || `HTTP ${res.status}` }));
+                setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'error' }));
+            }
+        } catch (e: any) {
+            setPushoverTestError(prev => ({ ...prev, [platformId]: e?.message || 'Network error' }));
+            setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'error' }));
+        }
+        setTimeout(() => setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'idle' })), 5000);
+    };
+
     const toggleAdapter = async (platform: Platform, adapter: string) => {
         const current = platform.notification_adapters || [];
         const updated = current.includes(adapter) ? current.filter((a) => a !== adapter) : [...current, adapter];
@@ -274,6 +361,96 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                     </p>
                 </div>
             </ConfirmModal>
+
+            {/* Gmail Template Modal */}
+            {templatePlatform && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setTemplatePlatform(null); }}>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Gmail Template — {templatePlatform.name}</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Wrap job rows in <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">{'{{#jobs}}'}&hellip;{'{{/jobs}}'}</code> to loop over all matches.
+                                    Variables: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$url</code>
+                                </p>
+                            </div>
+                            <button onClick={() => setTemplatePlatform(null)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="p-5 flex-1 overflow-auto">
+                            {/* Recipients */}
+                            <div className="mb-4">
+                                <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Recipients <span className="text-slate-400 font-normal">(leer = eigene Gmail-Adresse)</span></p>
+                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                    {recipientsValue.map(email => (
+                                        <span key={email} className="flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-xs rounded-md border border-indigo-200 dark:border-indigo-800/50">
+                                            {email}
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setRecipientsValue(prev => prev.filter(r => r !== email)); }} className="text-indigo-400 hover:text-rose-500 transition-colors cursor-pointer ml-0.5">
+                                                <svg className="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="email"
+                                        value={recipientInput}
+                                        onChange={e => setRecipientInput(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addRecipient(); } }}
+                                        placeholder="email@example.com"
+                                        className="flex-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    <button type="button" onClick={addRecipient} className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-600 transition-colors cursor-pointer">
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea
+                                value={templateValue}
+                                onChange={(e) => setTemplateValue(e.target.value)}
+                                placeholder={`<html>\n<body>\n  <h1>New Job Matches</h1>\n  {{#jobs}}\n  <div style="margin-bottom:20px;border-bottom:1px solid #eee">\n    <h2>$title – $company ($match_score%)</h2>\n    <p>$reasoning</p>\n    <a href="$url">Details anschauen</a>\n  </div>\n  {{/jobs}}\n</body>\n</html>`}
+                                className="w-full h-72 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                                spellCheck={false}
+                            />
+                            {templateValue && (
+                                <button onClick={() => setTemplateValue('')} className="mt-2 text-xs text-rose-500 hover:text-rose-600 transition-colors cursor-pointer">
+                                    Reset to default template
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex justify-between items-center p-5 border-t border-slate-100 dark:border-slate-800">
+                            <div className="flex flex-col gap-1">
+                                <button
+                                    onClick={sendTestMail}
+                                    disabled={testMailStatus === 'sending'}
+                                    className={`px-3 py-2 text-xs font-medium rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60 ${
+                                        testMailStatus === 'ok' ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-800' :
+                                        testMailStatus === 'error' ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-800' :
+                                        'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600'
+                                    }`}
+                                >
+                                    {testMailStatus === 'sending' && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
+                                    {testMailStatus === 'ok' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>}
+                                    {testMailStatus === 'error' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>}
+                                    {testMailStatus === 'ok' ? 'Sent!' : testMailStatus === 'error' ? 'Failed' : 'Send Test Mail'}
+                                </button>
+                                {testMailStatus === 'error' && testMailError && user?.is_admin && (
+                                    <p className="text-[10px] text-rose-500 font-mono max-w-xs break-all">{testMailError}</p>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setTemplatePlatform(null)} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                                    Cancel
+                                </button>
+                                <button onClick={saveTemplate} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors cursor-pointer shadow-sm">
+                                    Save Template
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -430,19 +607,53 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                                     {(['GMAIL', 'PUSHOVER'] as const).filter(a => configuredAdapters.includes(a)).map((adapter) => {
                                         const active = (p.notification_adapters || []).includes(adapter);
                                         return (
-                                            <button
-                                                type="button"
-                                                key={adapter}
-                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleAdapter(p, adapter); }}
-                                                className={`px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold tracking-wide transition-all border cursor-pointer flex items-center gap-1.5 ${active
-                                                    ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50 shadow-sm'
-                                                    : 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:text-slate-600 dark:hover:text-slate-400 line-through opacity-70'
-                                                    }`}
-                                                title={active ? `Disable ${adapter}` : `Enable ${adapter}`}
-                                            >
-                                                <span>{adapter === 'GMAIL' ? '✉' : '📱'}</span>
-                                                <span className="hidden sm:inline">{adapter}</span>
-                                            </button>
+                                            <div key={adapter} className="flex items-center gap-0.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleAdapter(p, adapter); }}
+                                                    className={`px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold tracking-wide transition-all border cursor-pointer flex items-center gap-1.5 ${active
+                                                        ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50 shadow-sm'
+                                                        : 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:text-slate-600 dark:hover:text-slate-400 line-through opacity-70'
+                                                        }`}
+                                                    title={active ? `Disable ${adapter}` : `Enable ${adapter}`}
+                                                >
+                                                    <span>{adapter === 'GMAIL' ? '✉' : '📱'}</span>
+                                                    <span className="hidden sm:inline">{adapter}</span>
+                                                </button>
+                                                {adapter === 'GMAIL' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openTemplateModal(p); }}
+                                                        className={`w-6 h-6 flex items-center justify-center rounded-md border transition-all cursor-pointer ${p.gmail_template ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-800/50' : 'text-slate-400 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:text-indigo-500 hover:border-indigo-300'}`}
+                                                        title={p.gmail_template ? 'Edit custom Gmail template' : 'Add custom Gmail template'}
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                                    </button>
+                                                )}
+                                                {adapter === 'PUSHOVER' && (() => {
+                                                    const st = pushoverTestStatus[p.id] || 'idle';
+                                                    const err = pushoverTestError[p.id];
+                                                    return (
+                                                        <div className="flex flex-col items-center">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); sendTestPushover(p.id); }}
+                                                                disabled={st === 'sending'}
+                                                                className={`w-6 h-6 flex items-center justify-center rounded-md border transition-all cursor-pointer disabled:opacity-60 ${st === 'ok' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-800' : st === 'error' ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-800' : 'text-slate-400 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:text-indigo-500 hover:border-indigo-300'}`}
+                                                                title={st === 'ok' ? 'Sent!' : st === 'error' ? (user?.is_admin && err ? err : 'Failed') : 'Send test Pushover notification'}
+                                                            >
+                                                                {st === 'sending' && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
+                                                                {st === 'ok' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>}
+                                                                {st === 'error' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>}
+                                                                {st === 'idle' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>}
+                                                            </button>
+                                                            {st === 'error' && err && user?.is_admin && (
+                                                                <p className="text-[9px] text-rose-500 font-mono mt-0.5 max-w-[120px] break-all text-center">{err}</p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
                                         );
                                     })}
                                 </div>

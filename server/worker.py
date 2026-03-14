@@ -69,7 +69,110 @@ def format_cv_for_prompt(cv_json):
     return text
 
 
-def _send_via_gmail(job, profile):
+def _send_via_gmail_batch(jobs, profile, platform=None):
+    """Send a single digest Gmail for all jobs in a crawl."""
+    if not profile.gmail_address or not profile.gmail_app_password:
+        logger.warning("Gmail batch notification enabled but credentials missing.")
+        return False
+
+    recipients = (platform.gmail_recipients or []) if platform else []
+    if not recipients:
+        recipients = [profile.gmail_address]
+
+    msg = MIMEMultipart("alternative")
+    count = len(jobs)
+    msg["Subject"] = f"{count} New Job Match{'es' if count != 1 else ''}"
+    msg["From"] = profile.gmail_address
+    msg["To"] = ", ".join(recipients)
+
+    custom_template = platform.gmail_template if platform else None
+    if custom_template:
+        import re
+        from string import Template
+
+        loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", custom_template, re.DOTALL)
+        if loop_match:
+            job_block = loop_match.group(1)
+            rendered_jobs = "".join(
+                Template(job_block).safe_substitute(
+                    title=j.title,
+                    company=j.company,
+                    match_score=int(j.match_score),
+                    reasoning=j.reasoning or "",
+                    url=j.url,
+                )
+                for j in jobs
+            )
+            html = custom_template[:loop_match.start()] + rendered_jobs + custom_template[loop_match.end():]
+        else:
+            # No loop block — render template once per job, separated by <hr>
+            html = "\n<hr>\n".join(
+                Template(custom_template).safe_substitute(
+                    title=j.title,
+                    company=j.company,
+                    match_score=int(j.match_score),
+                    reasoning=j.reasoning or "",
+                    url=j.url,
+                )
+                for j in jobs
+            )
+    else:
+        job_items = "".join(
+            f"""
+            <div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e7eb">
+              <h3 style="margin:0 0 8px">{j.title} &ndash; {j.company}</h3>
+              <p style="margin:0 0 4px"><b>Match Score:</b> {int(j.match_score)}%</p>
+              <p style="margin:0 0 12px">{j.reasoning}</p>
+              <a href="{j.url}">Details anschauen</a>
+            </div>
+            """
+            for j in jobs
+        )
+        html = f"""
+        <html><body>
+          <h2>{count} New Job Match{'es' if count != 1 else ''}</h2>
+          {job_items}
+        </body></html>
+        """
+
+    msg.attach(MIMEText(html, "html"))
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(profile.gmail_address, profile.gmail_app_password)
+        server.sendmail(profile.gmail_address, recipients, msg.as_string())
+
+    logger.info(f"📧 Gmail digest sent: {count} jobs to {recipients}")
+    return True
+
+
+def _flush_gmail_digest(crawl_job_id, user_id, db, r):
+    """Send batched Gmail digest for all jobs queued during a crawl, if any."""
+    key = f"crawl:{crawl_job_id}:pending_gmail"
+    job_ids_raw = r.lrange(key, 0, -1)
+    if not job_ids_raw:
+        return
+    r.delete(key)
+
+    job_ids = [int(jid) for jid in job_ids_raw]
+    jobs = db.query(JobEntry).filter(JobEntry.id.in_(job_ids)).all()
+    if not jobs:
+        return
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        return
+
+    platform = None
+    if jobs[0].platform_id:
+        platform = db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
+
+    try:
+        _send_via_gmail_batch(jobs, profile, platform)
+    except Exception as e:
+        logger.error(f"Gmail digest failed: {e}")
+
+
+def _send_via_gmail(job, profile, platform=None):
     """Send a notification via Gmail. Returns True on success."""
     if not profile.gmail_address or not profile.gmail_app_password:
         logger.warning("Gmail notification enabled but credentials missing.")
@@ -82,7 +185,18 @@ def _send_via_gmail(job, profile):
     msg["From"] = profile.gmail_address
     msg["To"] = profile.gmail_address
 
-    html = f"""
+    custom_template = platform.gmail_template if platform else None
+    if custom_template:
+        from string import Template
+        html = Template(custom_template).safe_substitute(
+            title=job.title,
+            company=job.company,
+            match_score=int(job.match_score),
+            reasoning=job.reasoning or "",
+            url=job.url,
+        )
+    else:
+        html = f"""
     <html>
       <body>
         <h2>New Job Found!</h2>
@@ -137,14 +251,14 @@ def _send_via_pushover(job, profile):
         return False
 
 
-def send_notification(job, profile, adapters=None):
+def send_notification(job, profile, adapters=None, platform=None):
     """
     Sends notifications via the specified adapters (e.g. ['GMAIL', 'PUSHOVER']).
     If adapters is None or empty, falls back to profile.active_notification_service.
     Sends via all specified adapters and returns True if at least one succeeded.
     """
     _adapter_fns = {
-        "GMAIL": _send_via_gmail,
+        "GMAIL": lambda j, p: _send_via_gmail(j, p, platform=platform),
         "PUSHOVER": _send_via_pushover,
     }
 
@@ -410,6 +524,7 @@ def analyze_job_task(job_data):
                         logger.info(
                             f"All jobs processed (some skipped) for crawl {crawl_job_id}. Marking as completed."
                         )
+                        _flush_gmail_digest(crawl_job_id, user_id, db, r)
                         r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                         r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                         r.delete("system:crawling")
@@ -455,14 +570,27 @@ def analyze_job_task(job_data):
             messages=[
                 {
                     "role": "system",
-                    "content": "Antworte NUR JSON: { 'score': 0-100, 'reason_de': '...' }",
+                    "content": (
+                        "Du bist ein erfahrener Career Advisor. Analysiere die Passung zwischen dem Kandidatenprofil und der Stellenbeschreibung. "
+                        "Antworte ausschließlich mit einem JSON-Objekt ohne Markdown-Codeblöcke:\n"
+                        '{ "score": <integer 0-100>, "reasoning": "<detaillierter Markdown-Text>" }\n\n'
+                        "Das Feld 'reasoning' muss folgende Markdown-Abschnitte enthalten:\n"
+                        "## 🎯 Zusammenfassung\n"
+                        "Kurze Bewertung der Gesamtpassung (2-3 Sätze).\n\n"
+                        "## 💪 Stärken & Match\n"
+                        "Stichpunkte zu den Bereichen, in denen der Kandidat besonders gut passt.\n\n"
+                        "## ⚠️ Lücken & Herausforderungen\n"
+                        "Stichpunkte zu fehlenden Skills oder Anforderungen, die der Kandidat nicht erfüllt.\n\n"
+                        "## 💡 Empfehlung\n"
+                        "Konkrete Handlungsempfehlung: Bewerben, mit Vorbehalt bewerben oder überspringen."
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": f"Job: {job_data['title']} \n {job_data['description'][:3000]} \n User: {profile_str}",
+                    "content": f"Stellentitel: {job_data['title']}\n\nStellenbeschreibung:\n{job_data['description'][:10000]}\n\nKandidatenprofil:\n{profile_str}",
                 },
             ],
-            temperature=0.0,
+            temperature=0.3,
         )
         content = (
             response.choices[0]
@@ -491,7 +619,7 @@ def analyze_job_task(job_data):
             description=job_data["description"],
             match_score=float(data.get("score", 0)),
             url=job_url,
-            reasoning=data.get("reason_de", ""),
+            reasoning=data.get("reasoning", ""),
             application_draft=None,
             status="OPEN",
             user_id=user_id,
@@ -548,8 +676,6 @@ def analyze_job_task(job_data):
 
         # --- NOTIFICATION LOGIC ---
         try:
-            # Re-fetch job to ensure attached to session if needed (though db_job should be valid)
-            # Check platform settings
             if db_job.platform_id:
                 platform = (
                     db.query(JobPlatform)
@@ -568,13 +694,30 @@ def analyze_job_task(job_data):
                     )
 
                     if settings_profile:
-                        platform_adapters = platform.notification_adapters or []
-                        sent = send_notification(
-                            db_job,
-                            settings_profile,
-                            adapters=platform_adapters if platform_adapters else None,
-                        )
-                        if sent:
+                        platform_adapters = [a.upper() for a in (platform.notification_adapters or [])]
+                        non_gmail = [a for a in platform_adapters if a != "GMAIL"]
+                        has_gmail = "GMAIL" in platform_adapters
+
+                        sent = False
+                        # Non-Gmail adapters (e.g. PUSHOVER) fire per job
+                        if non_gmail:
+                            sent = send_notification(
+                                db_job,
+                                settings_profile,
+                                adapters=non_gmail,
+                                platform=platform,
+                            )
+
+                        # Gmail: queue for batch digest at crawl completion
+                        if has_gmail:
+                            if crawl_job_id:
+                                r.rpush(f"crawl:{crawl_job_id}:pending_gmail", db_job.id)
+                                r.expire(f"crawl:{crawl_job_id}:pending_gmail", 3600)
+                            else:
+                                # No crawl context — send immediately
+                                sent = _send_via_gmail(db_job, settings_profile, platform=platform) or sent
+
+                        if sent or has_gmail:
                             db_job.notification_sent = True
                             db.commit()
         except Exception as notif_e:
@@ -593,6 +736,7 @@ def analyze_job_task(job_data):
                     logger.info(
                         f"All jobs analyzed for crawl {crawl_job_id}. Marking as completed."
                     )
+                    _flush_gmail_digest(crawl_job_id, user_id, db, r)
                     r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                     r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                     r.delete("system:crawling")
