@@ -67,7 +67,7 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
     {
         href: '/archive',
         icon: 'Archive',
-        labelKey: 'archiv',
+        labelKey: 'archivePageTitle',
         matchType: 'startsWith',
     },
 ];

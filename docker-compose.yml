@@ -51,18 +51,18 @@ services:
     volumes:
       - ./server:/app
       - /app/__pycache__
-  # frontend:
-  #   build: ./frontend
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - APP_PREFIX=APP_
-  #     - ASSET_DIR=./.next/static
-  #     - APP_API_URL=http://localhost:8002
-  #   container_name: frontend
-  #   hostname: frontend
-  #   depends_on:
-  #     - server
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - APP_PREFIX=APP_
+      - ASSET_DIR=./.next/static
+      - APP_API_URL=http://localhost:8002
+    container_name: frontend
+    hostname: frontend
+    depends_on:
+      - server
 
 volumes:
   db_data:
