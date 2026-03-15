@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../components/AuthProvider';
 import DynamicList from './components/DynamicList';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
@@ -50,7 +50,7 @@ export default function Profile() {
 
   useEffect(() => {
     if (token) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, { credentials: 'include' })
+      fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`)
         .then(res => res.json())
         .then(data => {
           const profileData = data.profile || {};
@@ -81,10 +81,9 @@ export default function Profile() {
   const handleSubmit = async () => {
     setSaveStatus('saving');
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+      await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(formData),
       });
       setSaveStatus('saved');
@@ -103,9 +102,8 @@ export default function Profile() {
     const uploadData = new FormData();
     uploadData.append("file", file);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings/upload-cv`, {
         method: 'POST',
-        credentials: 'include',
         body: uploadData,
       });
       if (!res.ok) throw new Error('Upload failed');

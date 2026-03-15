@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '../../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
 import PageWrapper from '../../components/PageWrapper';
@@ -27,15 +27,11 @@ export default function OverviewDashboard() {
     useEffect(() => {
         if (!token) return;
         Promise.all([
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/statistics`, {
-                credentials: 'include',
-            }).then(res => {
+            fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/statistics`).then(res => {
                 if (res.status === 401) { logout(); return null; }
                 return res.json();
             }),
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`, {
-                credentials: 'include',
-            }).then(res => {
+            fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`).then(res => {
                 if (res.status === 401) return null;
                 return res.json();
             }),

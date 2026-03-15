@@ -1,6 +1,6 @@
 "use client";
 import { useState } from 'react';
-import { useAuth } from '../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../components/AuthProvider';
 import ConfirmModal from '../components/ConfirmModal';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
@@ -69,9 +69,8 @@ export default function Account() {
 
   const executeDeleteJobs = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs?keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
         method: 'DELETE',
-        credentials: 'include',
       });
       const data = await res.json();
       setStatus(`${data.count || 0} jobs deleted.`);
@@ -83,9 +82,8 @@ export default function Account() {
 
   const executeDeleteProfile = async () => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+      await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'DELETE',
-        credentials: 'include',
       });
       setStatus(t('saved'));
       refreshUser();
@@ -96,9 +94,8 @@ export default function Account() {
 
   const executeFactoryReset = async () => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
+      await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/user/reset`, {
         method: 'DELETE',
-        credentials: 'include',
       });
       setStatus(t('saved'));
       refreshUser();

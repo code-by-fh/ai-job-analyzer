@@ -10,6 +10,7 @@ import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { useNotification } from '../components/NotificationProvider';
+import { fetchWithAuth } from '../components/AuthProvider';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -60,8 +61,8 @@ function CompanyCard({ company }: { company: any }) {
 
     const handleUpdate = () => {
         setLoading(true);
-        fetch(`${API_BASE}/companies/${data.domain}/analyze`, {
-            method: 'POST', credentials: 'include',
+        fetchWithAuth(`${API_BASE}/companies/${data.domain}/analyze`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ force_refresh: true }),
         }).then(res => {
@@ -295,7 +296,7 @@ export default function CompaniesPage() {
     const [search, setSearch] = useState('');
 
     useEffect(() => {
-        fetch(`${API_BASE}/companies`, { credentials: 'include' })
+        fetchWithAuth(`${API_BASE}/companies`)
             .then(res => res.ok ? res.json() : [])
             .then(data => setCompanies(data))
             .catch(() => showError('GET /companies fehlgeschlagen'))

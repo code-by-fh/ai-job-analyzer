@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { StickyNote, Paperclip, Upload, Trash2, Download, FileText, FileImage, File, CheckSquare, Square, Plus, X, Eye, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
+import { fetchWithAuth } from '../AuthProvider';
 
 interface JobDocument {
     id: number;
@@ -194,7 +195,7 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
     const loadDocuments = useCallback(async () => {
         setDocsLoading(true);
         try {
-            const res = await fetch(`${apiBase}/jobs/${job.id}/documents`, { credentials: 'include' });
+            const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
             if (res.ok) setDocuments(await res.json());
             else showError(`GET /jobs/${job.id}/documents → HTTP ${res.status}`);
         } catch {
@@ -214,9 +215,8 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
             setNotesSaving(true);
             setNotesSaveError(false);
             try {
-                const res = await fetch(`${apiBase}/jobs/${job.id}`, {
+                const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}`, {
                     method: 'PATCH',
-                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ notes: value }),
                 });
@@ -240,9 +240,8 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
         try {
             const form = new FormData();
             form.append('file', file);
-            const res = await fetch(`${apiBase}/jobs/${job.id}/documents`, {
+            const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`, {
                 method: 'POST',
-                credentials: 'include',
                 body: form,
             });
             if (res.ok) {
@@ -271,9 +270,8 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
 
     const deleteDocument = async (docId: number) => {
         try {
-            const res = await fetch(`${apiBase}/jobs/${job.id}/documents/${docId}`, {
+            const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/${docId}`, {
                 method: 'DELETE',
-                credentials: 'include',
             });
             if (res.ok) setDocuments(prev => prev.filter(d => d.id !== docId));
             else showError(`DELETE /jobs/${job.id}/documents/${docId} → HTTP ${res.status}`);

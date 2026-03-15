@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logger } from '../lib/logger';
 import { CrawlJob } from '../(dashboard)/components/CrawlStatus';
-import { AuthContextType } from '../components/AuthProvider';
+import { AuthContextType, fetchWithAuth } from '../components/AuthProvider';
 import { useNotification } from '../components/NotificationProvider';
 import { Job } from '../lib/types';
 
@@ -50,7 +50,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
     const fetchCrawlStatus = useCallback(async () => {
         if (!user?.id) return;
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/crawl-status?user_id=${user.id}`);
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/scraper/crawl-status?user_id=${user.id}`);
             const data = await res.json();
             if (data.jobs && data.jobs.length > 0) {
                 const jobsMap = new Map<string, CrawlJob>();
@@ -74,7 +74,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
         if (!crawlToCancel || !user?.id) return;
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/cancel-crawl`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/scraper/cancel-crawl`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ job_id: crawlToCancel, user_id: user.id })

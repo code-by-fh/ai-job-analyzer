@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth } from '../../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useRouter } from 'next/navigation';
 import PageWrapper from '../../components/PageWrapper';
@@ -55,12 +55,11 @@ export default function AdminSettingsPage() {
         setWipeStatus('Lösche Datenbank...');
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/database/wipe`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/database/wipe`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include',
                 body: JSON.stringify({
                     password: wipePassword,
                     wipe_all_users: wipeAllUsers
@@ -109,9 +108,7 @@ export default function AdminSettingsPage() {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`);
             if (res.ok) {
                 const data = await res.json();
                 setModel(data.openrouter_model);
@@ -128,9 +125,7 @@ export default function AdminSettingsPage() {
         setModelsLoading(true);
         setModelsError('');
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/openrouter/models`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/openrouter/models`);
             if (res.ok) {
                 const data: OpenRouterModel[] = await res.json();
                 setModels(data);
@@ -154,12 +149,11 @@ export default function AdminSettingsPage() {
             if (apiKey !== '') {
                 payload.openrouter_api_key = apiKey || null;
             }
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include',
                 body: JSON.stringify(payload)
             });
             if (res.ok) {

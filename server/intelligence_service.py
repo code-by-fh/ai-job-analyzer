@@ -45,11 +45,11 @@ def get_api_key(db=None) -> str:
                 return settings.openrouter_api_key
     except Exception:
         pass
-    return os.getenv("OPENAI_API_KEY", "")
+    return ""
 
 
 def get_ai_client(api_key: str = None):
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
+    key = api_key or ""
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=key,

@@ -76,7 +76,7 @@ graph TD
 
 ### Prerequisites
 *   [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/) must be installed.
-*   An OpenAI API Key.
+*   An [OpenRouter](https://openrouter.ai/) API Key (configured via the Admin UI after setup).
 
 ### Setup
 
@@ -87,9 +87,8 @@ graph TD
     ```
 
 2.  **Configure Environment Variables**:
-    Create a `.env` file in the main directory (see `.env.example`) and enter your OpenAI API Key:
+    Create a `.env` file in the main directory (see `.env.example`) and set the database credentials:
     ```env
-    OPENAI_API_KEY=sk-YourApiKey...
     POSTGRES_USER=user
     POSTGRES_PASSWORD=password
     POSTGRES_DB=jobdb
@@ -119,12 +118,12 @@ After starting, the services are available at the following addresses:
 
 ## ⚙️ Administration
 
-### OpenRouter Model Configuration
-The application allows the admin user to configure the OpenRouter model used for all AI operations (Scraping, Analysis, Application Generation).
+### OpenRouter Configuration
+The OpenRouter API key and model are configured entirely via the Admin UI — no environment variables needed.
 
 1.  **Log in** as an administrator.
 2.  Navigate to **System Settings** via the sidebar or user menu.
-3.  Enter the desired **OpenRouter Model ID** (e.g., `anthropic/claude-3-opus`, `openai/gpt-4`).
+3.  Enter your **OpenRouter API Key** and the desired **Model ID** (e.g., `anthropic/claude-3-opus`, `openai/gpt-4`).
 4.  **Save** the configuration.
 
 *Default Model: `tngtech/deepseek-r1t2-chimera:free`*

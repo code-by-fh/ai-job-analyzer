@@ -4,6 +4,7 @@ import { Check, Copy, Download, FileText, Loader2, Edit2, X, Save } from 'lucide
 import { useLanguage } from '../LanguageProvider';
 import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
+import { fetchWithAuth } from '../AuthProvider';
 
 interface JobApplicationTabProps {
     job: Job;
@@ -38,9 +39,7 @@ export default function JobApplicationTab({
     const handleDownload = async () => {
         try {
             const baseUrl = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
-            const res = await fetch(`${baseUrl}/jobs/${encodeURIComponent(job.id)}/download`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${baseUrl}/jobs/${encodeURIComponent(job.id)}/download`);
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));

@@ -4,6 +4,7 @@ import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
 import { STATUS_GUIDANCE, STATUS_META, STATUS_PIPELINE } from './constants';
 import type { TabType } from './types';
+import { fetchWithAuth } from '../AuthProvider';
 
 interface JobStatusTabProps {
     job: Job;
@@ -20,7 +21,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
         let mounted = true;
         if (history === null && !historyLoading) {
             setHistoryLoading(true);
-            fetch(`${apiBase}/jobs/${job.id}/history`, { credentials: 'include' })
+            fetchWithAuth(`${apiBase}/jobs/${job.id}/history`)
                 .then(r => r.json())
                 .then(data => { if (mounted) setHistory(data); })
                 .catch(() => { if (mounted) setHistory([]); })

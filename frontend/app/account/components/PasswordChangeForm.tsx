@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../../components/LanguageProvider';
 import PasswordInput from '../../components/PasswordInput';
+import { fetchWithAuth } from '../../components/AuthProvider';
 
 export default function PasswordChangeForm({ token }: { token: string | null }) {
     const { t } = useLanguage();
@@ -17,12 +18,11 @@ export default function PasswordChangeForm({ token }: { token: string | null }) 
         setStatus('');
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/change-password`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/auth/change-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include',
                 body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
             });
 

@@ -6,7 +6,7 @@ import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import UserMenu from './UserMenu';
 import ThemeToggler from './ThemeToggler';
 import LanguageToggler from './LanguageToggler';
-import { useAuth } from './AuthProvider';
+import { useAuth, fetchWithAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import { useNotification } from './NotificationProvider';
 import AIErrorBanner from './AIErrorBanner';
@@ -26,7 +26,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     // Restore persisted AI error banner on any page reload
     React.useEffect(() => {
         if (!user) return;
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`, { credentials: 'include' })
+        fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/status`)
             .then(r => r.json())
             .then(data => { if (data.ai_error) showError(data.ai_error); })
             .catch(() => {});

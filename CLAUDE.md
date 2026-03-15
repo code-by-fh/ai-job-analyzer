@@ -9,7 +9,7 @@
 # Architecture & Environment Quirks
 - **Auth**: Uses stateful `HttpOnly` cookies and verifies `token_version`. DO NOT use `localStorage` for auth state.
 - **API Topology**: AI service, Scraper API (`/scraper`), and Celery workers are bundled in a single container via supervisord.
-- **Environment**: `OPENAI_API_KEY` applies to OpenRouter. Frontend requires `APP_API_URL`.
+- **Environment**: OpenRouter API key is configured via Admin UI (stored in DB). Frontend requires `APP_API_URL`.
 
 # UI & Styling Conventions
 - **Page Rules**: ALL new top-level pages MUST use `<PageWrapper>` and `<PageHeader>` for consistent layout and animations.

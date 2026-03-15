@@ -107,10 +107,16 @@ def get_current_model(db: Session = None):
             db.close()
 
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENAI_API_KEY"),
-)
+def get_openrouter_client():
+    db = SessionLocal()
+    try:
+        settings = db.query(SystemSettings).first()
+        api_key = settings.openrouter_api_key if settings else ""
+    except Exception:
+        api_key = ""
+    finally:
+        db.close()
+    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
 
 class ConnectionManager:
@@ -304,7 +310,7 @@ def get_openrouter_models(current_user: User = Depends(get_current_admin_user)):
     db = SessionLocal()
     try:
         settings = db.query(SystemSettings).first()
-        api_key = (settings.openrouter_api_key if settings else None) or os.getenv("OPENAI_API_KEY", "")
+        api_key = settings.openrouter_api_key if settings else None
     finally:
         db.close()
 
@@ -368,7 +374,7 @@ def parse_cv_with_ai(cv_text):
     try:
         model = get_current_model()
         logger.info(f"Using Model for CV Parse: {model}")
-        response = client.chat.completions.create(
+        response = get_openrouter_client().chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},

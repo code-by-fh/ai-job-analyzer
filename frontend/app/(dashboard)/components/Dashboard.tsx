@@ -2,7 +2,7 @@
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useAuth } from '../../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import { useNotification } from '../../components/NotificationProvider';
 
@@ -57,9 +57,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     useEffect(() => {
         if (token && !initialDataLoaded) {
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`, {
-                credentials: 'include',
-            })
+            fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data?limit=10&offset=0&filter_type=${initialFilter}`)
                 .then(res => {
                     if (res.status === 401) { logout(); return null; }
                     return res.json();
@@ -125,9 +123,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     const refreshJob = useCallback(async (jobId: string) => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`);
             if (!res.ok) return;
             const updatedJob = await res.json();
             setJobs(prev => prev.map(j => j.id === jobId ? { ...j, ...updatedJob } : j));
@@ -274,9 +270,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
         setPendingIds(prev => [...prev, job.id]);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
                 method: 'POST',
-                credentials: 'include',
             });
         } catch (e) {
             setPendingIds(prev => prev.filter(id => id !== job.id));

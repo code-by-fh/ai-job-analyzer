@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { AlertTriangle, Building2, CheckCircle2, ChevronDown, Globe, Loader2, RefreshCw, TrendingUp, Users } from 'lucide-react';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
+import { fetchWithAuth } from '../AuthProvider';
 
 interface JobCompanyTabProps {
     job: Job;
@@ -56,7 +57,7 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
     useEffect(() => {
         if (job.company_domain && !companyData && !companyLoading) {
             setCompanyLoading(true);
-            fetch(`${apiBase}/companies/${job.company_domain}`, { credentials: 'include' })
+            fetchWithAuth(`${apiBase}/companies/${job.company_domain}`)
                 .then(res => res.ok ? res.json() : null)
                 .then(data => { if (data) setCompanyData(data); })
                 .catch(() => showError(`GET /companies/${job.company_domain} fehlgeschlagen`))
@@ -68,8 +69,8 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
     const handleUpdate = () => {
         setCompanyLoading(true);
         setCompanyData(null);
-        fetch(`${apiBase}/companies/${job.company_domain}/analyze`, {
-            method: 'POST', credentials: 'include',
+        fetchWithAuth(`${apiBase}/companies/${job.company_domain}/analyze`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ force_refresh: true }),
         }).then(res => {
@@ -81,8 +82,8 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
 
     const handleAnalyze = () => {
         setCompanyQueued(true);
-        fetch(`${apiBase}/companies/${job.company_domain}/analyze`, {
-            method: 'POST', credentials: 'include',
+        fetchWithAuth(`${apiBase}/companies/${job.company_domain}/analyze`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ force_refresh: false }),
         }).then(res => {

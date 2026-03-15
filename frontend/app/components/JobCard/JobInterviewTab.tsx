@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Brain, FileText, Loader2, RefreshCw, Zap, Target, MessageSquare, ChevronDown, AlertTriangle } from 'lucide-react';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
+import { fetchWithAuth } from '../AuthProvider';
 
 interface JobInterviewTabProps {
     job: Job;
@@ -72,7 +73,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
     const handleGenerate = () => {
         setInterviewQueued(true);
-        fetch(`${apiBase}/jobs/${job.id}/interview-prep`, { method: 'POST', credentials: 'include' })
+        fetchWithAuth(`${apiBase}/jobs/${job.id}/interview-prep`, { method: 'POST' })
             .then(res => { if (!res.ok) throw new Error(`POST /jobs/${job.id}/interview-prep → HTTP ${res.status}`); })
             .catch((e: Error) => { setInterviewQueued(false); showError(e.message); });
     };

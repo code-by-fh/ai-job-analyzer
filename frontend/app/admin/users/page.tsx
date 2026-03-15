@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../components/AuthProvider';
+import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import PageWrapper from '../../components/PageWrapper';
 import PageHeader from '../../components/PageHeader';
@@ -24,9 +24,7 @@ export default function UserManagementPage() {
 
     const fetchUsers = async () => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/users`);
             if (res.ok) {
                 const data = await res.json();
                 setUsers(data);
@@ -48,12 +46,11 @@ export default function UserManagementPage() {
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include',
                 body: JSON.stringify({ username: newUsername, password: newPassword })
             });
             if (res.ok) {
@@ -77,9 +74,8 @@ export default function UserManagementPage() {
     const executeDelete = async () => {
         if (!userToDelete) return;
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userToDelete}`, {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/users/${userToDelete}`, {
                 method: 'DELETE',
-                credentials: 'include',
             });
             fetchUsers();
         } catch (e) {

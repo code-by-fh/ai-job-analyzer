@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { logger } from '../lib/logger';
 import { Job } from '../lib/types';
 import { JobStatus } from '../components/JobStatusBadge';
+import { fetchWithAuth } from '../components/AuthProvider';
 
 interface UseJobsProps {
     token: string | null;
@@ -61,9 +62,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
                 queryParams.append('is_archived', 'true');
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`, {
-                credentials: 'include',
-            });
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs?${queryParams}`);
 
             if (res.status === 401) { logout(); return; }
 
@@ -108,9 +107,8 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         if (!jobToDelete) return;
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobToDelete}`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobToDelete}`, {
                 method: 'DELETE',
-                credentials: 'include',
             });
             if (res.ok) {
                 setJobs(prev => prev.filter(job => job.id !== jobToDelete));
@@ -128,9 +126,8 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
 
     const handleToggleFavorite = async (jobId: string, currentStatus: boolean) => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/favorite`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/favorite`, {
                 method: 'PATCH',
-                credentials: 'include',
             });
             if (res.ok) {
                 const data = await res.json();
@@ -146,12 +143,11 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
     const bulkDeleteJobs = async (jobIds: string[]) => {
         if (!jobIds.length) return false;
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/bulk-delete`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/bulk-delete`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({ job_ids: jobIds })
             });
 
@@ -173,12 +169,11 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
 
     const handleUpdateStatus = async (jobId: string, newStatus: JobStatus) => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/update-status`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/update-status`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({ status: newStatus })
             });
             if (res.ok) {
@@ -198,12 +193,11 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
 
     const updateJob = async (jobId: string, payload: Partial<Job>) => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify(payload)
             });
             if (res.ok) {

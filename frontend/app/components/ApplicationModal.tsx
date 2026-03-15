@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
 import { logger } from '../lib/logger';
+import { fetchWithAuth } from './AuthProvider';
 
 interface Props {
   isOpen: boolean;
@@ -39,9 +40,7 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
 
   const handleDownload = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/download`, {
-        credentials: 'include',
-      });
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/download`);
       if (!res.ok) throw new Error(t('downloadFailed'));
 
       const blob = await res.blob();
