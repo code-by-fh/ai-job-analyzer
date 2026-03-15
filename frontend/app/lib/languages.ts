@@ -308,6 +308,11 @@ export const translations = {
         timezonePreference: "Timezone",
         timezoneDescription: "Used for job platform scheduling. Make sure this matches your local time.",
         timezoneSaved: "Timezone saved",
+
+        // First Run / Manual Analysis
+        firstRunNotice: "Note: On the first run, no automatic AI analysis is performed. You can trigger it manually from the job card.",
+        triggerAnalysis: "Trigger AI Analysis",
+        analysisTriggered: "AI analysis started",
         timezoneSaving: "Saving...",
         timezoneError: "Error saving timezone",
 
@@ -729,6 +734,11 @@ export const translations = {
         timezonePreference: "Zeitzone",
         timezoneDescription: "Wird für die Zeitplanung von Job-Plattformen verwendet. Stelle sicher, dass dies deiner lokalen Zeit entspricht.",
         timezoneSaved: "Zeitzone gespeichert",
+
+        // First Run / Manual Analysis
+        firstRunNotice: "Hinweis: Beim ersten Lauf wird keine automatische KI-Analyse durchgeführt. Du kannst diese später manuell anstoßen.",
+        triggerAnalysis: "KI-Analyse anstoßen",
+        analysisTriggered: "KI-Analyse gestartet",
         timezoneSaving: "Speichern...",
         timezoneError: "Fehler beim Speichern der Zeitzone",
 

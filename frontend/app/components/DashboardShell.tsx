@@ -130,6 +130,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             label={label(item)}
                             active={isActive(item)}
                             collapsed={sidebarCollapsed}
+                            color={item.color}
                         />
                     ))}
                     {hasAdmin && (
@@ -148,6 +149,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                     label={label(item)}
                                     active={isActive(item)}
                                     collapsed={sidebarCollapsed}
+                                    color={item.color}
                                 />
                             ))}
                         </>
@@ -240,7 +242,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                             }
                                         `}
                                     >
-                                        <DynamicIcon name={item.icon} className="w-5 h-5" />
+                                        <DynamicIcon name={item.icon} className={`w-5 h-5 ${item.color || ''}`} />
                                         <span>{label(item)}</span>
                                     </Link>
                                 ))}
@@ -284,7 +286,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                 </span>
                             )}
                             <span className={`transition-transform duration-200 ${active ? 'scale-110' : ''}`}>
-                                <DynamicIcon name={item.icon} className="w-6 h-6" />
+                                <DynamicIcon name={item.icon} className={`w-6 h-6 ${item.color || ''}`} />
                             </span>
                             <span className="text-[10px] font-medium leading-none">{label(item)}</span>
                         </Link>
@@ -353,13 +355,14 @@ function CollapsedLogout() {
     );
 }
 
-function SidebarLink({ href, icon, label, active, collapsed, onClick }: {
+function SidebarLink({ href, icon, label, active, collapsed, onClick, color }: {
     href: string;
     icon: string;
     label: string;
     active: boolean;
     collapsed?: boolean;
     onClick?: () => void;
+    color?: string;
 }) {
     return (
         <Link
@@ -379,7 +382,7 @@ function SidebarLink({ href, icon, label, active, collapsed, onClick }: {
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-indigo-500 dark:bg-indigo-400 rounded-r-full" />
             )}
             <span className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>
-                <DynamicIcon name={icon} className="w-5 h-5" />
+                <DynamicIcon name={icon} className={`w-5 h-5 ${color || ''}`} />
             </span>
             {!collapsed && <span className="truncate">{label}</span>}
         </Link>

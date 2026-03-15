@@ -13,7 +13,7 @@ import redis
 
 from scraper_celery_config import celery_app, REDIS_URL
 from intelligence_service import extract_job_details, get_model, get_api_key
-from database import SessionLocal, UserProfile
+from database import SessionLocal, UserProfile, JobEntry
 
 # Logging Setup
 from logger import get_logger
@@ -268,6 +268,59 @@ def schedule_crawls_task(args):
                 ),
             )
 
+        # First-run: just store the found URLs as deduplication placeholders.
+        # No detail scraping or AI analysis — subsequent runs will only process NEW URLs.
+        is_initial_flag = r.hget(f"crawl_job:{job_id}", "is_initial_run") if job_id else None
+        is_initial_run = is_initial_flag is not None and int(is_initial_flag) == 1
+
+        if is_initial_run:
+            db = SessionLocal()
+            try:
+                stored = 0
+                for link in filtered_links:
+                    entry_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{link}"))
+                    if not db.query(JobEntry).filter(JobEntry.id == entry_id).first():
+                        db.add(JobEntry(
+                            id=entry_id,
+                            url=link,
+                            title="",
+                            company="",
+                            description="",
+                            match_score=0.0,
+                            reasoning="",
+                            status="SEEN",
+                            user_id=user_id,
+                            platform_id=platform_id,
+                        ))
+                        stored += 1
+                db.commit()
+                logger.info(f"Initial run: stored {stored} URL placeholders for job {job_id}.")
+            except Exception as db_e:
+                logger.error(f"Error storing initial URLs for job {job_id}: {db_e}")
+                db.rollback()
+            finally:
+                db.close()
+
+            if job_id:
+                n = len(filtered_links)
+                r.hset(f"crawl_job:{job_id}", mapping={
+                    "total": n,
+                    "scraping_completed": n,
+                    "jobs_saved": stored,
+                    "status": "completed",
+                })
+                r.srem(f"user:{user_id}:active_crawls", job_id)
+                r.delete("system:crawling")
+                r.publish("job_updates", json.dumps({
+                    "type": "crawl_job_completed",
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "total": n,
+                    "total_found": total_found,
+                }))
+                r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+            return
+
         for link in filtered_links:
             celery_app.send_task(
                 "scraper.scrape_detail",
@@ -285,6 +338,37 @@ def schedule_crawls_task(args):
             fail_crawl_job(job_id, user_id, error_message=str(e))
 
 
+def _mark_scrape_failed(r, job_id, user_id):
+    """
+    Account for a URL that failed to scrape in the completion tracking.
+    Increments jobs_skipped and publishes crawl_job_completed if all URLs are done.
+    """
+    if not job_id:
+        return
+    # Increment first, then read fresh state to avoid stale reads
+    jobs_skipped = int(r.hincrby(f"crawl_job:{job_id}", "jobs_skipped", 1))
+    job_hash = r.hgetall(f"crawl_job:{job_id}")
+    if not job_hash:
+        return
+    jobs_saved = int(job_hash.get(b"jobs_saved", 0))
+    total = int(job_hash.get(b"total", 0))
+    if total > 0 and (jobs_saved + jobs_skipped) >= total:
+        stored_user_id = int(job_hash.get(b"user_id", user_id or 0))
+        total_found_raw = job_hash.get(b"total_found")
+        total_found = int(total_found_raw) if total_found_raw else total
+        r.hset(f"crawl_job:{job_id}", "status", "completed")
+        r.srem(f"user:{stored_user_id}:active_crawls", job_id)
+        r.delete("system:crawling")
+        r.publish("job_updates", json.dumps({
+            "type": "crawl_job_completed",
+            "job_id": job_id,
+            "user_id": stored_user_id,
+            "total": total,
+            "total_found": total_found,
+        }))
+        r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+
+
 @celery_app.task(name="scraper.scrape_detail")
 def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
@@ -296,6 +380,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
         html = get_html_with_browser(url)
         if not html:
             logger.warning(f"Skipping {url} due to download failure.")
+            _mark_scrape_failed(r, job_id, user_id)
             return
 
         content = get_clean_content(html)
@@ -391,16 +476,6 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
 
     except Exception as e:
         logger.error(f"Error in scrape_job_detail_task for {url}: {e}", exc_info=True)
-        if job_id:
-            job_data_redis = r.hgetall(f"crawl_job:{job_id}")
-            if job_data_redis:
-                scraping_completed = int(
-                    r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1)
-                )
-                total_bytes = r.hget(f"crawl_job:{job_id}", "total")
-                total = int(total_bytes.decode("utf-8")) if total_bytes else 0
-
-                if scraping_completed >= total and total > 0:
-                    logger.warning(f"Job {job_id} completed with errors")
+        _mark_scrape_failed(r, job_id, user_id)
     finally:
         db.close()

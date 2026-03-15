@@ -7,7 +7,7 @@ import PageWrapper from '../../components/PageWrapper';
 import PageHeader from '../../components/PageHeader';
 import ConfirmModal from '../../components/ConfirmModal';
 import { logger } from '../../lib/logger';
-import { Key, Bot, ChevronDown, CheckCircle2, RefreshCw, Search, X, ExternalLink } from 'lucide-react';
+import { Key, Bot, ChevronDown, CheckCircle2, RefreshCw, Search, X, ExternalLink, Trash2 } from 'lucide-react';
 import TemplateManager from '../../components/TemplateManager';
 
 interface OpenRouterModel {
@@ -44,6 +44,34 @@ export default function AdminSettingsPage() {
     const [wipeAllUsers, setWipeAllUsers] = useState(false);
     const [wipeStatus, setWipeStatus] = useState('');
     const [wipeLoading, setWipeLoading] = useState(false);
+
+    const [redisCleanupStatus, setRedisCleanupStatus] = useState('');
+    const [redisCleanupLoading, setRedisCleanupLoading] = useState(false);
+
+    const handleRedisCleanup = async () => {
+        setRedisCleanupLoading(true);
+        setRedisCleanupStatus('Cleaning...');
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/redis/cleanup`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setRedisCleanupStatus(
+                    data.removed > 0
+                        ? `${data.removed} stale job(s) removed.`
+                        : 'No stale jobs found.'
+                );
+            } else {
+                setRedisCleanupStatus('Error: cleanup failed');
+            }
+        } catch (e) {
+            setRedisCleanupStatus('Network error');
+        } finally {
+            setRedisCleanupLoading(false);
+            setTimeout(() => setRedisCleanupStatus(''), 5000);
+        }
+    };
 
     const handleWipeDatabase = async () => {
         if (!wipePassword) {
@@ -405,6 +433,30 @@ export default function AdminSettingsPage() {
             {/* Notification Templates */}
             <div className="relative z-10 mt-8 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <TemplateManager isAdmin={true} adminMode={true} />
+            </div>
+
+            {/* Maintenance */}
+            <div className="relative z-10 mt-8 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">Maintenance</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Remove crawl jobs from Redis that have been stuck for more than 5 minutes. This runs automatically every minute but can be triggered manually.
+                </p>
+                <div className="flex items-center gap-4">
+                    <button
+                        type="button"
+                        onClick={handleRedisCleanup}
+                        disabled={redisCleanupLoading}
+                        className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        {redisCleanupLoading ? 'Cleaning...' : 'Clean up stale Redis jobs'}
+                    </button>
+                    {redisCleanupStatus && (
+                        <span className={`text-sm font-bold ${redisCleanupStatus.includes('Error') ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            {redisCleanupStatus}
+                        </span>
+                    )}
+                </div>
             </div>
 
             {/* Danger Zone */}

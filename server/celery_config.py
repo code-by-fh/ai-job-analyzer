@@ -13,4 +13,9 @@ celery_app.conf.beat_schedule = {
         "schedule": 60.0,
         "options": {"queue": "ai_queue"},
     },
+    "cleanup-stale-redis-jobs": {
+        "task": "ai.cleanup_stale_redis_jobs",
+        "schedule": 60.0,
+        "options": {"queue": "ai_queue"},
+    },
 }

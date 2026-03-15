@@ -289,6 +289,48 @@ def clear_ai_error_endpoint(current_user: User = Depends(get_current_admin_user)
     return {"status": "cleared"}
 
 
+@app.post("/admin/redis/cleanup")
+def cleanup_stale_redis_jobs_endpoint(current_user: User = Depends(get_current_admin_user)):
+    """Immediately remove crawl jobs from Redis that are older than 5 minutes."""
+    import time as time_module
+
+    STALE_THRESHOLD_MS = 5 * 60 * 1000
+    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+    r = redis_sync.from_url(redis_url, decode_responses=True)
+
+    now_ms = int(time_module.time() * 1000)
+    removed = 0
+
+    job_keys = r.keys("crawl_job:*")
+    job_keys = [k for k in job_keys if k.count(":") == 1]
+
+    for key in job_keys:
+        job_data = r.hgetall(key)
+        if not job_data:
+            continue
+        started_at = job_data.get("started_at")
+        if not started_at:
+            continue
+        age_ms = now_ms - int(started_at)
+        if age_ms < STALE_THRESHOLD_MS:
+            continue
+        status = job_data.get("status", "")
+        if status == "completed":
+            continue
+        job_id = key.split(":", 1)[1]
+        user_id = job_data.get("user_id")
+        r.delete(key)
+        r.delete(f"crawl_job:{job_id}:all_job_titles")
+        if user_id:
+            r.srem(f"user:{user_id}:active_crawls", job_id)
+        removed += 1
+
+    if removed:
+        r.delete("system:crawling")
+
+    return {"removed": removed}
+
+
 @app.post("/admin/settings")
 def update_admin_settings(
     settings: SystemSettingsUpdate, current_user: User = Depends(get_current_admin_user)
@@ -610,6 +652,7 @@ def get_job_counts(current_user: User = Depends(get_current_user), is_archived: 
         base_filters = [
             JobEntry.user_id == current_user.id,
             JobEntry.is_archived == is_archived,
+            JobEntry.status != "SEEN",
         ]
 
         status_rows = db.query(JobEntry.status, func.count(JobEntry.id)).filter(
@@ -667,6 +710,7 @@ def get_jobs(
         query = db.query(JobEntry).filter(
             JobEntry.user_id == current_user.id,
             JobEntry.is_archived == is_archived,
+            JobEntry.status != "SEEN",
         )
 
         # Filtering
@@ -738,6 +782,33 @@ def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
             "salary_benchmark": job.salary_benchmark,
             "notes": job.notes,
         }
+    finally:
+        db.close()
+
+
+@app.post("/jobs/{job_id}/analyze")
+def trigger_job_analysis(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job_data = {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "description": job.description or "",
+            "url": job.url,
+            "user_id": current_user.id,
+            "platform_id": job.platform_id,
+            "force_reanalyze": True,
+        }
+        celery_app.send_task("ai.analyze_job", args=[job_data], queue="ai_queue")
+        return {"status": "started"}
     finally:
         db.close()
 
@@ -1278,10 +1349,10 @@ def get_platforms(current_user: User = Depends(get_current_user)):
     try:
         from sqlalchemy import func
 
-        # Subquery to count jobs per platform
+        # Subquery to count jobs per platform (excludes SEEN placeholders)
         job_counts = (
             db.query(JobEntry.platform_id, func.count(JobEntry.id).label("job_count"))
-            .filter(JobEntry.user_id == current_user.id)
+            .filter(JobEntry.user_id == current_user.id, JobEntry.status != "SEEN")
             .group_by(JobEntry.platform_id)
             .subquery()
         )
@@ -1443,12 +1514,13 @@ def update_platform(
         db.commit()
         db.refresh(db_platform)
 
-        # Get job count
+        # Get job count (excludes SEEN placeholders)
         job_count = (
             db.query(JobEntry).filter(
                 JobEntry.platform_id == db_platform.id,
                 JobEntry.user_id == current_user.id,
-                JobEntry.is_archived == False
+                JobEntry.is_archived == False,
+                JobEntry.status != "SEEN",
             ).count()
         )
 
@@ -2252,7 +2324,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
 
         job_counts = (
             db.query(JobEntry.platform_id, func.count(JobEntry.id).label("job_count"))
-            .filter(JobEntry.user_id == current_user.id)
+            .filter(JobEntry.user_id == current_user.id, JobEntry.status != "SEEN")
             .group_by(JobEntry.platform_id)
             .subquery()
         )

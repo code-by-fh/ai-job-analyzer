@@ -479,8 +479,11 @@ def analyze_job_task(job_data):
             ),
         )
 
+    force_reanalyze = job_data.get("force_reanalyze", False)
+
     try:
-        if db.query(JobEntry).filter(JobEntry.id == job_data["id"]).first():
+        existing_job = db.query(JobEntry).filter(JobEntry.id == job_data["id"]).first()
+        if existing_job and not force_reanalyze:
             logger.info(f"Job {job_id} already exists in database. Skipping analysis.")
 
             if crawl_job_id:
@@ -583,28 +586,36 @@ def analyze_job_task(job_data):
             except Exception:
                 pass
 
-        db_job = JobEntry(
-            id=job_data["id"],
-            title=job_data["title"],
-            company=job_data["company"],
-            description=job_data["description"],
-            match_score=float(data.get("score", 0)),
-            url=job_url,
-            reasoning=data.get("reasoning", ""),
-            application_draft=None,
-            status="OPEN",
-            user_id=user_id,
-            platform_id=job_data.get("platform_id"),
-            company_domain=company_domain,
-        )
+        if existing_job and force_reanalyze:
+            existing_job.match_score = float(data.get("score", 0))
+            existing_job.reasoning = data.get("reasoning", "")
+            db.commit()
+            db.refresh(existing_job)
+            db_job = existing_job
+            logger.info(f"Job {job_id} re-analyzed and updated in database.")
+        else:
+            db_job = JobEntry(
+                id=job_data["id"],
+                title=job_data["title"],
+                company=job_data["company"],
+                description=job_data["description"],
+                match_score=float(data.get("score", 0)),
+                url=job_url,
+                reasoning=data.get("reasoning", ""),
+                application_draft=None,
+                status="OPEN",
+                user_id=user_id,
+                platform_id=job_data.get("platform_id"),
+                company_domain=company_domain,
+            )
+            db.add(db_job)
+            db.commit()
+            logger.info(f"Job {job_id} saved to database.")
 
-        db.add(db_job)
-        db.commit()
-        logger.info(f"Job {job_id} saved to database.")
-
+        event_type = "job_updated" if (existing_job and force_reanalyze) else "new_job"
         payload = json.dumps(
             {
-                "type": "new_job",
+                "type": event_type,
                 "crawl_job_id": crawl_job_id,
                 "job": {
                     "id": db_job.id,
@@ -614,7 +625,7 @@ def analyze_job_task(job_data):
                     "match_score": db_job.match_score,
                     "reasoning": db_job.reasoning,
                     "url": db_job.url,
-                    "status": "OPEN",
+                    "status": db_job.status,
                     "created_at": (
                         db_job.created_at.isoformat() if db_job.created_at else None
                     ),
@@ -624,7 +635,7 @@ def analyze_job_task(job_data):
         )
 
         r.publish("job_updates", payload)
-        logger.info(f" WebSocket Event 'new_job' published for {db_job.title}")
+        logger.info(f" WebSocket Event '{event_type}' published for {db_job.title}")
 
         # Increment jobs_saved counter
         crawl_job_id = job_data.get("crawl_job_id")
@@ -800,6 +811,161 @@ def analyze_job_task(job_data):
                 logger.error(
                     f"Failed to trigger cleanup for job {crawl_job_id}: {cleanup_e}"
                 )
+    finally:
+        db.close()
+
+
+@celery_app.task(name="ai.save_job_basic")
+def save_job_basic_task(job_data):
+    """Save a job to DB without AI analysis (used for initial platform run)."""
+    job_id = job_data.get("id", "unknown")
+    job_title = job_data.get("title", "unknown")
+    user_id = job_data.get("user_id")
+    crawl_job_id = job_data.get("crawl_job_id")
+
+    db = SessionLocal()
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+
+    try:
+        if crawl_job_id:
+            analysis_completed = int(
+                r.hincrby(f"crawl_job:{crawl_job_id}", "analysis_completed", 1)
+            )
+            r.lpush(f"crawl_job:{crawl_job_id}:all_job_titles", job_title)
+            r.publish(
+                "job_updates",
+                json.dumps({
+                    "type": "job_analysis_started",
+                    "job_id": crawl_job_id,
+                    "user_id": user_id,
+                    "job_title": job_title,
+                    "analysis_completed": analysis_completed,
+                }),
+            )
+
+        if db.query(JobEntry).filter(JobEntry.id == job_data["id"]).first():
+            logger.info(f"Job {job_id} already exists. Skipping basic save.")
+            if crawl_job_id:
+                jobs_skipped = int(
+                    r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_skipped", 1)
+                )
+                r.publish(
+                    "job_updates",
+                    json.dumps({
+                        "type": "job_skipped",
+                        "job_id": crawl_job_id,
+                        "user_id": user_id,
+                        "job_title": job_title,
+                        "jobs_skipped": jobs_skipped,
+                    }),
+                )
+                job_hash = r.hgetall(f"crawl_job:{crawl_job_id}")
+                if job_hash:
+                    total = int(job_hash.get(b"total", 0))
+                    jobs_saved = int(job_hash.get(b"jobs_saved", 0))
+                    if (jobs_saved + jobs_skipped) >= total and total > 0:
+                        _flush_gmail_digest(crawl_job_id, user_id, db, r)
+                        r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
+                        r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
+                        r.delete("system:crawling")
+                        total_found_raw = job_hash.get(b"total_found")
+                        total_found = int(total_found_raw) if total_found_raw else total
+                        r.publish("job_updates", json.dumps({
+                            "type": "crawl_job_completed",
+                            "job_id": crawl_job_id,
+                            "user_id": user_id,
+                            "total": total,
+                            "total_found": total_found,
+                        }))
+                        r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+            return
+
+        job_url = job_data.get("url")
+        company_domain = None
+        if job_url:
+            try:
+                parsed = urlparse(job_url)
+                company_domain = parsed.netloc.removeprefix("www.")
+            except Exception:
+                pass
+
+        db_job = JobEntry(
+            id=job_data["id"],
+            title=job_data["title"],
+            company=job_data["company"],
+            description=job_data["description"],
+            match_score=0.0,
+            url=job_url,
+            reasoning="",
+            application_draft=None,
+            status="OPEN",
+            user_id=user_id,
+            platform_id=job_data.get("platform_id"),
+            company_domain=company_domain,
+        )
+        db.add(db_job)
+        db.commit()
+        logger.info(f"Job {job_id} saved (no AI analysis) to database.")
+
+        r.publish(
+            "job_updates",
+            json.dumps({
+                "type": "new_job",
+                "crawl_job_id": crawl_job_id,
+                "job": {
+                    "id": db_job.id,
+                    "title": db_job.title,
+                    "company": db_job.company,
+                    "description": db_job.description,
+                    "match_score": 0.0,
+                    "reasoning": "",
+                    "url": db_job.url,
+                    "status": "OPEN",
+                    "created_at": (
+                        db_job.created_at.isoformat() if db_job.created_at else None
+                    ),
+                    "user_id": user_id,
+                },
+            }),
+        )
+
+        if crawl_job_id:
+            jobs_saved = int(
+                r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_saved", 1)
+            )
+            r.publish(
+                "job_updates",
+                json.dumps({
+                    "type": "job_analysis_finished",
+                    "job_id": crawl_job_id,
+                    "user_id": user_id,
+                    "job_title": job_title,
+                    "jobs_saved": jobs_saved,
+                }),
+            )
+            job_hash = r.hgetall(f"crawl_job:{crawl_job_id}")
+            if job_hash:
+                total = int(job_hash.get(b"total", 0))
+                jobs_skipped = int(job_hash.get(b"jobs_skipped", 0))
+                if (jobs_saved + jobs_skipped) >= total and total > 0:
+                    _flush_gmail_digest(crawl_job_id, user_id, db, r)
+                    r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
+                    r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
+                    r.delete("system:crawling")
+                    total_found_raw = job_hash.get(b"total_found")
+                    total_found = int(total_found_raw) if total_found_raw else total
+                    r.publish("job_updates", json.dumps({
+                        "type": "crawl_job_completed",
+                        "job_id": crawl_job_id,
+                        "user_id": user_id,
+                        "total": total,
+                        "total_found": total_found,
+                    }))
+                    r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+
+    except Exception as e:
+        logger.error(f"Error in save_job_basic_task for {job_id}: {e}", exc_info=True)
+        db.rollback()
     finally:
         db.close()
 
@@ -1327,15 +1493,8 @@ def check_platforms_for_crawl():
                         logger.error(f"[SCHEDULE] Error parsing schedule for {p.name}: {e}")
                 else:
                     logger.info(f"[SCHEDULE] Skipped: today={today_weekday} not in {p.schedule_days}")
-            elif not p.last_crawl_at:
-                is_due = True
             else:
-                diff = now_utc - p.last_crawl_at.replace(tzinfo=timezone.utc)
-                elapsed_min = diff.total_seconds() / 60
-                if elapsed_min >= p.crawl_interval_minutes:
-                    is_due = True
-                else:
-                    logger.info(f"[SCHEDULE] Skipped (interval): {elapsed_min:.1f}/{p.crawl_interval_minutes} min elapsed")
+                logger.info(f"[SCHEDULE] Skipped '{p.name}': no schedule defined")
 
             if is_due:
                 is_initial_run = not p.last_crawl_at
@@ -1374,3 +1533,63 @@ def check_platforms_for_crawl():
         logger.error(f"Error in check_periodic_crawls_task: {e}")
     finally:
         db.close()
+
+
+@celery_app.task(name="ai.cleanup_stale_redis_jobs")
+def cleanup_stale_redis_jobs():
+    """Remove crawl jobs from Redis that have been running for more than 5 minutes."""
+    import time as time_module
+
+    STALE_THRESHOLD_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+    r = redis.from_url(redis_url, decode_responses=True)
+
+    now_ms = int(time_module.time() * 1000)
+    removed = 0
+
+    try:
+        job_keys = r.keys("crawl_job:*")
+        # Filter out sub-keys like crawl_job:{id}:all_job_titles
+        job_keys = [k for k in job_keys if k.count(":") == 1]
+
+        for key in job_keys:
+            job_data = r.hgetall(key)
+            if not job_data:
+                continue
+
+            started_at = job_data.get("started_at")
+            if not started_at:
+                continue
+
+            age_ms = now_ms - int(started_at)
+            if age_ms < STALE_THRESHOLD_MS:
+                continue
+
+            job_id = key.split(":", 1)[1]
+            user_id = job_data.get("user_id")
+            status = job_data.get("status", "")
+
+            # Skip jobs that are already completed (they have their own TTL)
+            if status == "completed":
+                continue
+
+            logger.info(
+                f"🧹 Removing stale Redis job {job_id} (age={age_ms // 1000}s, status={status})"
+            )
+            r.delete(key)
+            r.delete(f"crawl_job:{job_id}:all_job_titles")
+            if user_id:
+                r.srem(f"user:{user_id}:active_crawls", job_id)
+            removed += 1
+
+        if removed:
+            r.delete("system:crawling")
+            logger.info(f" Removed {removed} stale Redis crawl job(s).")
+        else:
+            logger.debug("No stale Redis crawl jobs found.")
+
+        return {"removed": removed}
+
+    except Exception as e:
+        logger.error(f"Error during stale Redis job cleanup: {e}")
+        return {"removed": 0, "error": str(e)}

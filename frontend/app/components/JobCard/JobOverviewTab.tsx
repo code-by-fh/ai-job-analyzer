@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { 
-    Brain, Clock, ExternalLink, FileText, MessageSquare, 
-    CalendarDays, StickyNote, Archive, ChevronDown, 
-    Search, Mail, Handshake, Trophy, PartyPopper, 
-    XCircle, AlertTriangle 
+import {
+    Brain, Clock, ExternalLink, FileText, MessageSquare,
+    CalendarDays, StickyNote, Archive, ChevronDown,
+    Search, Mail, Handshake, Trophy, PartyPopper,
+    XCircle, AlertTriangle, Sparkles
 } from 'lucide-react';
+import { fetchWithAuth } from '../AuthProvider';
 import * as LucideIcons from 'lucide-react';
 
 const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
@@ -28,7 +29,63 @@ interface JobOverviewTabProps {
 export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArchive }: JobOverviewTabProps) {
     const { t } = useLanguage();
     const [isStatusOpen, setIsStatusOpen] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analyzeError, setAnalyzeError] = useState(false);
+    const [elapsed, setElapsed] = useState(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const LS_KEY = `analyzing_${job.id}`;
+
+    // Restore analyzing state from localStorage on mount (survives refresh)
+    useEffect(() => {
+        if (!job.reasoning && localStorage.getItem(LS_KEY)) {
+            setIsAnalyzing(true);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Elapsed timer while analyzing
+    useEffect(() => {
+        if (!isAnalyzing) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setElapsed(0);
+            return;
+        }
+        const stored = localStorage.getItem(LS_KEY);
+        const startTime = stored ? parseInt(stored) : Date.now();
+        if (!stored) localStorage.setItem(LS_KEY, startTime.toString());
+        setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        timerRef.current = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        }, 1000);
+        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAnalyzing]);
+
+    // Auto-clear loading state when reasoning arrives via prop update (WebSocket) or on mount
+    useEffect(() => {
+        if (job.reasoning) {
+            localStorage.removeItem(LS_KEY);
+            setIsAnalyzing(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [job.reasoning]);
+
+    const handleTriggerAnalysis = async () => {
+        setAnalyzeError(false);
+        localStorage.setItem(LS_KEY, Date.now().toString());
+        setIsAnalyzing(true);
+        try {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/analyze`, { method: 'POST' });
+        } catch {
+            setAnalyzeError(true);
+            localStorage.removeItem(LS_KEY);
+            setIsAnalyzing(false);
+        }
+    };
+
+    const formatElapsed = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
     const statusMeta = STATUS_META[job.status || 'OPEN'] || STATUS_META['OPEN'];
     const score = Math.round(job.match_score);
@@ -47,11 +104,65 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
 
     const ALL_STATUS_KEYS = [...STATUS_PIPELINE, 'REJECTED', 'FAILED'] as JobStatus[];
 
+    // ── LOADING STATE (consistent with JobApplicationTab) ──
+    if (isAnalyzing) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <div className="relative">
+                    <div className="absolute inset-0 bg-indigo-500 blur-xl opacity-20 animate-pulse"></div>
+                    <Brain className="w-10 h-10 text-indigo-500 animate-pulse relative z-10" />
+                </div>
+                <div className="text-center animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">{t('triggerAnalysis')}…</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">{formatElapsed(elapsed)}</p>
+                </div>
+                <button
+                    onClick={() => {
+                        setIsAnalyzing(false);
+                        localStorage.removeItem(LS_KEY);
+                        if (timerRef.current) clearInterval(timerRef.current);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-xl transition-all cursor-pointer"
+                >
+                    <XCircle className="w-3.5 h-3.5" />
+                    {t('cancel' as any) || 'Abbrechen'}
+                </button>
+            </div>
+        );
+    }
+
+    // ── EMPTY STATE (consistent with JobApplicationTab) ──
+    if (!job.reasoning) {
+        return (
+            <div className="group relative flex flex-col items-center justify-center py-16 gap-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl transition-all hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50/50 dark:bg-slate-900/20 w-full">
+                <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
+                    <Brain className="w-8 h-8 text-indigo-500" />
+                </div>
+                <div className="text-center px-6 max-w-sm space-y-2">
+                    <p className="text-lg font-bold text-slate-800 dark:text-slate-200">{t('analysis') || 'KI-Analyse'}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {t('firstRunNotice')}
+                    </p>
+                    {analyzeError && (
+                        <p className="text-xs text-rose-500 mt-2">{t('genericError')}</p>
+                    )}
+                </div>
+                <button
+                    onClick={handleTriggerAnalysis}
+                    className="group flex items-center gap-2 px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all hover:-translate-y-0.5 cursor-pointer"
+                >
+                    {t('triggerAnalysis')}
+                    <Sparkles className="w-4 h-4" />
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
 
-                {/* ── KI-ANALYSE ── */}
+                {/* ── KI-ANALYSE (CONTENT) ── */}
                 <div className="flex-1 min-w-0 bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
                     <div className="flex items-center gap-2 mb-2.5">
                         <Brain className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
@@ -60,7 +171,7 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
                         </span>
                     </div>
                     <div className="prose prose-sm dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 leading-relaxed">
-                        <ReactMarkdown>{job.reasoning || ''}</ReactMarkdown>
+                        <ReactMarkdown>{job.reasoning}</ReactMarkdown>
                     </div>
                 </div>
 

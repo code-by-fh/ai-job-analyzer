@@ -36,7 +36,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
     // Show persisted AI error from Redis on initial load
     useEffect(() => {
         if (initialAiError) showError(initialAiError);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialAiError]);
 
     // WebSocket Ref to persist across renders without triggering effects
@@ -264,7 +264,15 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                     }
                     else if (data.type === "crawl_completed") {
                         setIsCrawling(false);
-                        setActiveCrawls(new Map());
+                        setActiveCrawls(prev => {
+                            const newMap = new Map(prev);
+                            newMap.forEach((job, id) => {
+                                if (!job.show_success && job.status !== 'failed') {
+                                    newMap.delete(id);
+                                }
+                            });
+                            return newMap;
+                        });
                     }
                     else if (data.type === "crawl_job_failed") {
                         if (data.user_id === user?.id) {
@@ -330,6 +338,12 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                     }
                     else if (data.type === "job_update") {
                         if (onJobUpdateRef.current) onJobUpdateRef.current(data);
+                    }
+                    else if (data.type === "job_updated") {
+                        // Fired after manual re-analysis (force_reanalyze=true)
+                        if (onJobUpdateRef.current && data.job) {
+                            onJobUpdateRef.current({ ...data.job, job_id: data.job.id });
+                        }
                     }
                     else if (data.type === 'interview_prep_ready' || data.type === 'company_profile_ready') {
                         onJobEventRef.current?.({ type: data.type, job_id: data.job_id, domain: data.domain });

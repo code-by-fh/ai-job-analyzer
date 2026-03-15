@@ -33,6 +33,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [newUrl, setNewUrl] = useState('');
     const [status, setStatus] = useState('');
     const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
+    const [isAddingPlatform, setIsAddingPlatform] = useState(false);
 
     const [templatePlatform, setTemplatePlatform] = useState<Platform | null>(null);
     const [templateValue, setTemplateValue] = useState<string>('');
@@ -51,7 +52,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [pushoverTestStatus, setPushoverTestStatus] = useState<Record<number, TestStatus>>({});
     const [pushoverTestError, setPushoverTestError] = useState<Record<number, string | null>>({});
 
-    const { activeCrawls } = useCrawl({ user, token });
+    const { activeCrawls, crawlToCancel, setCrawlToCancel, confirmCancelCrawl } = useCrawl({ user, token });
     const savedToLastRunRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
@@ -156,6 +157,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setTimeout(() => setStatus(''), 3000);
             return;
         }
+        setIsAddingPlatform(true);
         setStatus(t('adding'));
         try {
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms`, {
@@ -174,6 +176,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         } catch (e) {
             setStatus(t('error'));
         }
+        setIsAddingPlatform(false);
         setTimeout(() => setStatus(''), 3000);
     };
 
@@ -393,6 +396,16 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     return (
         <section id="platforms-manager" className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <ConfirmModal
+                isOpen={!!crawlToCancel}
+                onClose={() => setCrawlToCancel(null)}
+                onConfirm={confirmCancelCrawl}
+                title={t('cancelCrawl')}
+                message={t('cancelCrawlConfirm')}
+                confirmText={t('cancelCrawl')}
+                isDestructive
+            />
+
+            <ConfirmModal
                 isOpen={!!platformToRemove}
                 onClose={() => { setPlatformToRemove(null); }}
                 onConfirm={finalizeRemovePlatform}
@@ -475,6 +488,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                             onOpenPushoverModal={openPushoverModal}
                             onSendTestPushover={sendTestPushover}
                             onTriggerCrawl={triggerCrawl}
+                            onCancelCrawl={(jobId) => setCrawlToCancel(jobId)}
                             onToggleActive={(id, isActive) => updatePlatform(id, { is_active: isActive })}
                             onRemove={(id) => setPlatformToRemove(id)}
                             onUrlChange={(id, url) => updatePlatform(id, { url })}
@@ -489,6 +503,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                     onUrlChange={setNewUrl}
                     onAdd={addPlatform}
                     isProfileComplete={!!user?.is_profile_complete}
+                    isLoading={isAddingPlatform}
                 />
             </div>
         </section>

@@ -25,6 +25,7 @@ interface PlatformCardProps {
     onOpenPushoverModal: (platform: Platform) => void;
     onSendTestPushover: (platformId: number) => void;
     onTriggerCrawl: (platform: Platform) => void;
+    onCancelCrawl: (jobId: string) => void;
     onToggleActive: (id: number, isActive: boolean) => void;
     onRemove: (id: number) => void;
     onUrlChange: (id: number, url: string) => void;
@@ -49,6 +50,7 @@ export default function PlatformCard({
     onOpenPushoverModal,
     onSendTestPushover,
     onTriggerCrawl,
+    onCancelCrawl,
     onToggleActive,
     onRemove,
     onUrlChange,
@@ -315,6 +317,19 @@ export default function PlatformCard({
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                            {/* Cancel crawl (only when actively running) */}
+                            {activeJob && (
+                                <button
+                                    onClick={() => onCancelCrawl(activeJob.job_id)}
+                                    title={t('cancelCrawl')}
+                                    className="w-8 h-8 flex items-center justify-center text-amber-500 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800/50 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:border-rose-200 dark:hover:border-rose-800/50 rounded-lg transition-all cursor-pointer"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+
                             {/* Crawl trigger */}
                             <button
                                 onClick={() => onTriggerCrawl(platform)}
