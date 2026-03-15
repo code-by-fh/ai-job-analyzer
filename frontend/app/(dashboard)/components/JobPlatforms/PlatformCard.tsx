@@ -19,7 +19,7 @@ interface PlatformCardProps {
     pushoverTestError: Record<number, string | null>;
     isAdmin: boolean;
     onToggleLog: (url: string) => void;
-    onIntervalChange: (id: number, minutes: number) => void;
+    onScheduleChange: (id: number, time: string | null, days: number[] | null) => void;
     onToggleAdapter: (platform: Platform, adapter: string) => void;
     onOpenTemplateModal: (platform: Platform) => void;
     onOpenPushoverModal: (platform: Platform) => void;
@@ -43,7 +43,7 @@ export default function PlatformCard({
     pushoverTestError,
     isAdmin,
     onToggleLog,
-    onIntervalChange,
+    onScheduleChange,
     onToggleAdapter,
     onOpenTemplateModal,
     onOpenPushoverModal,
@@ -360,7 +360,7 @@ export default function PlatformCard({
                             activeJob={activeJob}
                             expandedLog={expandedLog}
                             onToggleLog={onToggleLog}
-                            onIntervalChange={onIntervalChange}
+                            onScheduleChange={onScheduleChange}
                         />
                     </div>
                 </div>

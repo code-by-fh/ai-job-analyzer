@@ -1,4 +1,6 @@
 "use client";
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../components/LanguageProvider';
 import { Platform, LastRun } from './types';
@@ -11,8 +13,10 @@ interface PlatformStatsProps {
     activeJob: CrawlJob | undefined;
     expandedLog: string | null;
     onToggleLog: (url: string) => void;
-    onIntervalChange: (id: number, minutes: number) => void;
+    onScheduleChange: (id: number, time: string | null, days: number[] | null) => void;
 }
+
+const DAY_KEYS = ['dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat', 'daySun'] as const;
 
 export default function PlatformStats({
     platform,
@@ -21,10 +25,62 @@ export default function PlatformStats({
     activeJob,
     expandedLog,
     onToggleLog,
-    onIntervalChange,
+    onScheduleChange,
 }: PlatformStatsProps) {
     const { t } = useLanguage();
     const router = useRouter();
+    const [open, setOpen] = useState(false);
+    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+    const [localTime, setLocalTime] = useState(platform.schedule_time ?? '08:00');
+    const [localDays, setLocalDays] = useState<number[]>(platform.schedule_days ?? [0, 1, 2, 3, 4]);
+    const btnRef = useRef<HTMLButtonElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        setLocalTime(platform.schedule_time ?? '08:00');
+        setLocalDays(platform.schedule_days ?? [0, 1, 2, 3, 4]);
+    }, [platform.schedule_time, platform.schedule_days]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleClick = (e: MouseEvent) => {
+            if (
+                dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+                btnRef.current && !btnRef.current.contains(e.target as Node)
+            ) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [open]);
+
+    const handleOpen = () => {
+        if (btnRef.current) {
+            const rect = btnRef.current.getBoundingClientRect();
+            setDropdownPos({ top: rect.bottom + 6, left: rect.left });
+        }
+        setOpen(o => !o);
+    };
+
+    const toggleDay = (day: number) => {
+        setLocalDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
+    };
+
+    const handleSave = () => {
+        const hasSchedule = localDays.length > 0;
+        onScheduleChange(platform.id, hasSchedule ? localTime : null, hasSchedule ? localDays : null);
+        setOpen(false);
+    };
+
+    const handleClear = () => {
+        onScheduleChange(platform.id, null, null);
+        setOpen(false);
+    };
+
+    const scheduleLabel = platform.schedule_time && platform.schedule_days?.length
+        ? `${platform.schedule_time} · ${platform.schedule_days.map(d => t(DAY_KEYS[d])).join(' ')}`
+        : t('noSchedule');
 
     const formatDate = (iso: string) => {
         const date = new Date(iso);
@@ -63,27 +119,84 @@ export default function PlatformStats({
                 <span>{platform.last_crawl_at ? formatDate(platform.last_crawl_at) : t('neverScanned')}</span>
             </div>
 
-            {/* Interval selector chip */}
-            <div className="relative flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all group/select">
-                <svg className="w-3 h-3 text-slate-400 group-hover/select:text-indigo-500 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            {/* Schedule chip */}
+            <button
+                ref={btnRef}
+                type="button"
+                onClick={handleOpen}
+                title={t('scheduleLabel')}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-md border transition-all cursor-pointer
+                    ${platform.schedule_time && platform.schedule_days?.length
+                        ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200/70 dark:border-indigo-700/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                    }`}
+            >
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <select
-                    value={platform.crawl_interval_minutes}
-                    onChange={(e) => onIntervalChange(platform.id, parseInt(e.target.value))}
-                    className="appearance-none bg-transparent text-[11px] font-medium text-slate-600 dark:text-slate-300 border-none p-0 pr-4 focus:ring-0 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors dark:[color-scheme:dark]"
-                    title="Scan Interval"
+                <span className="font-medium">{scheduleLabel}</span>
+            </button>
+
+            {/* Schedule popover — rendered in portal to escape overflow:hidden */}
+            {open && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={dropdownRef}
+                    style={{ position: 'fixed', top: dropdownPos.top, left: dropdownPos.left, zIndex: 9999 }}
+                    className="w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150"
                 >
-                    <option value={60}  className="bg-white dark:bg-slate-900">{t('everyHour')}</option>
-                    <option value={360} className="bg-white dark:bg-slate-900">{t('every6Hours')}</option>
-                    <option value={720} className="bg-white dark:bg-slate-900">{t('every12Hours')}</option>
-                    <option value={1440} className="bg-white dark:bg-slate-900">{t('every24Hours')}</option>
-                    <option value={10080} className="bg-white dark:bg-slate-900">{t('everyWeek')}</option>
-                </select>
-                <svg className="absolute right-1.5 w-2 h-2 text-slate-400 group-hover/select:text-indigo-500 pointer-events-none transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                </svg>
-            </div>
+                    {/* Time */}
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('scheduleTime')}</label>
+                        <input
+                            type="time"
+                            value={localTime}
+                            onChange={e => setLocalTime(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 dark:[color-scheme:dark]"
+                        />
+                    </div>
+
+                    {/* Weekdays */}
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('scheduleDays')}</label>
+                        <div className="flex gap-1">
+                            {DAY_KEYS.map((key, i) => (
+                                <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => toggleDay(i)}
+                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                        localDays.includes(i)
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {t(key)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={localDays.length === 0}
+                            className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                        >
+                            {t('confirm')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            className="px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                        >
+                            {t('remove')}
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* Last run result chip */}
             {!isBusy && lastRun && (

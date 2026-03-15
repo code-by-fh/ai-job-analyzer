@@ -1272,7 +1272,8 @@ def check_platforms_for_crawl():
         from database import JobPlatform
         import requests
 
-        now = datetime.now(timezone.utc)
+        import zoneinfo
+        now_utc = datetime.now(timezone.utc)
 
         # Load platforms that are active and either never crawled or interval passed
         platforms = db.query(JobPlatform).filter(JobPlatform.is_active == True).all()
@@ -1282,13 +1283,59 @@ def check_platforms_for_crawl():
 
         for p in platforms:
             is_due = False
-            if not p.last_crawl_at:
+
+            # Resolve user timezone for this platform
+            user_tz_str = "Europe/Berlin"
+            try:
+                user_profile = db.query(UserProfile).filter(UserProfile.user_id == p.user_id).first()
+                if user_profile and user_profile.timezone:
+                    user_tz_str = user_profile.timezone
+            except Exception:
+                pass
+            try:
+                user_tz = zoneinfo.ZoneInfo(user_tz_str)
+            except Exception:
+                user_tz = zoneinfo.ZoneInfo("Europe/Berlin")
+
+            now_local = now_utc.astimezone(user_tz)
+
+            logger.info(
+                f"[SCHEDULE] Checking '{p.name}' (id={p.id}) | tz={user_tz_str} | "
+                f"now_local={now_local.strftime('%H:%M')} | "
+                f"schedule_time={p.schedule_time!r} schedule_days={p.schedule_days!r} | "
+                f"last_crawl_at={p.last_crawl_at!r}"
+            )
+
+            if p.schedule_time and p.schedule_days is not None:
+                today_weekday = now_local.weekday()  # 0=Mon, 6=Sun
+                if today_weekday in p.schedule_days:
+                    try:
+                        h, m = map(int, p.schedule_time.split(":"))
+                        scheduled_local = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
+                        if now_local >= scheduled_local:
+                            if not p.last_crawl_at:
+                                is_due = True
+                            else:
+                                last_local = p.last_crawl_at.replace(tzinfo=timezone.utc).astimezone(user_tz)
+                                if last_local < scheduled_local:
+                                    is_due = True
+                                else:
+                                    logger.info(f"[SCHEDULE] Skipped: already crawled today at {last_local.strftime('%H:%M')} (after scheduled {p.schedule_time})")
+                        else:
+                            logger.info(f"[SCHEDULE] Skipped: {p.schedule_time} not yet reached (now_local={now_local.strftime('%H:%M')})")
+                    except (ValueError, AttributeError) as e:
+                        logger.error(f"[SCHEDULE] Error parsing schedule for {p.name}: {e}")
+                else:
+                    logger.info(f"[SCHEDULE] Skipped: today={today_weekday} not in {p.schedule_days}")
+            elif not p.last_crawl_at:
                 is_due = True
             else:
-                # Calculate if interval passed
-                diff = now - p.last_crawl_at.replace(tzinfo=timezone.utc)
-                if diff.total_seconds() / 60 >= p.crawl_interval_minutes:
+                diff = now_utc - p.last_crawl_at.replace(tzinfo=timezone.utc)
+                elapsed_min = diff.total_seconds() / 60
+                if elapsed_min >= p.crawl_interval_minutes:
                     is_due = True
+                else:
+                    logger.info(f"[SCHEDULE] Skipped (interval): {elapsed_min:.1f}/{p.crawl_interval_minutes} min elapsed")
 
             if is_due:
                 is_initial_run = not p.last_crawl_at
@@ -1308,7 +1355,7 @@ def check_platforms_for_crawl():
                         timeout=5,
                     )
                     if resp.status_code == 200:
-                        p.last_crawl_at = now
+                        p.last_crawl_at = now_utc
                         triggered_count += 1
                     else:
                         logger.error(

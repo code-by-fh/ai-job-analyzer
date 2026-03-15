@@ -1172,6 +1172,28 @@ def save_language_preference(data: LanguagePreferenceData, current_user: User = 
         db.close()
 
 
+@app.post("/timezone-preference")
+def save_timezone_preference(data: dict, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        tz = data.get("timezone", "Europe/Berlin")
+        # Validate timezone
+        import zoneinfo
+        try:
+            zoneinfo.ZoneInfo(tz)
+        except Exception:
+            tz = "Europe/Berlin"
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile:
+            profile = UserProfile(user_id=current_user.id)
+            db.add(profile)
+        profile.timezone = tz
+        db.commit()
+        return {"status": "saved", "timezone": tz}
+    finally:
+        db.close()
+
+
 @app.delete("/settings")
 def delete_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -1282,6 +1304,8 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     "name": p.name,
                     "favicon_url": p.favicon_url,
                     "crawl_interval_minutes": p.crawl_interval_minutes,
+                    "schedule_time": p.schedule_time,
+                    "schedule_days": p.schedule_days,
                     "last_crawl_at": (
                         p.last_crawl_at.isoformat() if p.last_crawl_at else None
                     ),
@@ -1394,6 +1418,10 @@ def update_platform(
 
         if platform_update.crawl_interval_minutes is not None:
             db_platform.crawl_interval_minutes = platform_update.crawl_interval_minutes
+        if "schedule_time" in platform_update.__fields_set__:
+            db_platform.schedule_time = platform_update.schedule_time or None
+        if "schedule_days" in platform_update.__fields_set__:
+            db_platform.schedule_days = platform_update.schedule_days or None
         if platform_update.is_active is not None:
             db_platform.is_active = platform_update.is_active
         if platform_update.is_notification_enabled is not None:
@@ -1430,6 +1458,8 @@ def update_platform(
             "name": db_platform.name,
             "favicon_url": db_platform.favicon_url,
             "crawl_interval_minutes": db_platform.crawl_interval_minutes,
+            "schedule_time": db_platform.schedule_time,
+            "schedule_days": db_platform.schedule_days,
             "last_crawl_at": (
                 db_platform.last_crawl_at.isoformat()
                 if db_platform.last_crawl_at
@@ -2245,6 +2275,8 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     "name": p.name,
                     "favicon_url": p.favicon_url,
                     "crawl_interval_minutes": p.crawl_interval_minutes,
+                    "schedule_time": p.schedule_time,
+                    "schedule_days": p.schedule_days,
                     "last_crawl_at": (
                         p.last_crawl_at.isoformat() if p.last_crawl_at else None
                     ),

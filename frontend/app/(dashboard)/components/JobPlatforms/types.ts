@@ -4,6 +4,8 @@ export interface Platform {
     name: string;
     favicon_url: string | null;
     crawl_interval_minutes: number;
+    schedule_time: string | null;   // "HH:MM" UTC
+    schedule_days: number[] | null; // 0=Mon..6=Sun
     last_crawl_at: string | null;
     is_active: boolean;
     job_count: number;

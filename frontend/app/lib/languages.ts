@@ -185,6 +185,19 @@ export const translations = {
         passwordUpdated: "Password updated!",
         networkError: "Network Error",
 
+        // Schedule
+        scheduleTime: "Scan Time",
+        scheduleDays: "Weekdays",
+        scheduleLabel: "Schedule",
+        noSchedule: "No schedule",
+        dayMon: "Mo",
+        dayTue: "Tu",
+        dayWed: "We",
+        dayThu: "Th",
+        dayFri: "Fr",
+        daySat: "Sa",
+        daySun: "Su",
+
         // Job Platforms
         jobPlatforms: "Job Platforms",
         platformsSubtitle: "Manage URLs and automated scan intervals",
@@ -291,6 +304,13 @@ export const translations = {
         // Language Preference
         languagePreference: "Language Preference",
 
+        // Timezone
+        timezonePreference: "Timezone",
+        timezoneDescription: "Used for job platform scheduling. Make sure this matches your local time.",
+        timezoneSaved: "Timezone saved",
+        timezoneSaving: "Saving...",
+        timezoneError: "Error saving timezone",
+
         // Profile Page
         profileAndResume: "Profile & Resume",
         profileCompletion: "Profile Completion",
@@ -343,7 +363,6 @@ export const translations = {
         viewFile: "View",
         downloadFile: "Download",
         maxFileSize: "Max. file size 10 MB",
-        uploadFailed: "Upload failed",
         genericError: "An error occurred",
 
         // Guidance
@@ -354,7 +373,7 @@ export const translations = {
         guidanceOpenItem3: "Short research on the company",
         guidanceOpenItem4: "Start application draft",
         guidanceOpenNudge: "Every process starts with an honest self-assessment.",
-        
+
         guidanceDraftedNext: "Review your application draft and send it.",
         guidanceDraftedItem1: "Application draft generated",
         guidanceDraftedItem2: "Check draft for completeness and tone",
@@ -587,6 +606,19 @@ export const translations = {
         passwordUpdated: "Passwort aktualisiert!",
         networkError: "Netzwerkfehler",
 
+        // Schedule
+        scheduleTime: "Scan-Uhrzeit",
+        scheduleDays: "Wochentage",
+        scheduleLabel: "Zeitplan",
+        noSchedule: "Kein Zeitplan",
+        dayMon: "Mo",
+        dayTue: "Di",
+        dayWed: "Mi",
+        dayThu: "Do",
+        dayFri: "Fr",
+        daySat: "Sa",
+        daySun: "So",
+
         // Job Platforms
         jobPlatforms: "Job-Plattformen",
         platformsSubtitle: "URLs und automatisierte Scan-Intervalle verwalten",
@@ -693,6 +725,13 @@ export const translations = {
         // Language Preference
         languagePreference: "Spracheinstellung",
 
+        // Timezone
+        timezonePreference: "Zeitzone",
+        timezoneDescription: "Wird für die Zeitplanung von Job-Plattformen verwendet. Stelle sicher, dass dies deiner lokalen Zeit entspricht.",
+        timezoneSaved: "Zeitzone gespeichert",
+        timezoneSaving: "Speichern...",
+        timezoneError: "Fehler beim Speichern der Zeitzone",
+
         // Profile Page
         profileAndResume: "Profil & Lebenslauf",
         profileCompletion: "Profil-Vollständigkeit",
@@ -745,7 +784,6 @@ export const translations = {
         viewFile: "Anzeigen",
         downloadFile: "Herunterladen",
         maxFileSize: "Maximale Dateigröße 10 MB",
-        uploadFailed: "Upload fehlgeschlagen",
         genericError: "Ein Fehler ist aufgetreten",
 
         // Guidance

@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { useNotification } from '../components/NotificationProvider';
 import { logger } from '../lib/logger';
-import { Bell, Globe, Mail, Smartphone, Save, ExternalLink, Info, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Bell, Globe, Mail, Smartphone, Save, ExternalLink, Info, CheckCircle2, ShieldAlert, Clock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import TemplateManager from '../components/TemplateManager';
 
@@ -47,12 +47,30 @@ export default function Settings() {
   const { showError } = useNotification();
 
   const [uiLanguage, setUiLanguage] = useState<'de' | 'en'>('de');
+  const [timezone, setTimezone] = useState('Europe/Berlin');
+  const [tzStatus, setTzStatus] = useState('');
 
   useEffect(() => { setUiLanguage(language); }, [language]);
 
   const handleLanguageChange = async (lang: 'de' | 'en') => {
     setUiLanguage(lang);
     setLanguage(lang);
+  };
+
+  const handleTimezoneChange = async (tz: string) => {
+    setTimezone(tz);
+    setTzStatus(t('timezoneSaving'));
+    try {
+      await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/timezone-preference`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timezone: tz }),
+      });
+      setTzStatus(t('timezoneSaved'));
+      setTimeout(() => setTzStatus(''), 2500);
+    } catch {
+      setTzStatus(t('timezoneError'));
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -84,6 +102,7 @@ export default function Settings() {
           };
           setFormData(loadedData);
           setSavedData(loadedData);
+          if (profileData.timezone) setTimezone(profileData.timezone);
           setLoading(false);
         })
         .catch(e => { logger.error({ err: e }, "Settings load error"); showError(`GET /settings-view fehlgeschlagen: ${e?.message || e}`); setLoading(false); });
@@ -147,6 +166,64 @@ export default function Settings() {
                 {lang === 'de' ? t('german') : t('english')}
               </button>
             ))}
+          </div>
+        </SettingsCard>
+
+        <SettingsCard
+          title={t('timezonePreference')}
+          icon={<Clock className="w-6 h-6" />}
+        >
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{t('timezoneDescription')}</p>
+          <div className="flex items-center gap-3">
+            <select
+              value={timezone}
+              onChange={e => handleTimezoneChange(e.target.value)}
+              className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+            >
+              <optgroup label="Europe">
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="Europe/Vienna">Europe/Vienna</option>
+                <option value="Europe/Zurich">Europe/Zurich</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="Europe/Paris">Europe/Paris</option>
+                <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+                <option value="Europe/Brussels">Europe/Brussels</option>
+                <option value="Europe/Warsaw">Europe/Warsaw</option>
+                <option value="Europe/Prague">Europe/Prague</option>
+                <option value="Europe/Budapest">Europe/Budapest</option>
+                <option value="Europe/Rome">Europe/Rome</option>
+                <option value="Europe/Madrid">Europe/Madrid</option>
+                <option value="Europe/Stockholm">Europe/Stockholm</option>
+                <option value="Europe/Helsinki">Europe/Helsinki</option>
+                <option value="Europe/Bucharest">Europe/Bucharest</option>
+                <option value="Europe/Athens">Europe/Athens</option>
+                <option value="Europe/Moscow">Europe/Moscow</option>
+              </optgroup>
+              <optgroup label="Americas">
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/Denver">America/Denver</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                <option value="America/Toronto">America/Toronto</option>
+                <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+              </optgroup>
+              <optgroup label="Asia / Pacific">
+                <option value="Asia/Dubai">Asia/Dubai</option>
+                <option value="Asia/Kolkata">Asia/Kolkata</option>
+                <option value="Asia/Singapore">Asia/Singapore</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="Asia/Shanghai">Asia/Shanghai</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+              </optgroup>
+              <optgroup label="UTC">
+                <option value="UTC">UTC</option>
+              </optgroup>
+            </select>
+            {tzStatus && (
+              <span className={`text-sm font-semibold whitespace-nowrap ${tzStatus === t('timezoneSaved') ? 'text-emerald-600 dark:text-emerald-400' : tzStatus === t('timezoneError') ? 'text-rose-500' : 'text-indigo-500 animate-pulse'}`}>
+                {tzStatus}
+              </span>
+            )}
           </div>
         </SettingsCard>
 

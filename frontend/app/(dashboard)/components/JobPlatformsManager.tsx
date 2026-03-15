@@ -469,7 +469,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                             pushoverTestError={pushoverTestError}
                             isAdmin={!!user?.is_admin}
                             onToggleLog={(url) => setExpandedLog(expandedLog === url ? null : url)}
-                            onIntervalChange={(id, minutes) => updatePlatform(id, { crawl_interval_minutes: minutes })}
+                            onScheduleChange={(id, time, days) => updatePlatform(id, { schedule_time: time, schedule_days: days })}
                             onToggleAdapter={toggleAdapter}
                             onOpenTemplateModal={openTemplateModal}
                             onOpenPushoverModal={openPushoverModal}

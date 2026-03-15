@@ -91,6 +91,7 @@ class UserProfile(Base):
         String, default="NONE"
     )  # NONE, GMAIL, PUSHOVER
     language = Column(String, default="de")
+    timezone = Column(String, default="Europe/Berlin")
 
 
 class SystemSettings(Base):
@@ -116,7 +117,9 @@ class JobPlatform(Base):
     url = Column(String, index=True)
     name = Column(String)
     favicon_url = Column(String, nullable=True)
-    crawl_interval_minutes = Column(Integer, default=1440)  # Default: 24h
+    crawl_interval_minutes = Column(Integer, default=1440)  # Default: 24h (fallback)
+    schedule_time = Column(String, nullable=True)   # "HH:MM" UTC, e.g. "08:30"
+    schedule_days = Column(JSON, nullable=True)     # [0..6] Mon=0 Sun=6
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
@@ -223,6 +226,7 @@ class SettingsData(BaseModel):
     pushover_api_token: Optional[str] = None
     active_notification_service: str = "NONE"
     language: str = "de"
+    timezone: str = "Europe/Berlin"
 
 
 class NotificationSettingsData(BaseModel):
@@ -241,6 +245,8 @@ class PlatformUpdate(BaseModel):
     url: Optional[str] = None
     name: Optional[str] = None
     crawl_interval_minutes: Optional[int] = None
+    schedule_time: Optional[str] = None
+    schedule_days: Optional[List[int]] = None
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
@@ -255,6 +261,8 @@ class PlatformResponse(BaseModel):
     name: str
     favicon_url: Optional[str] = None
     crawl_interval_minutes: int
+    schedule_time: Optional[str] = None
+    schedule_days: Optional[List[int]] = None
     last_crawl_at: Optional[str] = None
     is_active: bool
     is_notification_enabled: bool = False
