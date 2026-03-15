@@ -170,11 +170,10 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                             <div>
-                                {!compact && <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">Ein Fehler ist aufgetreten</p>}
+                                {!compact && <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">An error occurred</p>}
                                 <p className={`${compact ? 'text-xs' : 'text-xs mt-1'} text-rose-600 dark:text-rose-400 break-words`}>
-                                    {job.error_message || 'Unbekannter Fehler'}
-                                </p>
-                            </div>
+                                    {job.error_message || 'Unknown error'}
+                                </p>                            </div>
                         </div>
                     </div>
                 </div>

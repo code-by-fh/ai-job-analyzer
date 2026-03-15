@@ -1,5 +1,7 @@
+"use client";
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { FileText, Copy, FileDown, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from './LanguageProvider';
 import ConfirmModal from './ConfirmModal';
 import { logger } from '../lib/logger';
@@ -88,8 +90,13 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
 
           {/* Header */}
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-xl">
-            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">📝 {t('applicationPreview')}</h3>
-            <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-2xl leading-none cursor-pointer transition-colors">&times;</button>
+            <h3 className="flex items-center gap-2 font-bold text-lg text-slate-800 dark:text-slate-100">
+              <FileText className="w-5 h-5 text-indigo-500" />
+              {t('applicationPreview')}
+            </h3>
+            <button onClick={onClose} className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer transition-colors">
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Content */}
@@ -105,15 +112,17 @@ export default function ApplicationModal({ isOpen, onClose, content, jobId, curr
               {t('close')}
             </button>
 
-            <button onClick={handleCopy} className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg font-medium cursor-pointer transition-colors">
-              📋 {t('copyText')}
+            <button onClick={handleCopy} className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg font-medium cursor-pointer transition-colors flex items-center gap-2">
+              <Copy className="w-4 h-4" />
+              {t('copyText')}
             </button>
 
             <button
               onClick={handleDownload}
               className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-500 dark:hover:bg-indigo-500 rounded-lg shadow-sm dark:shadow-indigo-500/30 transition font-medium flex items-center gap-2 cursor-pointer"
             >
-              📄 {t('saveAsPdf')}
+              <FileDown className="w-4 h-4" />
+              {t('saveAsPdf')}
             </button>
           </div>
         </div>

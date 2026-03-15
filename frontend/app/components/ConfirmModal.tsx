@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { AlertTriangle, Info } from 'lucide-react';
 import { useLanguage } from './LanguageProvider';
 
 interface ConfirmModalProps {
@@ -66,12 +67,12 @@ export default function ConfirmModal({
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-4">
                         <div className={`
-                            w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0
+                            w-10 h-10 rounded-full flex items-center justify-center shrink-0
                             ${isDestructive
                                 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400'
                                 : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400'}
                         `}>
-                            {isDestructive ? '⚠️' : 'ℹ️'}
+                            {isDestructive ? <AlertTriangle size={20} /> : <Info size={20} />}
                         </div>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
                             {title}

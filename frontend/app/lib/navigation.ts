@@ -30,43 +30,43 @@ export interface NavItemConfig {
 export const MAIN_NAV_ITEMS: NavItemConfig[] = [
     {
         href: '/',
-        icon: '📊',
+        icon: 'LayoutDashboard',
         labelKey: 'dashboard',
         matchType: 'exact',
     },
     {
         href: '/listings',
-        icon: '📋',
+        icon: 'List',
         labelKey: 'listings',
         matchType: 'startsWith',
     },
     {
         href: '/profile',
-        icon: '👤',
+        icon: 'User',
         labelKey: 'profile',
         matchType: 'startsWith',
     },
     {
         href: '/settings',
-        icon: '⚙️',
+        icon: 'Settings',
         labelKey: 'settings',
         matchType: 'startsWith',
     },
     {
         href: '/account',
-        icon: '🔑',
+        icon: 'Key',
         labelKey: 'account',
         matchType: 'startsWith',
     },
     {
         href: '/companies',
-        icon: '🏢',
+        icon: 'Building2',
         labelKey: 'companies',
         matchType: 'startsWith',
     },
     {
         href: '/archive',
-        icon: '🗂️',
+        icon: 'Archive',
         labelKey: 'archiv',
         matchType: 'startsWith',
     },
@@ -75,14 +75,14 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
 export const ADMIN_NAV_ITEMS: NavItemConfig[] = [
     {
         href: '/admin/users',
-        icon: '🛡️',
+        icon: 'ShieldCheck',
         labelKey: 'userManagement',
         matchType: 'startsWith',
         requiresAdmin: true
     },
     {
         href: '/admin/settings',
-        icon: '🔧',
+        icon: 'Settings2',
         labelLiteral: 'System Settings',
         matchType: 'startsWith',
         requiresAdmin: true

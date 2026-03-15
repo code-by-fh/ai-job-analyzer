@@ -18,6 +18,7 @@ from database import (
     JobPlatform,
     SystemSettings,
     DomainUrlPattern,
+    User,
 )
 import smtplib
 import ssl
@@ -64,23 +65,23 @@ def get_current_model():
 
 def format_cv_for_prompt(cv_json):
     if not cv_json:
-        return "Keine detaillierte Erfahrung angegeben."
+        return "No detailed experience provided."
 
-    text = "BERUFLICHE ERFAHRUNG:\n"
+    text = "PROFESSIONAL EXPERIENCE:\n"
     for exp in cv_json.get("experience", []):
         text += f"- {exp['role']} bei {exp['company']} ({exp['duration']}): {exp['description']}\n"
 
-    text += "\nPROJEKTE:\n"
+    text += "\nPROJECTS:\n"
     for proj in cv_json.get("projects", []):
         text += (
             f"- {proj['name']} (Tech: {proj['tech_stack']}): {proj['description']}\n"
         )
 
-    text += f"\nAUSBILDUNG:\n{cv_json.get('education', '')}"
+    text += f"\nEDUCATION:\n{cv_json.get('education', '')}"
     return text
 
 
-def _send_via_gmail_batch(jobs, profile, platform=None):
+def _send_via_gmail_batch(jobs, profile, platform=None, userName="Candidate"):
     """Send a single digest Gmail for all jobs in a crawl."""
     if not profile.gmail_address or not profile.gmail_app_password:
         logger.warning("Gmail batch notification enabled but credentials missing.")
@@ -101,11 +102,16 @@ def _send_via_gmail_batch(jobs, profile, platform=None):
         import re
         from string import Template
 
+        # Provide jobCount and userName globally in the template
+        custom_template = Template(custom_template).safe_substitute(jobCount=count, userName=userName)
+
         loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", custom_template, re.DOTALL)
         if loop_match:
             job_block = loop_match.group(1)
             rendered_jobs = "".join(
                 Template(job_block).safe_substitute(
+                    jobCount=count,
+                    userName=userName,
                     title=j.title,
                     company=j.company,
                     match_score=int(j.match_score),
@@ -119,6 +125,8 @@ def _send_via_gmail_batch(jobs, profile, platform=None):
             # No loop block — render template once per job, separated by <hr>
             html = "\n<hr>\n".join(
                 Template(custom_template).safe_substitute(
+                    jobCount=count,
+                    userName=userName,
                     title=j.title,
                     company=j.company,
                     match_score=int(j.match_score),
@@ -134,13 +142,14 @@ def _send_via_gmail_batch(jobs, profile, platform=None):
               <h3 style="margin:0 0 8px">{j.title} &ndash; {j.company}</h3>
               <p style="margin:0 0 4px"><b>Match Score:</b> {int(j.match_score)}%</p>
               <p style="margin:0 0 12px">{j.reasoning}</p>
-              <a href="{j.url}">Details anschauen</a>
+              <a href="{j.url}">View details</a>
             </div>
             """
             for j in jobs
         )
         html = f"""
         <html><body>
+          <p>Hello {userName},</p>
           <h2>{count} New Job Match{'es' if count != 1 else ''}</h2>
           {job_items}
         </body></html>
@@ -152,7 +161,7 @@ def _send_via_gmail_batch(jobs, profile, platform=None):
         server.login(profile.gmail_address, profile.gmail_app_password)
         server.sendmail(profile.gmail_address, recipients, msg.as_string())
 
-    logger.info(f"📧 Gmail digest sent: {count} jobs to {recipients}")
+    logger.info(f" Gmail digest sent: {count} jobs to {recipients}")
     return True
 
 
@@ -173,17 +182,16 @@ def _flush_gmail_digest(crawl_job_id, user_id, db, r):
     if not profile:
         return
 
-    platform = None
-    if jobs[0].platform_id:
-        platform = db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
+    user = db.query(User).filter(User.id == user_id).first()
+    userName = user.username if user else "Candidate"
 
     try:
-        _send_via_gmail_batch(jobs, profile, platform)
+        _send_via_gmail_batch(jobs, profile, platform, userName=userName)
     except Exception as e:
         logger.error(f"Gmail digest failed: {e}")
 
 
-def _send_via_gmail(job, profile, platform=None):
+def _send_via_gmail(job, profile, platform=None, userName="Candidate"):
     """Send a notification via Gmail. Returns True on success."""
     if not profile.gmail_address or not profile.gmail_app_password:
         logger.warning("Gmail notification enabled but credentials missing.")
@@ -200,6 +208,8 @@ def _send_via_gmail(job, profile, platform=None):
     if custom_template:
         from string import Template
         html = Template(custom_template).safe_substitute(
+            jobCount=1,
+            userName=userName,
             title=job.title,
             company=job.company,
             match_score=int(job.match_score),
@@ -210,6 +220,7 @@ def _send_via_gmail(job, profile, platform=None):
         html = f"""
     <html>
       <body>
+        <p>Hello {userName},</p>
         <h2>New Job Found!</h2>
         <p><b>Title:</b> {job.title}</p>
         <p><b>Company:</b> {job.company}</p>
@@ -219,7 +230,7 @@ def _send_via_gmail(job, profile, platform=None):
         <p>{job.reasoning}</p>
         <hr>
         <p>
-          <a href="{job.url}">Hier Details anschauen</a>
+          <a href="{job.url}">View details</a>
         </p>
       </body>
     </html>
@@ -232,7 +243,7 @@ def _send_via_gmail(job, profile, platform=None):
         server.login(profile.gmail_address, profile.gmail_app_password)
         server.sendmail(profile.gmail_address, profile.gmail_address, msg.as_string())
 
-    logger.info(f"📧 Email notification sent for job {job.id}")
+    logger.info(f" Email notification sent for job {job.id}")
     return True
 
 
@@ -248,14 +259,14 @@ def _send_via_pushover(job, profile):
         "title": f"{job.title}",
         "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
         "url": job.url,
-        "url_title": "Hier Details anschauen",
+        "url_title": "View details",
     }
 
     resp = requests.post(
         "https://api.pushover.net/1/messages.json", data=payload, timeout=10
     )
     if resp.status_code == 200:
-        logger.info(f"📱 Pushover notification sent for job {job.id}")
+        logger.info(f" Pushover notification sent for job {job.id}")
         return True
     else:
         logger.error(f"Pushover Error: {resp.text}")
@@ -268,8 +279,11 @@ def send_notification(job, profile, adapters=None, platform=None):
     If adapters is None or empty, falls back to profile.active_notification_service.
     Sends via all specified adapters and returns True if at least one succeeded.
     """
+    user_obj = db.query(User).filter(User.id == profile.user_id).first() if hasattr(profile, 'user_id') else None
+    userName = user_obj.username if user_obj else "Candidate"
+
     _adapter_fns = {
-        "GMAIL": lambda j, p: _send_via_gmail(j, p, platform=platform),
+        "GMAIL": lambda j, p: _send_via_gmail(j, p, platform=platform, userName=userName),
         "PUSHOVER": _send_via_pushover,
     }
 
@@ -305,17 +319,17 @@ def _detect_url_pattern_with_ai(base_url, urls_list):
     Only URLs present in urls_list are returned (anti-hallucination).
     """
     model = get_current_model()
-    system_prompt = """Du bist ein URL-Analyse-Experte für Job-Plattformen.
-Analysiere die URL-Liste und identifiziere den URL-Pfad-Präfix, der ausschließlich für Job-Detail-Seiten (einzelne Stellenanzeigen) gilt – keine Listing-, Kategorie- oder Übersichtsseiten.
+    system_prompt = """You are a URL analysis expert for job platforms.
+Analyze the URL list and identify the URL path prefix that exclusively identifies job detail pages (individual job postings), not listing, category, or overview pages.
 
-Antworte NUR mit validem JSON (kein Markdown):
+Reply ONLY with valid JSON (no markdown):
 {
   "pattern": "/jobs/",
   "job_urls": ["https://...", "https://..."]
 }
 
-- "pattern": URL-Pfad-Präfix der Job-Detail-Seiten (z.B. "/jobs/", "/stellenangebote/", "/career/detail/")
-- "job_urls": Alle URLs aus der gegebenen Liste, die diesem Pattern entsprechen
+- "pattern": URL path prefix of job detail pages (e.g. "/jobs/", "/stellenangebote/", "/career/detail/")
+- "job_urls": All URLs from the given list that match this pattern
 """
     sample = urls_list[:150]
     try:
@@ -325,7 +339,7 @@ Antworte NUR mit validem JSON (kein Markdown):
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"Basis-URL: {base_url}\nURL-Liste:\n{json.dumps(sample)}",
+                    "content": f"Base URL: {base_url}\nURL list:\n{json.dumps(sample)}",
                 },
             ],
             temperature=0.0,
@@ -333,15 +347,15 @@ Antworte NUR mit validem JSON (kein Markdown):
     except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
         from intelligence_service import store_ai_404_error
         if isinstance(e, AuthenticationError):
-            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
+            store_ai_404_error("OpenRouter API key invalid (401). Please check your settings.")
         elif isinstance(e, RateLimitError):
-            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+            store_ai_404_error("OpenRouter rate limit reached (429). Please wait a moment.")
         elif isinstance(e, NotFoundError):
-            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
+            store_ai_404_error("AI model not found on OpenRouter (404). Please check your model setting.")
         elif isinstance(e, APIConnectionError):
-            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
+            store_ai_404_error("Connection to OpenRouter failed. Check your network or service status.")
         else:
-            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+            store_ai_404_error(f"OpenRouter server error ({e.status_code}). Please try again later.")
         logger.error(f"OpenRouter error in _detect_url_pattern_with_ai: {e}")
         return "", []
     content = (
@@ -597,23 +611,23 @@ def analyze_job_task(job_data):
                 {
                     "role": "system",
                     "content": (
-                        "Du bist ein erfahrener Career Advisor. Analysiere die Passung zwischen dem Kandidatenprofil und der Stellenbeschreibung. "
-                        "Antworte ausschließlich mit einem JSON-Objekt ohne Markdown-Codeblöcke:\n"
-                        '{ "score": <integer 0-100>, "reasoning": "<detaillierter Markdown-Text>" }\n\n'
-                        "Das Feld 'reasoning' muss folgende Markdown-Abschnitte enthalten:\n"
-                        "## 🎯 Zusammenfassung\n"
-                        "Kurze Bewertung der Gesamtpassung (2-3 Sätze).\n\n"
-                        "## 💪 Stärken & Match\n"
-                        "Stichpunkte zu den Bereichen, in denen der Kandidat besonders gut passt.\n\n"
-                        "## ⚠️ Lücken & Herausforderungen\n"
-                        "Stichpunkte zu fehlenden Skills oder Anforderungen, die der Kandidat nicht erfüllt.\n\n"
-                        "## 💡 Empfehlung\n"
-                        "Konkrete Handlungsempfehlung: Bewerben, mit Vorbehalt bewerben oder überspringen."
+                        "You are an experienced career advisor. Analyze the fit between the candidate profile and the job description. "
+                        "Respond exclusively with a JSON object without markdown code blocks:\n"
+                        '{ "score": <integer 0-100>, "reasoning": "<detailed markdown text>" }\n\n'
+                        "The 'reasoning' field must contain the following markdown sections:\n"
+                        "## Summary\n"
+                        "Short evaluation of the overall fit (2-3 sentences).\n\n"
+                        "## Strengths & Match\n"
+                        "Bullet points on areas where the candidate fits particularly well.\n\n"
+                        "## Gaps & Challenges\n"
+                        "Bullet points on missing skills or requirements that the candidate does not fulfill.\n\n"
+                        "## Recommendation\n"
+                        "Concrete recommendation: Apply, apply with reservations, or skip."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"Stellentitel: {job_data['title']}\n\nStellenbeschreibung:\n{job_data['description'][:10000]}\n\nKandidatenprofil:\n{profile_str}",
+                    "content": f"Job Title: {job_data['title']}\n\nJob Description:\n{job_data['description'][:10000]}\n\nCandidate Profile:\n{profile_str}",
                 },
             ],
             temperature=0.3,
@@ -681,7 +695,7 @@ def analyze_job_task(job_data):
         from intelligence_service import clear_ai_404_error
         clear_ai_404_error()
         r.publish("job_updates", payload)
-        logger.info(f"✅ WebSocket Event 'new_job' published for {db_job.title}")
+        logger.info(f" WebSocket Event 'new_job' published for {db_job.title}")
 
         # Increment jobs_saved counter
         crawl_job_id = job_data.get("crawl_job_id")
@@ -743,7 +757,9 @@ def analyze_job_task(job_data):
                                 r.expire(f"crawl:{crawl_job_id}:pending_gmail", 3600)
                             else:
                                 # No crawl context — send immediately
-                                sent = _send_via_gmail(db_job, settings_profile, platform=platform) or sent
+                                user_obj = db.query(User).filter(User.id == user_id).first()
+                                userName = user_obj.username if user_obj else "Candidate"
+                                sent = _send_via_gmail(db_job, settings_profile, platform=platform, userName=userName) or sent
 
                         if sent or has_gmail:
                             db_job.notification_sent = True
@@ -838,7 +854,7 @@ def analyze_job_task(job_data):
 @celery_app.task(name="ai.generate_application")
 def generate_application_task(job_id, user_id=None):
     logger.info(
-        f"[TASK] Generiere Anschreiben für Job ID: {job_id}, User ID: {user_id}"
+        f"[TASK] Generating application letter for Job ID: {job_id}, User ID: {user_id}"
     )
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
@@ -846,7 +862,7 @@ def generate_application_task(job_id, user_id=None):
     try:
         job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
         if not job:
-            logger.error(f"FEHLER: Job ID {job_id} nicht in DB gefunden!")
+            logger.error(f"Job ID {job_id} not found in DB.")
             return
 
         target_user_id = user_id if user_id else job.user_id
@@ -863,7 +879,7 @@ def generate_application_task(job_id, user_id=None):
             profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
         if not profile:
-            error_msg = "Profil unvollständig. Bitte in den Einstellungen Lebenslauf hinterlegen."
+            error_msg = "Profile incomplete. Please add your resume in the settings."
             logger.error(f"Application generation failed: {error_msg}")
 
             job.status = "FAILED"
@@ -889,7 +905,7 @@ def generate_application_task(job_id, user_id=None):
             )
             return
 
-        logger.info(f"Daten geladen. Job: {job.title}, User: {profile.role}")
+        logger.info(f"Data loaded. Job: {job.title}, User: {profile.role}")
 
         cv_text = format_cv_for_prompt(profile.cv_data)
 
@@ -916,7 +932,7 @@ def generate_application_task(job_id, user_id=None):
         {cv_text}
         """
 
-        logger.info("⏳ Sende Anfrage an OpenAI für Anschreiben...")
+        logger.info(" Sende Anfrage an OpenAI für Anschreiben...")
         model = get_current_model()
         response = get_client(db).chat.completions.create(
             model=model,
@@ -926,12 +942,12 @@ def generate_application_task(job_id, user_id=None):
             ],
             temperature=0.7,
         )
-        logger.info("Antwort von OpenAI erhalten (Anschreiben).")
+        logger.info("Received AI response for application letter.")
 
         job.application_draft = response.choices[0].message.content
         job.status = "COMPLETED"
         db.commit()
-        logger.info(f"Anschreiben für Job {job_id} in DB gespeichert.")
+        logger.info(f"Application letter for job {job_id} saved to DB.")
 
         from intelligence_service import clear_ai_404_error
         clear_ai_404_error()
@@ -947,7 +963,7 @@ def generate_application_task(job_id, user_id=None):
                 }
             ),
         )
-        logger.info(f"✅ WebSocket Event 'job_update' für {job.id} gesendet.")
+        logger.info(f" WebSocket Event 'job_update' für {job.id} gesendet.")
 
     except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
         from intelligence_service import store_ai_404_error
@@ -979,7 +995,7 @@ def generate_application_task(job_id, user_id=None):
         except Exception as db_e:
             logger.error(f"Failed to save 404 error status: {db_e}")
     except Exception as e:
-        logger.error(f"CRASH BEI GENERIERUNG für Job {job_id}: {e}", exc_info=True)
+        logger.error(f"Generation failed for job {job_id}: {e}", exc_info=True)
         db.rollback()
 
         # Try to set status to FAILED in DB
@@ -1039,7 +1055,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             api_key=api_key,
         )
 
-        print(prep_data)
+        logger.info(f"Interview prep data generated: {len(str(prep_data))} chars")
 
         job.interview_prep_material = json.dumps(prep_data, ensure_ascii=False)
         db.commit()
@@ -1087,7 +1103,7 @@ def generate_company_profile(self, domain: str, user_id: int):
         company_name = domain
         if jobs:
             company_name = jobs[0].company or domain
-            raw_info += f"Firmenname: {company_name}\n"
+            raw_info += f"Company name: {company_name}\n"
 
         # Web research phase: fetch real online content about the company
         try:
@@ -1220,7 +1236,7 @@ def check_follow_ups():
             if not user_profile:
                 continue
 
-            message = f"Follow-up fällig: {job.title} bei {job.company}"
+            message = f"Follow-up due: {job.title} at {job.company}"
 
             # Use existing notification adapters (same pattern as worker.py)
             if (
@@ -1257,7 +1273,7 @@ def check_follow_ups():
 
 @celery_app.task(name="ai.check_platforms_for_crawl")
 def check_platforms_for_crawl():
-    logger.info("⏰ Checking platforms for scheduled crawls...")
+    logger.info(" Checking platforms for scheduled crawls...")
     db = SessionLocal()
     try:
         from datetime import datetime, timedelta, timezone
@@ -1312,7 +1328,7 @@ def check_platforms_for_crawl():
 
         if triggered_count > 0:
             db.commit()
-            logger.info(f"✅ Triggered {triggered_count} periodic crawls.")
+            logger.info(f" Triggered {triggered_count} periodic crawls.")
         else:
             logger.info("No platforms due for crawl.")
 

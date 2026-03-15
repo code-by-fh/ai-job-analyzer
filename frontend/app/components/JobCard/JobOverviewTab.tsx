@@ -26,7 +26,7 @@ export default function JobOverviewTab({ job, onTabChange }: JobOverviewTabProps
                     <div className="flex items-center gap-2 mb-2.5">
                         <Brain className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
                         <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                            {t('analysis') || 'KI-Analyse'}
+                            {t('analysis') || 'AI Analysis'}
                         </span>
                     </div>
                     <div className="prose prose-sm dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 leading-relaxed">
@@ -59,7 +59,7 @@ export default function JobOverviewTab({ job, onTabChange }: JobOverviewTabProps
                         <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
                             <CheckItem
                                 icon={<FileText className="w-3 h-3" />}
-                                label={t('application') || 'Bewerbung'}
+                                label={t('application') || 'Application'}
                                 done={!!job.application_draft}
                                 onClick={() => onTabChange('application')}
                             />
@@ -78,14 +78,14 @@ export default function JobOverviewTab({ job, onTabChange }: JobOverviewTabProps
                             <div className="flex items-center gap-2 text-xs">
                                 <Clock className="w-3 h-3 text-amber-500 flex-shrink-0" />
                                 <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                                    {new Date(job.next_follow_up_at).toLocaleDateString('de-DE')}
+                                    {new Date(job.next_follow_up_at).toLocaleDateString('en-US')}
                                 </span>
                             </div>
                         )}
                         {job.created_at && (
                             <div className="flex items-center gap-2 text-xs text-slate-400">
                                 <CalendarDays className="w-3 h-3 flex-shrink-0" />
-                                <span>{new Date(job.created_at).toLocaleDateString('de-DE')}</span>
+                                <span>{new Date(job.created_at).toLocaleDateString('en-US')}</span>
                             </div>
                         )}
                         {job.url && (

@@ -11,11 +11,13 @@ import { logger } from '../lib/logger';
 type Tab = 'target' | 'resume';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-function Field({ label, icon, children }: { label: string; icon: string; children: React.ReactNode }) {
+import { Target, FileText, Briefcase, Zap, CircleDollarSign, MapPin, Sparkles, CheckCircle2, UploadCloud, GraduationCap } from 'lucide-react';
+
+function Field({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
       <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-        <span>{icon}</span> {label}
+        {icon} {label}
       </label>
       {children}
     </div>
@@ -64,7 +66,7 @@ export default function Profile() {
           });
           setLoading(false);
         })
-        .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); showError(`GET /settings-view fehlgeschlagen: ${e?.message || e}`); setLoading(false); });
+        .catch(e => { logger.error({ err: e }, "Fetch profile settings errored"); showError(`GET /settings-view failed: ${e?.message || e}`); setLoading(false); });
     }
   }, [token]);
 
@@ -175,12 +177,12 @@ export default function Profile() {
 
   return (
     <PageWrapper>
-      <PageHeader title="Profil & Lebenslauf" subtitle={t('profileSubtitle')} />
+      <PageHeader title="Profile & Resume" subtitle={t('profileSubtitle')} />
 
       {/* Profile Completion */}
       <div className="glass-card rounded-2xl p-4 mb-6">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Profil-Vollständigkeit</span>
+          <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Profile Completion</span>
           <span className={`text-sm font-bold tabular-nums ${pctTextColor}`}>{pct}%</span>
         </div>
         <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
@@ -203,7 +205,10 @@ export default function Profile() {
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
             }`}
           >
-            {tab === 'target' ? '🎯 Ziel-Job' : '📄 Lebenslauf'}
+            <div className="flex items-center justify-center gap-2">
+              {tab === 'target' ? <Target size={14} /> : <FileText size={14} />}
+              {tab === 'target' ? 'Target Job' : 'Resume'}
+            </div>
           </button>
         ))}
       </div>
@@ -213,20 +218,20 @@ export default function Profile() {
         <div className="glass-card rounded-2xl p-6 sm:p-8">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6">{t('targetParameters')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Field label={t('targetRole')} icon="💼">
+            <Field label={t('targetRole')} icon={<Briefcase size={14} />}>
               <input name="role" value={formData.role} onChange={handleChange} className={inputCls} placeholder="e.g. Backend Engineer" />
             </Field>
-            <Field label={t('skillsComma')} icon="⚡">
+            <Field label={t('skillsComma')} icon={<Zap size={14} />}>
               <input name="skills" value={formData.skills} onChange={handleChange} className={inputCls} placeholder="Python, AWS, React..." />
             </Field>
-            <Field label={t('minSalary')} icon="💰">
+            <Field label={t('minSalary')} icon={<CircleDollarSign size={14} />}>
               <input name="min_salary" value={formData.min_salary} onChange={handleChange} className={inputCls} placeholder="70.000 €" />
             </Field>
-            <Field label={t('location')} icon="📍">
+            <Field label={t('location')} icon={<MapPin size={14} />}>
               <input name="location" value={formData.location} onChange={handleChange} className={inputCls} placeholder="Berlin, Remote..." />
             </Field>
             <div className="sm:col-span-2">
-              <Field label={t('preferencesNatural')} icon="✨">
+              <Field label={t('preferencesNatural')} icon={<Sparkles size={14} />}>
                 <textarea name="preferences" value={formData.preferences} onChange={handleChange} className={`${inputCls} min-h-[100px] resize-none`} rows={3} />
               </Field>
             </div>
@@ -264,12 +269,12 @@ export default function Profile() {
                 </>
               ) : uploadMessage ? (
                 <>
-                  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3 text-2xl">✅</div>
+                  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3 text-2xl"><CheckCircle2 className="text-emerald-500" /></div>
                   <p className="font-semibold text-emerald-600 dark:text-emerald-400">{uploadMessage}</p>
                 </>
               ) : (
                 <>
-                  <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4 text-2xl">📤</div>
+                  <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4"><UploadCloud className="text-indigo-500" /></div>
                   <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{t('uploadCv')}</p>
                   <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{t('dropPdf')}</p>
                   <div className="mt-4 px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl">
@@ -312,7 +317,7 @@ export default function Profile() {
           {/* Education */}
           <div className="glass-card rounded-2xl p-6 sm:p-8">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-              <span>🎓</span> {t('education')}
+              <GraduationCap size={20} className="text-indigo-500" /> {t('education')}
             </h2>
             <textarea
               value={formData.cv_data.education}

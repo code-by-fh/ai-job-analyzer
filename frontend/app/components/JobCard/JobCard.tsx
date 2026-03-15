@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Star } from 'lucide-react';
 import { useLanguage } from '../LanguageProvider';
 import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
@@ -16,12 +17,12 @@ import JobStatusTab from './JobStatusTab';
 import JobDocumentsTab from './JobDocumentsTab';
 
 const TABS: { id: TabType & string; labelKey: string; labelFallback: string; shortLabel: string }[] = [
-    { id: 'overview', labelKey: 'overview', labelFallback: 'Übersicht', shortLabel: 'Info' },
-    { id: 'application', labelKey: 'application', labelFallback: 'Bewerbung', shortLabel: 'Bew.' },
-    { id: 'interview', labelKey: 'interviewPrep', labelFallback: 'Interview', shortLabel: 'Int.' },
-    { id: 'company', labelKey: 'companyProfile', labelFallback: 'Firma', shortLabel: 'Firma' },
+    { id: 'overview', labelKey: 'overview', labelFallback: 'Overview', shortLabel: 'Info' },
+    { id: 'application', labelKey: 'application', labelFallback: 'Application', shortLabel: 'App' },
+    { id: 'interview', labelKey: 'interviewPrep', labelFallback: 'Interview', shortLabel: 'Int' },
+    { id: 'company', labelKey: 'companyProfile', labelFallback: 'Company', shortLabel: 'Co' },
     { id: 'status', labelKey: '', labelFallback: 'Status', shortLabel: 'Status' },
-    { id: 'documents', labelKey: '', labelFallback: 'Unterlagen', shortLabel: 'Docs' },
+    { id: 'documents', labelKey: '', labelFallback: 'Documents', shortLabel: 'Docs' },
 ];
 
 export default function JobCard({
@@ -44,7 +45,7 @@ export default function JobCard({
         if (diff > 86400) return Math.floor(diff / 86400) + (t('dayUnit') || 'd');
         if (diff > 3600) return Math.floor(diff / 3600) + (t('hourUnit') || 'h');
         if (diff > 60) return Math.floor(diff / 60) + (t('minUnit') || 'm');
-        return t('now') || 'Jetzt';
+        return t('now') || 'Now';
     };
 
     const currentStatus = job.status || 'OPEN';
@@ -114,7 +115,10 @@ export default function JobCard({
                                     }`}
                                 title={job.is_favorite ? t('removeFromFavorites') : t('addToFavorites')}
                             >
-                                {job.is_favorite ? '⭐' : '☆'}
+                                {job.is_favorite 
+                                    ? <Star className="w-4 h-4 fill-amber-500" /> 
+                                    : <Star className="w-4 h-4" />
+                                }
                             </button>
                         </div>
                     </div>
@@ -170,7 +174,7 @@ export default function JobCard({
                         <svg className="w-3 h-3 transition-transform duration-200 group-open/desc:rotate-90 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M8 5l8 7-8 7V5z" />
                         </svg>
-                        <span>{t('jobDescription') || 'Stellenbeschreibung'}</span>
+                        <span>{t('jobDescription') || 'Job Description'}</span>
                         <span className="flex-1" />
                         {job.url && (
                             <a
@@ -183,7 +187,7 @@ export default function JobCard({
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                 </svg>
-                                <span className="hidden sm:inline">{t('applySource') || 'Originalanzeige'}</span>
+                                <span className="hidden sm:inline">{t('applySource') || 'Original source'}</span>
                             </a>
                         )}
                     </summary>

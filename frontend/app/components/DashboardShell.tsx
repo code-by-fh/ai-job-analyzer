@@ -11,6 +11,13 @@ import { useLanguage } from './LanguageProvider';
 import { useNotification } from './NotificationProvider';
 import AIErrorBanner from './AIErrorBanner';
 import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS, NavItemConfig } from '../lib/navigation';
+import * as LucideIcons from 'lucide-react';
+
+const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
+    const IconComponent = (LucideIcons as any)[name];
+    if (!IconComponent) return null;
+    return <IconComponent className={className} />;
+};
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -71,7 +78,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         );
     }
 
-    const initial = user.username.charAt(0).toUpperCase();
+    const initial = user?.username ? user.username.charAt(0).toUpperCase() : '?';
     const label = (item: NavItemConfig) => item.labelKey ? t(item.labelKey) : (item.labelLiteral || '');
     const hasAdmin = Boolean(user?.is_admin);
     const adminActive = hasAdmin && ADMIN_NAV_ITEMS.some(item => isActive(item));
@@ -171,8 +178,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                     {initial}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate leading-none">{user.username}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5 leading-none">{user.is_admin ? t('admin') : t('member')}</p>
+                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate leading-none">{user?.username || 'User'}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 leading-none">{user?.is_admin ? t('admin') : t('member')}</p>
                                 </div>
                             </div>
                             <UserMenu />
@@ -196,7 +203,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
                         {initial}
                     </div>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{user.username}</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{user?.username || 'User'}</span>
                 </div>
             </header>
 
@@ -235,7 +242,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                             }
                                         `}
                                     >
-                                        <span className="text-lg">{item.icon}</span>
+                                        <DynamicIcon name={item.icon} className="w-5 h-5" />
                                         <span>{label(item)}</span>
                                     </Link>
                                 ))}
@@ -245,7 +252,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     )}
 
                     {/* Theme & Language row */}
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-3">Einstellungen</p>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-3">{t('settings')}</p>
                     <div className="flex items-center justify-between px-2 mb-3">
                         <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('switchDark')}</span>
                         <ThemeToggler />
@@ -283,8 +290,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                     <span className="w-8 h-0.5 bg-indigo-500 rounded-b-full" />
                                 </span>
                             )}
-                            <span className={`text-[22px] leading-none transition-transform duration-200 ${active ? 'scale-110' : ''}`}>
-                                {item.icon}
+                            <span className={`transition-transform duration-200 ${active ? 'scale-110' : ''}`}>
+                                <DynamicIcon name={item.icon} className="w-6 h-6" />
                             </span>
                             <span className="text-[10px] font-medium leading-none">{label(item)}</span>
                         </Link>
@@ -307,10 +314,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             <span className="w-8 h-0.5 bg-indigo-500 rounded-b-full" />
                         </span>
                     )}
-                    <span className={`text-[22px] leading-none transition-transform duration-200 ${moreOpen ? 'rotate-45 scale-110' : ''}`}>
-                        ⚙️
+                    <span className={`transition-transform duration-200 ${moreOpen ? 'rotate-90 scale-110' : ''}`}>
+                        <LucideIcons.MoreHorizontal className="w-6 h-6" />
                     </span>
-                    <span className="text-[10px] font-medium leading-none">Mehr</span>
+                    <span className="text-[10px] font-medium leading-none">{t('more')}</span>
                 </button>
             </nav>
 
@@ -349,7 +356,7 @@ function CollapsedLogout() {
             className="w-full flex justify-center p-2 rounded-lg text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer"
             title={t('signOut')}
         >
-            <span className="text-base leading-none">🚪</span>
+            <LucideIcons.LogOut className="w-5 h-5" />
         </button>
     );
 }
@@ -379,8 +386,8 @@ function SidebarLink({ href, icon, label, active, collapsed, onClick }: {
             {active && !collapsed && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-indigo-500 dark:bg-indigo-400 rounded-r-full" />
             )}
-            <span className={`text-base leading-none flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>
-                {icon}
+            <span className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${active ? 'scale-110' : ''}`}>
+                <DynamicIcon name={icon} className="w-5 h-5" />
             </span>
             {!collapsed && <span className="truncate">{label}</span>}
         </Link>

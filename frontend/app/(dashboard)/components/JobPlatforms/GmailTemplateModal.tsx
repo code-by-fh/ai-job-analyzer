@@ -44,8 +44,8 @@ export default function GmailTemplateModal({
                     <div>
                         <h3 className="font-bold text-slate-900 dark:text-white text-sm">Gmail Template — {platform.name}</h3>
                         <p className="text-xs text-slate-500 mt-1">
-                            Wrap job rows in <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">{'{{#jobs}}'}&hellip;{'{{/jobs}}'}</code> to loop over all matches.
-                            Variables: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$url</code>
+                            Global: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$jobCount</code>. 
+                            Inside <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">{'{{#jobs}}'}</code>: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$url</code>
                         </p>
                     </div>
                     <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
@@ -87,7 +87,7 @@ export default function GmailTemplateModal({
                     <textarea
                         value={templateValue}
                         onChange={(e) => onTemplateChange(e.target.value)}
-                        placeholder={`<html>\n<body>\n  <h1>New Job Matches</h1>\n  {{#jobs}}\n  <div style="margin-bottom:20px;border-bottom:1px solid #eee">\n    <h2>$title – $company ($match_score%)</h2>\n    <p>$reasoning</p>\n    <a href="$url">Details anschauen</a>\n  </div>\n  {{/jobs}}\n</body>\n</html>`}
+                        placeholder={`<html>\n<body>\n  <p>Hallo $userName,</p>\n  <h1>$jobCount neue Job-Matches für dich</h1>\n  {{#jobs}}\n  <div style="margin-bottom:20px;border-bottom:1px solid #eee">\n    <h2>$title – $company ($match_score%)</h2>\n    <p>$reasoning</p>\n    <a href="$url">Details anschauen</a>\n  </div>\n  {{/jobs}}\n</body>\n</html>`}
                         className="w-full h-72 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                         spellCheck={false}
                     />

@@ -7,6 +7,7 @@ import PageHeader from '../../components/PageHeader';
 import { useRouter } from 'next/navigation';
 import ConfirmModal from '../../components/ConfirmModal';
 import { logger } from '../../lib/logger';
+import { UserPlus } from 'lucide-react';
 
 export default function UserManagementPage() {
     const { user, token, isAuthenticated } = useAuth();
@@ -106,7 +107,7 @@ export default function UserManagementPage() {
             <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>➕</span> {t('createNewUser')}
+                        <UserPlus className="w-5 h-5 text-indigo-500" /> {t('createNewUser')}
                     </h2>
                     {status && <span className={`text-sm font-bold ${status.includes('error') ? 'text-rose-500' : 'text-emerald-500'}`}>{status}</span>}
                 </div>

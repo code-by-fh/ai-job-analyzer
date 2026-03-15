@@ -46,13 +46,13 @@ export default function AdminSettingsPage() {
 
     const handleWipeDatabase = async () => {
         if (!wipePassword) {
-            setWipeStatus('Passwort erforderlich');
+            setWipeStatus('Password required');
             setShowWipeModal(false);
             return;
         }
 
         setWipeLoading(true);
-        setWipeStatus('Lösche Datenbank...');
+        setWipeStatus('Wiping database...');
 
         try {
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/database/wipe`, {
@@ -67,7 +67,7 @@ export default function AdminSettingsPage() {
             });
 
             if (res.ok) {
-                setWipeStatus('Datenbank erfolgreich zurückgesetzt.');
+                setWipeStatus('Database successfully reset.');
                 try {
                     localStorage.removeItem('crawl_last_run');
                 } catch (e) {
@@ -75,10 +75,10 @@ export default function AdminSettingsPage() {
                 }
             } else {
                 const data = await res.json();
-                setWipeStatus(`Fehler: ${data.detail || 'Konnte Datenbank nicht löschen'}`);
+                setWipeStatus(`Error: ${data.detail || 'Could not wipe database'}`);
             }
         } catch (e) {
-            setWipeStatus('Netzwerkfehler beim Löschen der Datenbank');
+            setWipeStatus('Network error while wiping database');
         } finally {
             setWipeLoading(false);
             setWipePassword('');
@@ -405,9 +405,9 @@ export default function AdminSettingsPage() {
             <div className="relative z-10 mt-8 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-rose-200 dark:border-rose-900">
                 <h3 className="text-lg font-bold text-rose-600 dark:text-rose-500 mb-2">Danger Zone</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                    Hier kannst du die komplette Datenbank zurücksetzen. Dabei werden alle Jobs, generierten Bewerbungen,
-                    Interview-Materialien, verknüpften Plattformen und Firmenprofile gelöscht.
-                    Benutzerkonten und Globale Einstellungen bleiben erhalten.
+                    Here you can completely reset the database. This will delete all jobs, generated applications,
+                    interview materials, linked platforms and company profiles.
+                    User accounts and global settings are preserved.
                 </p>
                 <div className="flex items-center justify-between">
                     <button
@@ -415,7 +415,7 @@ export default function AdminSettingsPage() {
                         onClick={() => setShowWipeModal(true)}
                         className="bg-rose-600 hover:bg-rose-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-rose-500/20 transition active:scale-95 cursor-pointer"
                     >
-                        Datenbank löschen...
+                        Wipe Database...
                     </button>
                     {wipeStatus && (
                         <span className={`text-sm font-bold ${wipeStatus.includes('Error') ? 'text-rose-500' : 'text-emerald-500'}`}>
@@ -429,10 +429,10 @@ export default function AdminSettingsPage() {
                 isOpen={showWipeModal}
                 onClose={() => { setShowWipeModal(false); setWipePassword(''); setWipeStatus(''); }}
                 onConfirm={handleWipeDatabase}
-                title="Datenbank unwiderruflich löschen"
-                message="Bist du sicher, dass du die Datenbank löschen möchtest? Dies kann nicht rückgängig gemacht werden."
-                confirmText={wipeLoading ? "Lösche..." : "Dauerhaft löschen"}
-                cancelText="Abbrechen"
+                title="Wipe database irrevocably"
+                message="Are you sure you want to wipe the database? This cannot be undone."
+                confirmText={wipeLoading ? "Wiping..." : "Permanently Wipe"}
+                cancelText="Cancel"
                 isDestructive
             >
                 <div className="space-y-4">
@@ -445,25 +445,25 @@ export default function AdminSettingsPage() {
                             className="appearance-none w-4 h-4 border border-rose-400 dark:border-rose-600 rounded bg-white dark:bg-slate-900 checked:bg-rose-500 checked:border-rose-500 cursor-pointer relative after:content-['✓'] after:absolute after:text-white after:text-[10px] after:font-bold after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:opacity-0 checked:after:opacity-100 transition-colors shrink-0"
                         />
                         <label htmlFor="wipeAllUsers" className="text-sm text-rose-800 dark:text-rose-400 cursor-pointer leading-tight font-medium">
-                            Gesamte Datenbank löschen (Daten von ALLEN Nutzern entfernen)
+                            Wipe entire database (remove data for ALL users)
                         </label>
                     </div>
 
                     {!wipeAllUsers && (
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Wenn deaktiviert, werden nur die Jobs, Plattformen und Einträge deines <b>eigenen Admin-Accounts</b> komplett gelöscht.
+                            If disabled, only the jobs, platforms and entries of your <b>own admin account</b> will be completely deleted.
                         </p>
                     )}
 
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Admin Passwort bestätigen:
+                            Confirm Admin Password:
                         </label>
                         <input
                             type="password"
                             value={wipePassword}
                             onChange={(e) => setWipePassword(e.target.value)}
-                            placeholder="Dein Passwort"
+                            placeholder="Your password"
                             className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500/50"
                         />
                     </div>

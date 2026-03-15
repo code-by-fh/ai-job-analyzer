@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLanguage } from './LanguageProvider';
 import { TranslationKey } from '../lib/languages';
+import { AlertTriangle, Zap, Loader2 } from 'lucide-react';
 
 interface SearchHeaderProps {
     jobCount: number;
@@ -47,11 +48,11 @@ export default function SearchHeader({
                     {!isProfileComplete && (
                         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
                             <span className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 px-3 py-1.5 rounded-full border border-rose-200 dark:border-rose-900 shadow-sm flex items-center gap-1.5">
-                                ⚠️ {t('completeProfileFirst')}
+                                <AlertTriangle size={14} /> {t('completeProfileFirst')}
                             </span>
                         </div>
                     )}
-                    <span className="text-slate-400 mr-3">⚡</span>
+                    <Zap size={18} className="text-slate-400 mr-3" />
                     <input
                         className="w-full bg-transparent focus:outline-none text-slate-900 dark:text-white placeholder:text-slate-400 disabled:opacity-50"
                         value={query} onChange={(e) => setQuery(e.target.value)}
@@ -73,7 +74,7 @@ export default function SearchHeader({
                         }
                 `}
                 >
-                    {isCrawling ? <span className="animate-spin text-xl">⚙️</span> : t('scan')}
+                    {isCrawling ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : t('scan')}
                 </button>
             </div>
         </div>

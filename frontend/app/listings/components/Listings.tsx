@@ -1,5 +1,5 @@
 "use client";
-import { Loader2, Archive } from 'lucide-react';
+import { Loader2, Archive, AlertTriangle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
@@ -452,7 +452,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             {/* GLOBAL ERROR BANNER */}
             {globalError && (
                 <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-300 px-4 py-3 rounded-lg flex items-center justify-between">
-                    <span>⚠️ {globalError}</span>
+                    <span className="flex items-center gap-2"><AlertTriangle size={18} /> {globalError}</span>
                 </div>
             )}
 

@@ -195,7 +195,7 @@ export default function Account() {
         {/* SECURITY */}
         <AccountCard
           title={t('security')}
-          subtitle="Passwort & Zugriff"
+          subtitle="Password & Access"
           icon={<Lock className="w-6 h-6" />}
         >
           <PasswordChangeForm token={token} />
@@ -204,7 +204,7 @@ export default function Account() {
         {/* DANGER ZONE */}
         <AccountCard
           title={t('dangerZone')}
-          subtitle="Daten & Konto löschen"
+          subtitle="Delete Data & Account"
           icon={<AlertTriangle className="w-6 h-6" />}
           variant="danger"
         >
@@ -232,7 +232,7 @@ export default function Account() {
             </button>
           </div>
           <p className="mt-6 text-center text-xs text-rose-600/60 dark:text-rose-400/40 font-medium">
-            Diese Aktionen sind endgültig und können nicht rückgängig gemacht werden.
+            These actions are final and cannot be undone.
           </p>
         </AccountCard>
       </div>

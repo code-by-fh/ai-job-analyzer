@@ -18,6 +18,7 @@ export const translations = {
         expandSidebar: "Expand Sidebar",
         jobAgent: "JobAgent",
         deepIntelligence: "Deep Intelligence",
+        more: "More",
 
         // User Menu
         signOut: "Sign Out",
@@ -296,6 +297,7 @@ export const translations = {
         expandSidebar: "Sidebar ausklappen",
         jobAgent: "JobAgent",
         deepIntelligence: "Tiefe Intelligenz",
+        more: "Mehr",
 
         // User Menu
         signOut: "Abmelden",

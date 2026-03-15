@@ -93,8 +93,8 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
     const specs = p?.specifications;
 
     const gapColor = (s: string) =>
-        s === 'kein Gap' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
-            s === 'leichter Gap' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
+        s === 'no gap' || s === 'kein Gap' || s === 'No Gap' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
+            s === 'slight gap' || s === 'leichter Gap' || s === 'Slight Gap' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
                 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
 
     if (interviewQueued || interviewLoading) {
@@ -105,8 +105,8 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     <Loader2 className="w-10 h-10 text-indigo-500 animate-spin relative z-10" />
                 </div>
                 <div className="text-center animate-in fade-in slide-in-from-bottom-2 duration-500">
-                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Strategische Analyse läuft…</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Wir bereiten dich auf das Gespräch vor.</p>
+                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Strategic analysis in progress...</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">We are preparing you for the interview.</p>
                 </div>
             </div>
         );
@@ -119,14 +119,14 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     <Brain className="w-8 h-8 text-indigo-500" />
                 </div>
                 <div className="text-center px-6 max-w-sm space-y-2">
-                    <p className="text-lg font-bold text-slate-800 dark:text-slate-200">Interview Strategie-Guide</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Hole dir eine maßgeschneiderte Vorbereitung basierend auf deinem Profil und den Job-Anforderungen.</p>
+                    <p className="text-lg font-bold text-slate-800 dark:text-slate-200">Interview Strategy Guide</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Get a tailored preparation based on your profile and the job requirements.</p>
                 </div>
                 <button
                     onClick={handleGenerate}
                     className="group flex items-center gap-2 px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all hover:-translate-y-0.5 cursor-pointer"
                 >
-                    Analyse starten
+                    Start Analysis
                     <Zap className="w-4 h-4" />
                 </button>
             </div>
@@ -142,8 +142,8 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                         <Brain className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     </div>
                     <div>
-                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Interview-Analyse</span>
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Strategischer Guide</p>
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Interview Analysis</span>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Strategic Guide</p>
                     </div>
                 </div>
                 <button
@@ -152,7 +152,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 rounded-xl transition-all cursor-pointer disabled:opacity-50"
                 >
                     <RefreshCw className={`w-3.5 h-3.5 ${interviewQueued ? 'animate-spin' : ''}`} />
-                    Neu generieren
+                    Regenerate
                 </button>
             </div>
 
@@ -166,17 +166,17 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
                 {/* Briefing */}
                 {(purpose || hypothesis || experts.length > 0) && (
-                    <Section title="Strategisches Briefing" icon={<Target className="w-4 h-4" />} color="slate">
+                    <Section title="Strategic Briefing" icon={<Target className="w-4 h-4" />} color="slate">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {purpose && (
                                 <div>
-                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block mb-2">Missions-Ziel</span>
+                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block mb-2">Mission Goal</span>
                                     <p className="text-sm font-semibold">{purpose}</p>
                                 </div>
                             )}
                             {hypothesis && (
                                 <div>
-                                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2">Kern-Hypothese</span>
+                                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2">Core Hypothesis</span>
                                     <p className="text-sm italic bg-white dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
                                         {hypothesis}
                                     </p>
@@ -185,7 +185,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                         </div>
                         {experts.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest w-full mb-1">KI-Experten Module</span>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest w-full mb-1">AI Expert Modules</span>
                                 {experts.map((e: string, i: number) => (
                                     <span key={i} className="px-3 py-1 bg-white dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 rounded-lg border border-slate-200 dark:border-slate-700">
                                         {e}
@@ -225,7 +225,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                     <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl">
                                         <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                     </div>
-                                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Erfolgsfaktoren</span>
+                                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Success Factors</span>
                                 </div>
                                 <ul className="space-y-4">
                                     {success.map((s: string, i: number) => (
@@ -242,7 +242,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                     <div className="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
                                         <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                                     </div>
-                                    <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Potenzielle Gaps</span>
+                                    <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Potential Gaps</span>
                                 </div>
                                 <ul className="space-y-4">
                                     {gaps.map((g: string, i: number) => (
@@ -258,7 +258,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
                 {/* Gap Analysis Detail */}
                 {compAnalysis.length > 0 && (
-                    <Section title="Eignungs-Check" icon={<Target className="w-4 h-4" />} color="slate">
+                    <Section title="Suitability Check" icon={<Target className="w-4 h-4" />} color="slate">
                         <div className="grid grid-cols-1 gap-4">
                             {compAnalysis.map((item: any, i: number) => (
                                 <div key={i} className="p-5 bg-white dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 hover:shadow-md transition-shadow">
@@ -270,11 +270,11 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                     </div>
                                     <div className="space-y-3 pt-2">
                                         <div>
-                                            <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Job Anforderung</span>
+                                            <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Job Requirement</span>
                                             <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{item.job_requirement || item.requirement}</p>
                                         </div>
                                         <div className="pt-2 border-t border-slate-50 dark:border-slate-800">
-                                            <span className="block text-[9px] font-bold text-indigo-400 uppercase mb-1">Dein CV-Gegenstück</span>
+                                            <span className="block text-[9px] font-bold text-indigo-400 uppercase mb-1">Your CV Match</span>
                                             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic">{item.cv_qualification || item.my_story}</p>
                                         </div>
                                     </div>
@@ -286,7 +286,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
                 {/* Psychological Questions */}
                 {psychQs.length > 0 && (
-                    <Section title="Psychologische Fragen & Taktik" icon={<Brain className="w-4 h-4" />} color="purple">
+                    <Section title="Psychological Questions & Tactics" icon={<Brain className="w-4 h-4" />} color="purple">
                         <div className="grid grid-cols-1 gap-4">
                             {psychQs.map((q: any, i: number) => (
                                 <div key={i} className="p-5 bg-white/40 dark:bg-purple-900/20 rounded-2xl border border-purple-100 dark:border-purple-500/10 space-y-3">
@@ -308,7 +308,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
                 {/* Questions for Interviewer */}
                 {backQs.length > 0 && (
-                    <Section title="Eigene Rückfragen" icon={<MessageSquare className="w-4 h-4" />} color="sky">
+                    <Section title="Own Questions" icon={<MessageSquare className="w-4 h-4" />} color="sky">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {backQs.map((q: string, i: number) => (
                                 <div key={i} className="flex gap-4 p-4 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-sky-100/50 dark:border-sky-500/10">
@@ -333,8 +333,8 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                 <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                             </div>
                             <div className="text-left">
-                                <span className="block text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest leading-none mb-1">Deep Dive Analyse</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Vollständiger Interview-Prep Guide</span>
+                                <span className="block text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest leading-none mb-1">Deep Dive Analysis</span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Full Interview Prep Guide</span>
                             </div>
                         </div>
                         <div className={`p-2 rounded-full bg-slate-200/50 dark:bg-slate-700/50 transition-transform duration-300 ${reportExpanded ? 'rotate-180' : ''}`}>

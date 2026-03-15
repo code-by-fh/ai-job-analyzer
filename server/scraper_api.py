@@ -64,7 +64,7 @@ def cleanup_stale_jobs():
                     total_removed += 1
                     logger.info(f"Removed completed job {job_id}")
 
-    logger.info(f"✅ Cleanup complete. Removed {total_removed} stale jobs.")
+    logger.info(f" Cleanup complete. Removed {total_removed} stale jobs.")
 
 
 def cleanup_crawl_job(job_id, user_id, reason="error"):
@@ -127,7 +127,7 @@ def fail_crawl_job(job_id: str, user_id: int, error_message: str):
         r.delete(f"crawl_job:{job_id}:all_job_titles")
         r.srem(f"user:{user_id}:active_crawls", job_id)
 
-        logger.info(f"✅ Crawl job {job_id} failed and cleaned up")
+        logger.info(f" Crawl job {job_id} failed and cleaned up")
     except Exception as e:
         logger.error(f"Error during fail of job {job_id}: {e}")
 

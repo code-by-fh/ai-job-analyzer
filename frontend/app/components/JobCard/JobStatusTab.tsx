@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Check, Clock, ChevronRight } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
+
+const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
+    const IconComponent = (LucideIcons as any)[name];
+    if (!IconComponent) return null;
+    return <IconComponent className={className} />;
+};
 import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
 import { STATUS_GUIDANCE, STATUS_META, STATUS_PIPELINE } from './constants';
@@ -48,7 +55,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
         <div className="space-y-5">
             {/* Pipeline Stepper */}
             <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">Bewerbungs-Pipeline</p>
+                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">Application Pipeline</p>
                 <div className="relative flex items-start justify-between">
                     {/* Background connector */}
                     <div className="absolute top-4 left-4 right-4 h-0.5 bg-slate-200 dark:bg-slate-700" />
@@ -78,7 +85,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                             : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 group-hover/step:border-slate-400 dark:group-hover/step:border-slate-500'
                                     }`}
                                 >
-                                    {isDone ? <span className="text-xs font-bold">✓</span> : <span className="leading-none">{meta.icon}</span>}
+                                {isDone ? <Check className="w-4 h-4" /> : <DynamicIcon name={meta.icon} className="w-4 h-4" />}
                                 </div>
                                 <span className={`text-[9px] font-semibold text-center leading-tight hidden sm:block transition-colors
                                     ${isCurrent ? 'text-slate-800 dark:text-slate-100 font-bold' : isDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}
@@ -92,7 +99,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
 
                 {/* Exit states */}
                 <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">Sonstiges:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">Other:</span>
                     {(['REJECTED', 'FAILED'] as JobStatus[]).map((s) => {
                         const meta = STATUS_META[s];
                         const isActive = job.status === s;
@@ -106,7 +113,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                         : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-rose-500 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800/50'
                                     }`}
                             >
-                                <span>{meta.icon}</span>
+                                <DynamicIcon name={meta.icon} className="w-3.5 h-3.5" />
                                 <span>{meta.label}</span>
                             </button>
                         );
@@ -118,12 +125,12 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
             <div className={`rounded-xl border p-3.5 ${guidance.bgCls}`}>
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-1.5">
-                        <span className="text-base leading-none">{statusMeta.icon}</span>
-                        <p className={`text-[10px] uppercase font-bold tracking-widest ${guidance.accentCls}`}>Was jetzt?</p>
+                        <DynamicIcon name={statusMeta.icon} className={`w-4 h-4 ${guidance.accentCls}`} />
+                        <p className={`text-[10px] uppercase font-bold tracking-widest ${guidance.accentCls}`}>What now?</p>
                     </div>
                     {job.next_follow_up_at && (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 flex items-center gap-1">
-                            ⏰ Follow-up: {new Date(job.next_follow_up_at).toLocaleDateString('de-DE')}
+                            <Clock size={10} /> Follow-up: {new Date(job.next_follow_up_at).toLocaleDateString()}
                         </span>
                     )}
                 </div>
@@ -139,7 +146,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                     : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                                 }`}
                             >
-                                {item.done && '✓'}
+                                {item.done && <Check size={10} />}
                             </span>
                             <span className={`text-xs leading-snug ${item.done
                                 ? 'text-slate-400 dark:text-slate-500 line-through'
@@ -149,9 +156,9 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                 {item.tabHint && !item.done && (
                                     <button
                                         onClick={() => setActiveTab(item.tabHint as TabType)}
-                                        className="ml-1.5 text-indigo-500 dark:text-indigo-400 font-semibold hover:underline text-[10px] cursor-pointer"
+                                        className="ml-1.5 text-indigo-500 dark:text-indigo-400 font-semibold hover:underline text-[10px] cursor-pointer flex items-center gap-0.5"
                                     >
-                                        → öffnen
+                                        open <ChevronRight size={10} />
                                     </button>
                                 )}
                             </span>

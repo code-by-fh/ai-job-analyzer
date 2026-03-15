@@ -144,22 +144,22 @@ manager = ConnectionManager()
 
 async def redis_listener():
     redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-    logger.info(f" cercando Redis at {redis_url}...")
+    logger.info(f"Connecting to Redis at {redis_url}...")
 
     try:
         r = redis_async.from_url(redis_url, encoding="utf-8", decode_responses=True)
         pubsub = r.pubsub()
         await pubsub.subscribe("job_updates")
-        logger.info("✅ Erflogreich auf Kanal 'job_updates' abonniert!")
+        logger.info("Successfully subscribed to channel 'job_updates'.")
 
         async for message in pubsub.listen():
-            logger.debug(f"🔍 Rohe Nachricht von Redis: {message}")
+            logger.debug(f"Raw message from Redis: {message}")
             if message["type"] == "message":
                 payload = message["data"]
-                logger.debug(f"Event empfangen & wird gebroadcastet: {payload}")
+                logger.debug(f"Event received and broadcasting: {payload}")
                 await manager.broadcast(payload)
     except Exception as e:
-        logger.error(f"RITISCHER FEHLER im Redis Listener: {e}")
+        logger.error(f"Critical error in Redis listener: {e}")
 
 
 class UserCreate(BaseModel):
@@ -185,7 +185,7 @@ class ChangePasswordRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 Starte Redis Listener Task...")
+    logger.info("Starting Redis listener task...")
     task = asyncio.create_task(redis_listener())
 
     # Ensure Tables Exist
@@ -1369,7 +1369,7 @@ def test_gmail_notification(
             reasoning = "Strong match based on your Python and FastAPI experience."
             url = "https://example.com/job/123"
 
-        _send_via_gmail_batch([_FakeJob()], profile, _PlatformProxy())
+        _send_via_gmail_batch([_FakeJob()], profile, _PlatformProxy(), userName=current_user.username)
         return {"ok": True}
     except HTTPException:
         raise
