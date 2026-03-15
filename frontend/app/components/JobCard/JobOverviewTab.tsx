@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
     Brain, Clock, ExternalLink, FileText, MessageSquare,
-    CalendarDays, StickyNote, Archive, ChevronDown,
+    CalendarDays, StickyNote, Archive, ChevronDown, ChevronUp,
     Search, Mail, Handshake, Trophy, PartyPopper,
     XCircle, AlertTriangle, Sparkles
 } from 'lucide-react';
@@ -29,6 +29,7 @@ interface JobOverviewTabProps {
 export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArchive }: JobOverviewTabProps) {
     const { t } = useLanguage();
     const [isStatusOpen, setIsStatusOpen] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analyzeError, setAnalyzeError] = useState(false);
     const [elapsed, setElapsed] = useState(0);
@@ -158,8 +159,75 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
         );
     }
 
+    if (job.reasoning && !isExpanded) {
+        return (
+            <div
+                onClick={() => setIsExpanded(true)}
+                className="group relative flex flex-col p-5 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/50 rounded-3xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/40 transition-all hover:shadow-xl hover:shadow-indigo-500/5 active:scale-[0.99] overflow-hidden"
+            >
+                {/* Background Glow */}
+                <div className={`absolute -right-8 -top-8 w-32 h-32 rounded-full ${scoreColor} opacity-[0.03] blur-3xl group-hover:opacity-[0.08] transition-opacity`} />
+                
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6 px-2">
+                    {/* Section 1: Status (Left) */}
+                    <div className="flex-1 flex justify-center md:justify-start">
+                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-black uppercase tracking-tight ${statusMeta.pillCls}`}>
+                            <DynamicIcon name={statusMeta.icon} className="w-3.5 h-3.5" />
+                            {t(statusMeta.labelKey)}
+                        </span>
+                    </div>
+
+                    {/* Section 2: Score (Center) */}
+                    <div className="relative flex-shrink-0">
+                        <svg className="w-20 h-20 transform -rotate-90 drop-shadow-sm">
+                            <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100 dark:text-slate-800/60" />
+                            <circle
+                                cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent"
+                                strokeDasharray={2 * Math.PI * 36}
+                                strokeDashoffset={2 * Math.PI * 36 * (1 - score / 100)}
+                                className={`${scoreTextColor} transition-all duration-1000 ease-out`}
+                                strokeLinecap="round"
+                            />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <span className={`text-2xl font-black ${scoreTextColor} tracking-tighter`}>{score}%</span>
+                        </div>
+                    </div>
+
+                    {/* Section 3: Meta Info (Right) */}
+                    <div className="flex-1 flex flex-col items-center md:items-end gap-1.5 min-w-0">
+                        {job.created_at && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
+                                <CalendarDays className="w-3 h-3 text-slate-400" />
+                                <span>{new Date(job.created_at).toLocaleDateString('en-US')}</span>
+                            </div>
+                        )}
+                        {job.url && (
+                            <div className="flex items-center gap-2 text-[11px] text-indigo-500 dark:text-indigo-400 font-bold uppercase tracking-wide truncate max-w-full">
+                                <ExternalLink className="w-3 h-3" />
+                                <span className="truncate">{new URL(job.url).hostname.replace('www.', '')}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Interaction Footer */}
+                <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Brain className="w-4 h-4 text-indigo-500" />
+                        <span className="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-[0.2em]">{t('analysis') || 'AI Analysis'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest group-hover:gap-2.5 transition-all">
+                        {t('viewDetails') || 'View Analysis'}
+                        <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
             <div className="flex flex-col sm:flex-row gap-4">
 
                 {/* ── KI-ANALYSE (CONTENT) ── */}
@@ -302,6 +370,17 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
                         >
                             <Archive className="w-3 h-3 transition-transform group-hover:scale-110" />
                             <span>{t('archiveJob') || 'Archive'}</span>
+                        </button>
+                    )}
+
+                    {/* Collapse Button */}
+                    {isExpanded && (
+                        <button
+                            onClick={() => setIsExpanded(false)}
+                            className="w-full h-8 flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/50 text-slate-400 hover:text-indigo-500 hover:border-indigo-200 dark:hover:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer group/close"
+                        >
+                            <ChevronUp className="w-3 h-3 transition-transform group-hover/close:-translate-y-0.5" />
+                            <span>{t('closeDetails') || 'Collapse'}</span>
                         </button>
                     )}
                 </div>
