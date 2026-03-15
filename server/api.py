@@ -247,6 +247,7 @@ def extract_text_from_pdf(file_bytes):
 
 class SystemSettingsUpdate(BaseModel):
     openrouter_model: str
+    openrouter_api_key: Optional[str] = None
 
 
 @app.get("/admin/settings")
@@ -255,8 +256,14 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
     try:
         settings = db.query(SystemSettings).first()
         if not settings:
-            return {"openrouter_model": "tngtech/deepseek-r1t2-chimera:free"}
-        return {"openrouter_model": settings.openrouter_model}
+            return {
+                "openrouter_model": "tngtech/deepseek-r1t2-chimera:free",
+                "openrouter_api_key_set": False,
+            }
+        return {
+            "openrouter_model": settings.openrouter_model,
+            "openrouter_api_key_set": bool(settings.openrouter_api_key),
+        }
     finally:
         db.close()
 
@@ -280,10 +287,55 @@ def update_admin_settings(
             db.add(db_settings)
         else:
             db_settings.openrouter_model = settings.openrouter_model
+        if settings.openrouter_api_key is not None:
+            db_settings.openrouter_api_key = settings.openrouter_api_key or None
         db.commit()
-        return {"status": "updated", "openrouter_model": db_settings.openrouter_model}
+        return {
+            "status": "updated",
+            "openrouter_model": db_settings.openrouter_model,
+            "openrouter_api_key_set": bool(db_settings.openrouter_api_key),
+        }
     finally:
         db.close()
+
+
+@app.get("/admin/openrouter/models")
+def get_openrouter_models(current_user: User = Depends(get_current_admin_user)):
+    db = SessionLocal()
+    try:
+        settings = db.query(SystemSettings).first()
+        api_key = (settings.openrouter_api_key if settings else None) or os.getenv("OPENAI_API_KEY", "")
+    finally:
+        db.close()
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No OpenRouter API key configured")
+
+    try:
+        response = requests.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params={"output_modalities": "text"},
+            timeout=10,
+        )
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="OpenRouter API error")
+        data = response.json().get("data", [])
+        models = [
+            {
+                "id": m["id"],
+                "name": m.get("name", m["id"]),
+                "context_length": m.get("context_length"),
+                "pricing": m.get("pricing", {}),
+            }
+            for m in data
+            if m.get("id")
+        ]
+        models.sort(key=lambda m: m["name"].lower())
+        return models
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch OpenRouter models: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach OpenRouter API")
 
 
 def parse_cv_with_ai(cv_text):

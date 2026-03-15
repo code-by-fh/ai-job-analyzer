@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Brain, FileText, Loader2, RefreshCw, Zap, Target, MessageSquare, ChevronDown } from 'lucide-react';
+import { Brain, FileText, Loader2, RefreshCw, Zap, Target, MessageSquare, ChevronDown, AlertTriangle } from 'lucide-react';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
 

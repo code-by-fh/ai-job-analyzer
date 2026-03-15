@@ -30,10 +30,21 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENAI_API_KEY"),
-)
+def get_client(db=None):
+    try:
+        if db:
+            settings = db.query(SystemSettings).first()
+            if settings and settings.openrouter_api_key:
+                return OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=settings.openrouter_api_key,
+                )
+    except Exception:
+        pass
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENAI_API_KEY"),
+    )
 
 
 def get_current_model():
@@ -580,7 +591,7 @@ def analyze_job_task(job_data):
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
         model = get_current_model()
-        response = client.chat.completions.create(
+        response = get_client(db).chat.completions.create(
             model=model,
             messages=[
                 {
@@ -907,7 +918,7 @@ def generate_application_task(job_id, user_id=None):
 
         logger.info("⏳ Sende Anfrage an OpenAI für Anschreiben...")
         model = get_current_model()
-        response = client.chat.completions.create(
+        response = get_client(db).chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -1000,7 +1011,7 @@ def generate_application_task(job_id, user_id=None):
 @celery_app.task(name="worker.generate_interview_prep_task", bind=True, max_retries=2)
 def generate_interview_prep_task(self, job_id: str, user_id: int):
     """Generiert Interview-Vorbereitung für einen Job via AI."""
-    from intelligence_service import generate_interview_prep, get_model
+    from intelligence_service import generate_interview_prep, get_model, get_api_key
 
     db = SessionLocal()
     try:
@@ -1017,6 +1028,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             cv_summary = format_cv_for_prompt(user_profile.cv_data)
 
         model = get_model(db)
+        api_key = get_api_key(db)
 
         prep_data = generate_interview_prep(
             job_title=job.title,
@@ -1024,6 +1036,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             job_description=job.description or "",
             cv_summary=cv_summary,
             model=model,
+            api_key=api_key,
         )
 
         print(prep_data)
@@ -1058,7 +1071,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
 @celery_app.task(name="worker.generate_company_profile", bind=True, max_retries=2)
 def generate_company_profile(self, domain: str, user_id: int):
     """Generiert ein Firmenprofil inkl. Gehaltsdaten."""
-    from intelligence_service import generate_company_profile_summary, get_model
+    from intelligence_service import generate_company_profile_summary, get_model, get_api_key
     from api_clients.review_api import get_salary_data
     from database import CompanyProfile
     from datetime import datetime, timezone as tz
@@ -1125,13 +1138,14 @@ def generate_company_profile(self, domain: str, user_id: int):
             logger.warning(f"Web research skipped for {domain}: {web_err}")
 
         model = get_model(db)
+        api_key = get_api_key(db)
 
-        # Generate company profile summary
         profile_data = generate_company_profile_summary(
             domain=domain,
             company_name=company_name,
             raw_info=raw_info,
             model=model,
+            api_key=api_key,
         )
 
         # Get salary data

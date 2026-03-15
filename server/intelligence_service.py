@@ -36,10 +36,23 @@ def clear_ai_404_error() -> None:
         logger.error(f"Failed to clear AI 404 error: {e}")
 
 
-def get_ai_client():
+def get_api_key(db=None) -> str:
+    try:
+        if db:
+            from database import SystemSettings
+            settings = db.query(SystemSettings).first()
+            if settings and settings.openrouter_api_key:
+                return settings.openrouter_api_key
+    except Exception:
+        pass
+    return os.getenv("OPENAI_API_KEY", "")
+
+
+def get_ai_client(api_key: str = None):
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENAI_API_KEY"),
+        api_key=key,
     )
 
 
@@ -64,6 +77,7 @@ def generate_interview_prep(
     cv_summary: str,
     company_culture: Optional[str] = None,
     model: str = None,
+    api_key: str = None,
 ) -> Dict[str, Any]:
     """
     Generate structured interview preparation material.
@@ -182,7 +196,7 @@ WICHTIG für structured_prep:
 
 Antworte NUR mit validem JSON ohne Markdown-Wrapper!"""
 
-    client = get_ai_client()
+    client = get_ai_client(api_key=api_key)
     try:
         response = client.chat.completions.create(
             model=model,
@@ -235,6 +249,7 @@ def generate_company_profile_summary(
     company_name: str,
     raw_info: str,
     model: str = None,
+    api_key: str = None,
 ) -> Dict[str, Any]:
     """
     Generate a structured company profile summary from raw web data.
@@ -320,7 +335,7 @@ WICHTIG für company_intelligence:
 
 Antworte NUR mit dem JSON-Objekt ohne Markdown-Wrapper!"""
 
-    client = get_ai_client()
+    client = get_ai_client(api_key=api_key)
     try:
         response = client.chat.completions.create(
             model=model,

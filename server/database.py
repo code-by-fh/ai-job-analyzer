@@ -96,6 +96,7 @@ class SystemSettings(Base):
     __tablename__ = "system_settings"
     id = Column(Integer, primary_key=True)
     openrouter_model = Column(String, default="tngtech/deepseek-r1t2-chimera:free")
+    openrouter_api_key = Column(String, nullable=True)
 
 
 class DomainUrlPattern(Base):
