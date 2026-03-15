@@ -14,6 +14,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED 1
+
+ENV NEXT_PUBLIC_API_URL=APP_API_URL
+
 RUN npm run build
 
 # 3. Runner: Produktions-Image
