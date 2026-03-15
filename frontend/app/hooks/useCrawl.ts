@@ -155,6 +155,7 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                                     analysis_completed: existing?.analysis_completed || 0,
                                     jobs_saved: existing?.jobs_saved || 0,
                                     jobs_skipped: existing?.jobs_skipped || 0,
+                                    started_at: data.started_at || existing?.started_at,
                                     status: 'starting'
                                 });
                             });
@@ -170,10 +171,26 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                                     job_id: data.job_id,
                                     platform: data.platform,
                                     total: data.total,
+                                    total_found: data.total_found ?? existing?.total_found ?? data.total,
                                     scraping_completed: data.scraping_completed,
                                     analysis_completed: existing?.analysis_completed || 0,
                                     status: 'crawling'
                                 });
+                            });
+                        }
+                    }
+                    else if (data.type === "crawl_job_extracting") {
+                        if (data.user_id === user?.id) {
+                            setActiveCrawls(prev => {
+                                const existing = prev.get(data.job_id);
+                                if (existing) {
+                                    return new Map(prev).set(data.job_id, {
+                                        ...existing,
+                                        extracting_count: data.extracting_count,
+                                        total: data.total || existing.total,
+                                    });
+                                }
+                                return prev;
                             });
                         }
                     }
@@ -225,6 +242,8 @@ export function useCrawl({ user, token, onJobUpdate, onNewJob, onJobEvent, initi
                                 if (existing) {
                                     return new Map(prev).set(data.job_id, {
                                         ...existing,
+                                        total: data.total ?? existing.total,
+                                        total_found: data.total_found ?? existing.total_found ?? (data.total ?? existing.total),
                                         show_success: true
                                     });
                                 }

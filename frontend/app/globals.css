@@ -94,4 +94,13 @@
   .dark .text-gradient {
     @apply bg-gradient-to-r from-indigo-400 to-purple-400;
   }
+
+  @keyframes dropdownFade {
+    from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .animate-dropdown-fade {
+    animation: dropdownFade 0.2s ease-out forwards;
+  }
 }

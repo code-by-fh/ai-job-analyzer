@@ -33,14 +33,14 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
     // --- STATE ---
     const [query, setQuery] = useState('');
-    const [sortBy, setSortBy] = useState<'score' | 'date'>((searchParams.get('sort') as any) || 'score');
+    const [sortBy, setSortBy] = useState<'score' | 'date'>((searchParams.get('sort') as any) || 'date');
     const [filterType, setFilterType] = useState(initialFilter);
     const [searchText, setSearchText] = useState(searchParams.get('search') || '');
     const [domainFilter, setDomainFilter] = useState(searchParams.get('domain') || '');
     const [hasApplication, setHasApplication] = useState(searchParams.get('application') === 'true');
     const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
-    const [needsAttention, setNeedsAttention] = useState(searchParams.get('attention') === 'true');
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
+    const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
@@ -103,6 +103,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     const onJobUpdate = useCallback((data: any) => {
         setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
         setPendingIds(prev => prev.filter(id => id !== data.job_id));
+        if (data.job_id) localStorage.removeItem(`gen_app_${data.job_id}`);
     }, [setJobs]);
 
     const onNewJob = useCallback((job: Job, crawlJobId?: string) => {
@@ -183,7 +184,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
         if (urlParams.domain !== domainFilter) setDomainFilter(urlParams.domain);
         if (urlParams.status !== statusFilter) setStatusFilter(urlParams.status);
         if (urlParams.application !== hasApplication) setHasApplication(urlParams.application);
-        if (urlParams.attention !== needsAttention) setNeedsAttention(urlParams.attention);
     }, [searchParams]);
 
     // Sync State -> URL
@@ -196,7 +196,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             if (domainFilter) params.set('domain', domainFilter);
             if (statusFilter) params.set('status', statusFilter);
             if (hasApplication) params.set('application', 'true');
-            if (needsAttention) params.set('attention', 'true');
 
             const newQuery = params.toString();
             const currentQuery = searchParams.toString();
@@ -206,7 +205,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             }
         }, 400); // 400ms debounce
         return () => clearTimeout(timer);
-    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, needsAttention, router, searchParams]);
+    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, router, searchParams]);
 
     const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
         setFilterType(newFilter);
@@ -267,39 +266,55 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             setModalOpen(true);
             return;
         }
-
         setPendingIds(prev => [...prev, job.id]);
+        localStorage.setItem(`gen_app_${job.id}`, Date.now().toString());
         try {
             await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
                 method: 'POST',
             });
         } catch (e) {
             setPendingIds(prev => prev.filter(id => id !== job.id));
+            localStorage.removeItem(`gen_app_${job.id}`);
         }
     };
 
-    useEffect(() => {
-        const counts: Record<string, number> = {};
-        jobs.forEach(job => {
-            if (job.company) {
-                counts[job.company] = (counts[job.company] || 0) + 1;
-            }
-        });
-        const sorted = Object.entries(counts)
-            .map(([domain, count]) => ({ domain, count }))
-            .sort((a, b) => b.count - a.count);
-        setAvailableDomains(sorted);
-    }, [jobs]);
-
-    const jobNeedsAttention = (job: Job) => {
-        const followUpDue = !!job.next_follow_up_at && new Date(job.next_follow_up_at) <= new Date();
-        return followUpDue || job.status === 'INTERVIEW';
+    const handleRegenerate = async (job: Job, notes: string) => {
+        setPendingIds(prev => [...prev, job.id]);
+        localStorage.setItem(`gen_app_${job.id}`, Date.now().toString());
+        try {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ improvement_notes: notes || null }),
+            });
+        } catch (e) {
+            setPendingIds(prev => prev.filter(id => id !== job.id));
+            localStorage.removeItem(`gen_app_${job.id}`);
+        }
     };
 
-    const needsAttentionCount = useMemo(() => {
-        return jobs.filter(jobNeedsAttention).length;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jobs]);
+    const handleCancelGenerate = async (jobId: string) => {
+        try {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/cancel-generation`, {
+                method: 'POST',
+            });
+        } catch {}
+        setPendingIds(prev => prev.filter(id => id !== jobId));
+        localStorage.removeItem(`gen_app_${jobId}`);
+    };
+
+    useEffect(() => {
+        if (!token) return;
+        fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/counts`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) {
+                    setAvailableDomains(data.domain_counts);
+                    setStatusCounts(data.status_counts);
+                }
+            })
+            .catch(() => {});
+    }, [token, jobs]);
 
     const visibleJobs = useMemo(() => {
         return jobs.filter(job => {
@@ -308,11 +323,10 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 job.title.toLowerCase().includes(q) ||
                 job.company.toLowerCase().includes(q);
             const matchesDomain = !domainFilter || job.company === domainFilter;
-            const matchesNeedsAttention = !needsAttention || jobNeedsAttention(job);
-            return matchesSearch && matchesDomain && matchesNeedsAttention;
+            return matchesSearch && matchesDomain;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jobs, searchText, domainFilter, needsAttention]);
+    }, [jobs, searchText, domainFilter]);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -361,7 +375,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
             {/* CRAWL STATUS */}
             {activeCrawls.size > 0 && (
-                <CrawlStatus jobs={Array.from(activeCrawls.values())} onCancel={setCrawlToCancel} />
+                <CrawlStatus jobs={Array.from(activeCrawls.values()).sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''))} onCancel={setCrawlToCancel} />
             )}
 
             <FilterBar
@@ -378,9 +392,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                 setHasApplication={setHasApplication}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
-                needsAttention={needsAttention}
-                setNeedsAttention={setNeedsAttention}
-                needsAttentionCount={needsAttentionCount}
+                statusCounts={statusCounts}
                 platformFilter={undefined}
                 setPlatformFilter={() => { }}
                 availablePlatforms={[]}
@@ -400,6 +412,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         job={job}
                         isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
                         onGenerate={handleGenerate}
+                        onRegenerate={handleRegenerate}
+                        onCancelGenerate={handleCancelGenerate}
                         onStatusUpdate={handleUpdateStatus}
                         onToggleFavorite={handleToggleFavorite}
                         onUpdateJob={updateJob}

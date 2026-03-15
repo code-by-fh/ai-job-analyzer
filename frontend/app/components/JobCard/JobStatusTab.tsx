@@ -12,6 +12,7 @@ import type { JobStatus } from '../JobStatusBadge';
 import { STATUS_GUIDANCE, STATUS_META, STATUS_PIPELINE } from './constants';
 import type { TabType } from './types';
 import { fetchWithAuth } from '../AuthProvider';
+import { useLanguage } from '../LanguageProvider';
 
 interface JobStatusTabProps {
     job: Job;
@@ -21,6 +22,7 @@ interface JobStatusTabProps {
 }
 
 export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTab }: JobStatusTabProps) {
+    const { t } = useLanguage();
     const [history, setHistory] = useState<any[] | null>(null);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -55,7 +57,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
         <div className="space-y-5">
             {/* Pipeline Stepper */}
             <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">Application Pipeline</p>
+                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">{t('applicationPipeline')}</p>
                 <div className="relative flex items-start justify-between">
                     {/* Background connector */}
                     <div className="absolute top-4 left-4 right-4 h-0.5 bg-slate-200 dark:bg-slate-700" />
@@ -75,7 +77,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                 key={s}
                                 onClick={() => onStatusUpdate(job.id, s)}
                                 className="relative flex flex-col items-center gap-1.5 cursor-pointer group/step z-10 flex-1 min-w-0"
-                                title={meta.label}
+                                title={t(meta.labelKey)}
                             >
                                 <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm transition-all duration-300
                                     ${isDone
@@ -90,7 +92,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                 <span className={`text-[9px] font-semibold text-center leading-tight hidden sm:block transition-colors
                                     ${isCurrent ? 'text-slate-800 dark:text-slate-100 font-bold' : isDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}
                                 >
-                                    {meta.label}
+                                    {t(meta.labelKey)}
                                 </span>
                             </button>
                         );
@@ -99,7 +101,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
 
                 {/* Exit states */}
                 <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">Other:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">{t('otherStatus')}</span>
                     {(['REJECTED', 'FAILED'] as JobStatus[]).map((s) => {
                         const meta = STATUS_META[s];
                         const isActive = job.status === s;
@@ -114,7 +116,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                     }`}
                             >
                                 <DynamicIcon name={meta.icon} className="w-3.5 h-3.5" />
-                                <span>{meta.label}</span>
+                                <span>{t(meta.labelKey)}</span>
                             </button>
                         );
                     })}
@@ -122,52 +124,72 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
             </div>
 
             {/* Was jetzt? Guidance */}
-            <div className={`rounded-xl border p-3.5 ${guidance.bgCls}`}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-1.5">
-                        <DynamicIcon name={statusMeta.icon} className={`w-4 h-4 ${guidance.accentCls}`} />
-                        <p className={`text-[10px] uppercase font-bold tracking-widest ${guidance.accentCls}`}>What now?</p>
+            <div className={`rounded-2xl border p-4 shadow-sm ${guidance.bgCls}`}>
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 ${guidance.accentCls}`}>
+                            <DynamicIcon name={statusMeta.icon} className="w-3.5 h-3.5" />
+                        </div>
+                        <p className={`text-[10px] uppercase font-black tracking-widest ${guidance.accentCls}`}>{t('guidanceWhatNow')}</p>
                     </div>
                     {job.next_follow_up_at && (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 flex items-center gap-1">
-                            <Clock size={10} /> Follow-up: {new Date(job.next_follow_up_at).toLocaleDateString()}
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 flex items-center gap-1.5 shadow-sm">
+                            <Clock size={11} className="animate-pulse" /> {new Date(job.next_follow_up_at).toLocaleDateString()}
                         </span>
                     )}
                 </div>
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-3 leading-snug">
-                    {guidance.nextAction}
-                </p>
-                <ul className="space-y-1.5 mb-3">
+                
+                <div className="mb-4">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-tight">
+                        {t(guidance.nextActionKey)}
+                    </p>
+                </div>
+
+                <div className="space-y-2 mb-5">
                     {dynamicItems.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                            <span className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[9px] font-bold transition-colors
+                        <div 
+                            key={i} 
+                            className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all
+                                ${item.done 
+                                    ? 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-100 dark:border-slate-800/50 opacity-60' 
+                                    : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500/30 shadow-sm'
+                                }`}
+                        >
+                            <div className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300
                                 ${item.done
                                     ? 'bg-emerald-500 border-emerald-500 text-white'
                                     : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                                 }`}
                             >
-                                {item.done && <Check size={10} />}
-                            </span>
-                            <span className={`text-xs leading-snug ${item.done
-                                ? 'text-slate-400 dark:text-slate-500 line-through'
-                                : 'text-slate-600 dark:text-slate-300'
-                                }`}>
-                                {item.text}
-                                {item.tabHint && !item.done && (
-                                    <button
-                                        onClick={() => setActiveTab(item.tabHint as TabType)}
-                                        className="ml-1.5 text-indigo-500 dark:text-indigo-400 font-semibold hover:underline text-[10px] cursor-pointer flex items-center gap-0.5"
-                                    >
-                                        open <ChevronRight size={10} />
-                                    </button>
-                                )}
-                            </span>
-                        </li>
+                                {item.done ? <Check size={12} strokeWidth={3} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700" />}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                                <p className={`text-xs font-semibold leading-none ${item.done ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-600 dark:text-slate-200'}`}>
+                                    {t(item.textKey)}
+                                </p>
+                            </div>
+
+                            {item.tabHint && !item.done && (
+                                <button
+                                    onClick={() => setActiveTab(item.tabHint as TabType)}
+                                    className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors cursor-pointer"
+                                    title="Open section"
+                                >
+                                    <ChevronRight size={14} />
+                                </button>
+                            )}
+                        </div>
                     ))}
-                </ul>
-                <p className="text-[11px] italic text-slate-400 dark:text-slate-500 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/40 pt-2.5">
-                    „{guidance.nudge}&quot;
-                </p>
+                </div>
+
+                <div className="flex items-start gap-2 pt-3 border-t border-slate-200/60 dark:border-slate-700/40">
+                    <span className="text-lg opacity-20 mt-[-4px]">„</span>
+                    <p className="text-[11px] font-medium italic text-slate-400 dark:text-slate-500 leading-relaxed">
+                        {t(guidance.nudgeKey)}
+                    </p>
+                    <span className="text-lg opacity-20 self-end mb-[-8px]">“</span>
+                </div>
             </div>
         </div>
     );

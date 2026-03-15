@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Brain, FileText, Loader2, RefreshCw, Zap, Target, MessageSquare, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Brain, FileText, Loader2, RefreshCw, Zap, Target, MessageSquare, ChevronDown, AlertTriangle, X } from 'lucide-react';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
 import { fetchWithAuth } from '../AuthProvider';
@@ -49,12 +49,15 @@ function Section({ title, icon, children, color = 'slate' }: {
     );
 }
 
+const formatElapsed = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
 export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) {
     const [interviewPrep, setInterviewPrep] = useState<any | null>(null);
     const { showError } = useNotification();
-    const [interviewLoading, setInterviewLoading] = useState(false);
     const [interviewQueued, setInterviewQueued] = useState(false);
     const [reportExpanded, setReportExpanded] = useState(false);
+    const [elapsed, setElapsed] = useState(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         if (job.interview_prep_material && !interviewPrep) {
@@ -65,17 +68,72 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
     }, []);
 
     useEffect(() => {
+        if (!job.interview_prep_material) {
+            const stored = localStorage.getItem(`gen_interview_${job.id}`);
+            if (stored) setInterviewQueued(true);
+        }
+    }, [job.id, job.interview_prep_material]);
+
+    useEffect(() => {
+        if (!interviewQueued) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setElapsed(0);
+            return;
+        }
+        const stored = localStorage.getItem(`gen_interview_${job.id}`);
+        const startTime = stored ? parseInt(stored) : Date.now();
+        if (!stored) localStorage.setItem(`gen_interview_${job.id}`, startTime.toString());
+        setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        timerRef.current = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        }, 1000);
+        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    }, [interviewQueued, job.id]);
+
+    useEffect(() => {
         if (job.interview_prep_material) {
             try { setInterviewPrep(JSON.parse(job.interview_prep_material)); setInterviewQueued(false); }
             catch { setInterviewPrep({ raw: job.interview_prep_material }); }
+            localStorage.removeItem(`gen_interview_${job.id}`);
         }
-    }, [job.interview_prep_material]);
+    }, [job.interview_prep_material, job.id]);
 
-    const handleGenerate = () => {
+    useEffect(() => {
+        if (!interviewQueued) return;
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}`);
+                if (!res.ok) return;
+                const updatedJob = await res.json();
+                if (updatedJob.interview_prep_material) {
+                    try { setInterviewPrep(JSON.parse(updatedJob.interview_prep_material)); }
+                    catch { setInterviewPrep({ raw: updatedJob.interview_prep_material }); }
+                    setInterviewQueued(false);
+                    localStorage.removeItem(`gen_interview_${job.id}`);
+                }
+            } catch { }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [interviewQueued, job.id, apiBase]);
+
+    const handleGenerate = (force = false) => {
         setInterviewQueued(true);
-        fetchWithAuth(`${apiBase}/jobs/${job.id}/interview-prep`, { method: 'POST' })
-            .then(res => { if (!res.ok) throw new Error(`POST /jobs/${job.id}/interview-prep → HTTP ${res.status}`); })
-            .catch((e: Error) => { setInterviewQueued(false); showError(e.message); });
+        localStorage.setItem(`gen_interview_${job.id}`, Date.now().toString());
+        const endpoint = force
+            ? `${apiBase}/jobs/${job.id}/interview-prep/regenerate`
+            : `${apiBase}/jobs/${job.id}/interview-prep`;
+        fetchWithAuth(endpoint, { method: 'POST' })
+            .then(res => { if (!res.ok) throw new Error(`POST ${endpoint} → HTTP ${res.status}`); })
+            .catch((e: Error) => {
+                setInterviewQueued(false);
+                localStorage.removeItem(`gen_interview_${job.id}`);
+                showError(e.message);
+            });
+    };
+
+    const handleCancel = () => {
+        setInterviewQueued(false);
+        localStorage.removeItem(`gen_interview_${job.id}`);
     };
 
     const p = interviewPrep;
@@ -87,27 +145,30 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
     const backQs = p?.report_output?.questions_for_interviewer || p?.questions_for_interviewer || [];
     const fullReport = p?.report_output?.deep_dive_analysis || p?.full_report || p?.full_prep_guide;
     const pitch = p?.critical_analysis?.solution_selling_pitch;
-    const purpose = p?.context?.purpose;
-    const hypothesis = p?.core_research?.hypothesis_evaluation;
-    const experts = p?.context?.experts_used || [];
-    const specs = p?.specifications;
 
     const gapColor = (s: string) =>
         s === 'no gap' || s === 'kein Gap' || s === 'No Gap' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
             s === 'slight gap' || s === 'leichter Gap' || s === 'Slight Gap' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
                 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
 
-    if (interviewQueued || interviewLoading) {
+    if (interviewQueued) {
         return (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
                 <div className="relative">
                     <div className="absolute inset-0 bg-indigo-500 blur-xl opacity-20 animate-pulse"></div>
                     <Loader2 className="w-10 h-10 text-indigo-500 animate-spin relative z-10" />
                 </div>
                 <div className="text-center animate-in fade-in slide-in-from-bottom-2 duration-500">
-                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Strategic analysis in progress...</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">We are preparing you for the interview.</p>
+                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Interview-Analyse läuft…</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">{formatElapsed(elapsed)}</p>
                 </div>
+                <button
+                    onClick={handleCancel}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-xl transition-all cursor-pointer"
+                >
+                    <X className="w-3.5 h-3.5" />
+                    Abbrechen
+                </button>
             </div>
         );
     }
@@ -123,10 +184,10 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     <p className="text-sm text-slate-500 dark:text-slate-400">Get a tailored preparation based on your profile and the job requirements.</p>
                 </div>
                 <button
-                    onClick={handleGenerate}
+                    onClick={() => handleGenerate(false)}
                     className="group flex items-center gap-2 px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all hover:-translate-y-0.5 cursor-pointer"
                 >
-                    Start Analysis
+                    Analyse starten
                     <Zap className="w-4 h-4" />
                 </button>
             </div>
@@ -134,7 +195,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-700">
+        <div className="space-y-6">
             {/* Toolbar */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/50">
                 <div className="flex items-center gap-3">
@@ -147,11 +208,10 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     </div>
                 </div>
                 <button
-                    onClick={handleGenerate}
-                    disabled={interviewQueued}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                    onClick={() => handleGenerate(true)}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 rounded-xl transition-all cursor-pointer"
                 >
-                    <RefreshCw className={`w-3.5 h-3.5 ${interviewQueued ? 'animate-spin' : ''}`} />
+                    <RefreshCw className="w-3.5 h-3.5" />
                     Regenerate
                 </button>
             </div>
@@ -161,38 +221,6 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                 {summary && (
                     <Section title="Executive Summary" icon={<Zap className="w-4 h-4" />} color="indigo">
                         <p className="text-base leading-relaxed font-medium">{summary}</p>
-                    </Section>
-                )}
-
-                {/* Briefing */}
-                {(purpose || hypothesis || experts.length > 0) && (
-                    <Section title="Strategic Briefing" icon={<Target className="w-4 h-4" />} color="slate">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {purpose && (
-                                <div>
-                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block mb-2">Mission Goal</span>
-                                    <p className="text-sm font-semibold">{purpose}</p>
-                                </div>
-                            )}
-                            {hypothesis && (
-                                <div>
-                                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2">Core Hypothesis</span>
-                                    <p className="text-sm italic bg-white dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                                        {hypothesis}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                        {experts.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest w-full mb-1">AI Expert Modules</span>
-                                {experts.map((e: string, i: number) => (
-                                    <span key={i} className="px-3 py-1 bg-white dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 rounded-lg border border-slate-200 dark:border-slate-700">
-                                        {e}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
                     </Section>
                 )}
 
@@ -210,7 +238,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                 <span className="text-xs font-black text-white/90 uppercase tracking-widest">Solution Selling Pitch</span>
                             </div>
                             <blockquote className="text-lg text-white font-medium leading-relaxed italic border-l-4 border-white/30 pl-6">
-                                "{pitch}"
+                                &ldquo;{pitch}&rdquo;
                             </blockquote>
                         </div>
                     </div>

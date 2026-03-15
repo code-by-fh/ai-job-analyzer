@@ -8,6 +8,7 @@ interface NotificationAdaptersProps {
     configuredAdapters: string[];
     onToggleAdapter: (platform: Platform, adapter: string) => void;
     onOpenTemplateModal: (platform: Platform) => void;
+    onOpenPushoverModal: (platform: Platform) => void;
     pushoverTestStatus: Record<number, TestStatus>;
     pushoverTestError: Record<number, string | null>;
     onSendTestPushover: (platformId: number) => void;
@@ -36,6 +37,7 @@ export default function NotificationAdapters({
     configuredAdapters,
     onToggleAdapter,
     onOpenTemplateModal,
+    onOpenPushoverModal,
     pushoverTestStatus,
     pushoverTestError,
     onSendTestPushover,
@@ -111,43 +113,22 @@ export default function NotificationAdapters({
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
                                 </button>
-                            ) : (() => {
-                                const st = pushoverTestStatus[platform.id] || 'idle';
-                                const err = pushoverTestError[platform.id];
-                                return (
-                                    <div className="relative group/test flex flex-col items-center">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSendTestPushover(platform.id); }}
-                                            disabled={st === 'sending'}
-                                            title={st === 'ok' ? 'Sent!' : st === 'error' ? (isAdmin && err ? err : 'Failed') : 'Send test notification'}
-                                            className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer disabled:opacity-50
-                                                ${st === 'ok'
-                                                    ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
-                                                    : st === 'error'
-                                                        ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10'
-                                                        : 'text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
-                                                }`}
-                                        >
-                                            {st === 'sending' && <SpinnerIcon />}
-                                            {st === 'ok' && <CheckIcon />}
-                                            {st === 'error' && <XIcon />}
-                                            {st === 'idle' && (
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                                </svg>
-                                            )}
-                                        </button>
-                                        {st === 'error' && err && isAdmin && (
-                                            <div className="absolute top-full mt-1 z-20 pointer-events-none">
-                                                <div className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap font-mono leading-tight">
-                                                    {err}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenPushoverModal(platform); }}
+                                    title={platform.pushover_template ? 'Edit Pushover template' : 'Add Pushover template'}
+                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer
+                                        ${platform.pushover_template
+                                            ? 'text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/30'
+                                            : 'text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
+                                        }`}
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
                     </div>
                 );

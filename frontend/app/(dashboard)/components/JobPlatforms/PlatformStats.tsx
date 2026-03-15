@@ -108,9 +108,9 @@ export default function PlatformStats({
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                             </svg>
-                            <span>{lastRun.saved} {t('new')}</span>
+                            <span>{lastRun.total_found ?? lastRun.total} {t('found')}</span>
                             <span className="opacity-30">/</span>
-                            <span className="text-slate-400 dark:text-slate-500">{lastRun.total} {t('found')}</span>
+                            <span className="text-slate-400 dark:text-slate-500">{lastRun.saved} {t('new')}</span>
                         </>
                     )}
                     <svg className={`w-2.5 h-2.5 opacity-50 transition-transform duration-200 shrink-0 ${expandedLog === platform.url ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

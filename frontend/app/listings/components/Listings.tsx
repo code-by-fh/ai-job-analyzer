@@ -11,6 +11,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 import FilterBar from '../../components/FilterBar';
 import JobCard from '../../components/JobCard/JobCard';
 import PageWrapper from '../../components/PageWrapper';
+import PageHeader from '../../components/PageHeader';
 import SearchHeader from '../../components/SearchHeader';
 
 // Hooks & Types
@@ -34,7 +35,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
 
     // --- STATE ---
     const [query, setQuery] = useState('');
-    const [sortBy, setSortBy] = useState<'score' | 'date'>((searchParams.get('sort') as any) || 'score');
+    const [sortBy, setSortBy] = useState<'score' | 'date'>((searchParams.get('sort') as any) || 'date');
     const [filterType, setFilterType] = useState(initialFilter);
     const [searchText, setSearchText] = useState(searchParams.get('search') || '');
     const [domainFilter, setDomainFilter] = useState(searchParams.get('domain') || '');
@@ -43,6 +44,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [platformIdFilter, setPlatformIdFilter] = useState<number | undefined>(initialPlatformId);
     const [platformNameFilter, setPlatformNameFilter] = useState<string | undefined>(initialPlatformName);
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
+    const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
@@ -59,7 +61,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [keepApplications, setKeepApplications] = useState(true);
     const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-    const [needsAttention, setNeedsAttention] = useState(searchParams.get('attention') === 'true');
     const [platforms, setPlatforms] = useState<{ id: number; name: string }[]>([]);
 
     useEffect(() => {
@@ -201,7 +202,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         if (urlParams.domain !== domainFilter) setDomainFilter(urlParams.domain);
         if (urlParams.status !== statusFilter) setStatusFilter(urlParams.status);
         if (urlParams.application !== hasApplication) setHasApplication(urlParams.application);
-        if (urlParams.attention !== needsAttention) setNeedsAttention(urlParams.attention);
     }, [searchParams]);
 
     // Sync State -> URL
@@ -214,7 +214,6 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             if (domainFilter) params.set('domain', domainFilter);
             if (statusFilter) params.set('status', statusFilter);
             if (hasApplication) params.set('application', 'true');
-            if (needsAttention) params.set('attention', 'true');
             if (platformIdFilter) params.set('platform_id', String(platformIdFilter));
             if (platformNameFilter) params.set('platform_name', platformNameFilter);
 
@@ -226,7 +225,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             }
         }, 400); // 400ms debounce
         return () => clearTimeout(timer);
-    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, needsAttention, platformIdFilter, platformNameFilter, isArchived, router, searchParams]);
+    }, [filterType, sortBy, searchText, domainFilter, statusFilter, hasApplication, platformIdFilter, platformNameFilter, isArchived, router, searchParams]);
 
     const handleFilterChange = (newFilter: 'all' | 'favorite' | 'no_favorite' | 'applications') => {
         setSelectedJobIds([]); // Clear selections on filter change
@@ -294,9 +293,9 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
 
         setIsCrawling(true);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/search`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/import-job`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query, location: 'Remote', user_id: user?.id })
+                body: JSON.stringify({ url: query, user_id: user?.id })
             });
             setQuery('');
         } catch (e) {
@@ -324,27 +323,17 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     };
 
     useEffect(() => {
-        const counts: Record<string, number> = {};
-        jobs.forEach(job => {
-            if (job.company) {
-                counts[job.company] = (counts[job.company] || 0) + 1;
-            }
-        });
-        const sorted = Object.entries(counts)
-            .map(([domain, count]) => ({ domain, count }))
-            .sort((a, b) => b.count - a.count);
-        setAvailableDomains(sorted);
-    }, [jobs]);
-
-    const jobNeedsAttention = (job: Job) => {
-        const followUpDue = !!job.next_follow_up_at && new Date(job.next_follow_up_at) <= new Date();
-        return followUpDue || job.status === 'INTERVIEW';
-    };
-
-    const needsAttentionCount = useMemo(() => {
-        return jobs.filter(jobNeedsAttention).length;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jobs]);
+        if (!token) return;
+        fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/counts${isArchived ? '?is_archived=true' : ''}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) {
+                    setAvailableDomains(data.domain_counts);
+                    setStatusCounts(data.status_counts);
+                }
+            })
+            .catch(() => {});
+    }, [token, jobs]);
 
     const visibleJobs = useMemo(() => {
         return jobs.filter(job => {
@@ -353,11 +342,10 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 job.title.toLowerCase().includes(q) ||
                 job.company.toLowerCase().includes(q);
             const matchesDomain = !domainFilter || job.company === domainFilter;
-            const matchesNeedsAttention = !needsAttention || jobNeedsAttention(job);
-            return matchesSearch && matchesDomain && matchesNeedsAttention;
+            return matchesSearch && matchesDomain;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jobs, searchText, domainFilter, needsAttention]);
+    }, [jobs, searchText, domainFilter]);
 
     return (
         <PageWrapper>
@@ -377,7 +365,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 onConfirm={confirmDeleteJob}
                 title={t('archiveJob')}
                 message={t('archiveConfirm')}
-                confirmText={t('archiv')}
+                confirmText={t('archiveJob')}
                 cancelText={t('cancel')}
                 isDestructive={false}
             />
@@ -388,7 +376,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 onConfirm={handleBulkDeleteCompanyJobs}
                 title={t('archiveAllFromCompany').replace('{company}', companyToBulkDelete || '')}
                 message={t('areYouCertain')}
-                confirmText={t('archiv')}
+                confirmText={t('archiveJob')}
                 cancelText={t('cancel')}
                 isDestructive={false}
             >
@@ -426,7 +414,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 onConfirm={confirmBulkDelete}
                 title={t('archiveSelected')}
                 message={t('areYouCertain')}
-                confirmText={t('archiv')}
+                confirmText={t('archiveJob')}
                 cancelText={t('cancel')}
                 isDestructive={false}
             />
@@ -443,10 +431,10 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 />
             )}
             {isArchived && (
-                <div className="mb-6">
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{t('archivePageTitle')}</h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('archivePageSubtitle')}</p>
-                </div>
+                <PageHeader 
+                    title={t('archivePageTitle')} 
+                    subtitle={t('archivePageSubtitle')} 
+                />
             )}
 
             {/* GLOBAL ERROR BANNER */}
@@ -472,9 +460,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 setHasApplication={setHasApplication}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
-                needsAttention={needsAttention}
-                setNeedsAttention={setNeedsAttention}
-                needsAttentionCount={needsAttentionCount}
+                statusCounts={statusCounts}
                 platformFilter={platformIdFilter}
                 setPlatformFilter={(id) => {
                     setPlatformIdFilter(id);
@@ -535,6 +521,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                         isSelected={selectedJobIds.includes(job.id)}
                         onSelect={handleSelectJob}
                         onUpdateJob={updateJob}
+                        onArchive={setJobToDelete}
                     />
                 ))}
 

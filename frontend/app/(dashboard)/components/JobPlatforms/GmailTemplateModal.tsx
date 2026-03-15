@@ -1,8 +1,12 @@
 "use client";
+import { useState } from 'react';
 import { Platform } from './types';
+import { NotificationTemplate } from '../../../components/TemplateManager';
+import { Lock } from 'lucide-react';
 
 interface GmailTemplateModalProps {
     platform: Platform;
+    templates: NotificationTemplate[];
     templateValue: string;
     onTemplateChange: (value: string) => void;
     recipientsValue: string[];
@@ -20,6 +24,7 @@ interface GmailTemplateModalProps {
 
 export default function GmailTemplateModal({
     platform,
+    templates,
     templateValue,
     onTemplateChange,
     recipientsValue,
@@ -34,6 +39,20 @@ export default function GmailTemplateModal({
     onSendTestMail,
     isAdmin,
 }: GmailTemplateModalProps) {
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+    const gmailTemplates = templates.filter(t => t.type === 'GMAIL');
+
+    const handleTemplateSelect = (id: string) => {
+        if (!id) { setSelectedTemplateId(''); return; }
+        const tpl = gmailTemplates.find(t => String(t.id) === id);
+        if (!tpl) return;
+        if (templateValue && templateValue !== tpl.content) {
+            if (!confirm('Der aktuelle Inhalt wird überschrieben. Fortfahren?')) return;
+        }
+        onTemplateChange(tpl.content);
+        setSelectedTemplateId(id);
+    };
+
     return (
         <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
@@ -44,7 +63,7 @@ export default function GmailTemplateModal({
                     <div>
                         <h3 className="font-bold text-slate-900 dark:text-white text-sm">Gmail Template — {platform.name}</h3>
                         <p className="text-xs text-slate-500 mt-1">
-                            Global: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$jobCount</code>. 
+                            Global: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$jobCount</code>.
                             Inside <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">{'{{#jobs}}'}</code>: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$url</code>
                         </p>
                     </div>
@@ -54,6 +73,25 @@ export default function GmailTemplateModal({
                 </div>
 
                 <div className="p-5 flex-1 overflow-auto">
+                    {/* Template selector */}
+                    {gmailTemplates.length > 0 && (
+                        <div className="mb-4">
+                            <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Template laden</p>
+                            <select
+                                value={selectedTemplateId}
+                                onChange={e => handleTemplateSelect(e.target.value)}
+                                className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                            >
+                                <option value="">Template auswählen...</option>
+                                {gmailTemplates.map(t => (
+                                    <option key={t.id} value={String(t.id)}>
+                                        {t.is_admin ? '🔒 ' : ''}{t.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="mb-4">
                         <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Recipients <span className="text-slate-400 font-normal">(leer = eigene Gmail-Adresse)</span></p>
                         <div className="flex flex-wrap gap-1.5 mb-2">
@@ -92,7 +130,7 @@ export default function GmailTemplateModal({
                         spellCheck={false}
                     />
                     {templateValue && (
-                        <button onClick={() => onTemplateChange('')} className="mt-2 text-xs text-rose-500 hover:text-rose-600 transition-colors cursor-pointer">
+                        <button onClick={() => { onTemplateChange(''); setSelectedTemplateId(''); }} className="mt-2 text-xs text-rose-500 hover:text-rose-600 transition-colors cursor-pointer">
                             Reset to default template
                         </button>
                     )}

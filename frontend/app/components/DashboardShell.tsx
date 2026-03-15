@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import UserMenu from './UserMenu';
 import ThemeToggler from './ThemeToggler';
-import LanguageToggler from './LanguageToggler';
 import { useAuth, fetchWithAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import { useNotification } from './NotificationProvider';
@@ -64,7 +63,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         return (
             <>
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">{children}</div>
-                <div className="fixed bottom-16 right-4 z-50"><LanguageToggler /></div>
                 <div className="fixed bottom-4 right-4 z-50"><ThemeToggler /></div>
             </>
         );
@@ -257,11 +255,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                         <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('switchDark')}</span>
                         <ThemeToggler />
                     </div>
-                    <div className="flex items-center justify-between px-2 mb-3">
-                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('switchLanguage')}</span>
-                        <LanguageToggler />
-                    </div>
-
                     <div className="h-px bg-slate-100 dark:bg-slate-800 mb-3" />
 
                     {/* Logout */}
@@ -339,7 +332,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
             {/* Toggles – Desktop only */}
             <div className="hidden md:flex fixed bottom-4 right-4 z-50 flex-col gap-3 items-end">
-                <LanguageToggler />
                 <ThemeToggler />
             </div>
 

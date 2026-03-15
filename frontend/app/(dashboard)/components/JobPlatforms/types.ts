@@ -11,10 +11,12 @@ export interface Platform {
     notification_adapters: string[];
     gmail_template: string | null;
     gmail_recipients: string[] | null;
+    pushover_template: string | null;
 }
 
 export type LastRun = {
     total: number;
+    total_found?: number;
     saved: number;
     skipped: number;
     scraping_completed?: number;

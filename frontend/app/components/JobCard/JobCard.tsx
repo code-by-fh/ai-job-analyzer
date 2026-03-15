@@ -1,39 +1,41 @@
+import { Star } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Star } from 'lucide-react';
 import { useLanguage } from '../LanguageProvider';
-import type { Job } from '../../lib/types';
-import type { JobStatus } from '../JobStatusBadge';
-// ReactMarkdown kept for description toggle below
 
 import { STATUS_META } from './constants';
-import type { TabType, JobCardProps } from './types';
+import type { JobCardProps, TabType } from './types';
 
-import JobOverviewTab from './JobOverviewTab';
 import JobApplicationTab from './JobApplicationTab';
-import JobInterviewTab from './JobInterviewTab';
 import JobCompanyTab from './JobCompanyTab';
-import JobStatusTab from './JobStatusTab';
 import JobDocumentsTab from './JobDocumentsTab';
+import JobInterviewTab from './JobInterviewTab';
+import JobOverviewTab from './JobOverviewTab';
+import JobStatusTab from './JobStatusTab';
 
-const TABS: { id: TabType & string; labelKey: string; labelFallback: string; shortLabel: string }[] = [
-    { id: 'overview', labelKey: 'overview', labelFallback: 'Overview', shortLabel: 'Info' },
-    { id: 'application', labelKey: 'application', labelFallback: 'Application', shortLabel: 'App' },
-    { id: 'interview', labelKey: 'interviewPrep', labelFallback: 'Interview', shortLabel: 'Int' },
-    { id: 'company', labelKey: 'companyProfile', labelFallback: 'Company', shortLabel: 'Co' },
-    { id: 'status', labelKey: '', labelFallback: 'Status', shortLabel: 'Status' },
-    { id: 'documents', labelKey: '', labelFallback: 'Documents', shortLabel: 'Docs' },
+import { TranslationKey } from '../../lib/languages';
+
+const TABS: { id: TabType & string; labelKey: TranslationKey; labelFallback: string; shortLabelKey: TranslationKey; shortLabelFallback: string }[] = [
+    { id: 'overview', labelKey: 'overview', labelFallback: 'Overview', shortLabelKey: 'shortInfo', shortLabelFallback: 'Info' },
+    { id: 'application', labelKey: 'application', labelFallback: 'Application', shortLabelKey: 'shortApp', shortLabelFallback: 'App' },
+    { id: 'interview', labelKey: 'interviewPrep', labelFallback: 'Interview', shortLabelKey: 'shortInt', shortLabelFallback: 'Int' },
+    { id: 'company', labelKey: 'companyProfile', labelFallback: 'Company', shortLabelKey: 'shortCo', shortLabelFallback: 'Co' },
+    { id: 'status', labelKey: 'status', labelFallback: 'Status', shortLabelKey: 'shortStatus', shortLabelFallback: 'Status' },
+    { id: 'documents', labelKey: 'documents', labelFallback: 'Documents', shortLabelKey: 'shortDocs', shortLabelFallback: 'Docs' },
 ];
 
 export default function JobCard({
     job,
     isGenerating,
     onGenerate,
+    onRegenerate,
+    onCancelGenerate,
     onStatusUpdate,
     onToggleFavorite,
     isSelected = false,
     onSelect,
     onUpdateJob,
+    onArchive,
     apiBase = process.env.NEXT_PUBLIC_API_URL || '',
 }: JobCardProps) {
     const { t } = useLanguage();
@@ -71,26 +73,20 @@ export default function JobCard({
                     <div className="flex items-start justify-between gap-2">
                         {/* Title + company */}
                         <div className="min-w-0 flex-1">
-                            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 sm:line-clamp-1" title={job.title}>
-                                {job.title}
+                            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 sm:line-clamp-1" title={job.title}>
+                                {job.url ? (
+                                    <a
+                                        href={job.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                    >
+                                        {job.company_domain} | {job.title}
+                                    </a>
+                                ) : (
+                                    job.title
+                                )}
                             </h2>
-                            {job.url ? (
-                                <a
-                                    href={new URL(job.url).origin}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-semibold tracking-wide mt-0.5 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline transition-colors"
-                                >
-                                    {job.company_domain || job.company}
-                                    <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                </a>
-                            ) : (
-                                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold tracking-wide mt-0.5 truncate">
-                                    {job.company_domain || job.company}
-                                </p>
-                            )}
                         </div>
 
                         {/* Actions: checkbox + favorite */}
@@ -115,8 +111,8 @@ export default function JobCard({
                                     }`}
                                 title={job.is_favorite ? t('removeFromFavorites') : t('addToFavorites')}
                             >
-                                {job.is_favorite 
-                                    ? <Star className="w-4 h-4 fill-amber-500" /> 
+                                {job.is_favorite
+                                    ? <Star className="w-4 h-4 fill-amber-500" />
                                     : <Star className="w-4 h-4" />
                                 }
                             </button>
@@ -140,9 +136,11 @@ export default function JobCard({
                             }
                         `}
                     >
-                        <span className="sm:hidden">{tab.shortLabel}</span>
+                        <span className="sm:hidden">
+                            {t(tab.shortLabelKey) || tab.shortLabelFallback}
+                        </span>
                         <span className="hidden sm:inline">
-                            {tab.labelKey ? (t(tab.labelKey as any) || tab.labelFallback) : tab.labelFallback}
+                            {t(tab.labelKey) || tab.labelFallback}
                         </span>
                     </button>
                 ))}
@@ -150,9 +148,9 @@ export default function JobCard({
 
             {/* ── TAB CONTENT ── */}
             <div className="px-4 sm:px-5 py-4 border-b border-slate-100 dark:border-slate-800/50">
-                {activeTab === 'overview' && <JobOverviewTab job={job} onTabChange={setActiveTab} />}
+                {activeTab === 'overview' && <JobOverviewTab job={job} onTabChange={setActiveTab} onArchive={onArchive} onStatusUpdate={onStatusUpdate} />}
                 {activeTab === 'application' && (
-                    <JobApplicationTab job={job} isGenerating={isGenerating} onGenerate={onGenerate} onStatusUpdate={onStatusUpdate} onUpdateJob={onUpdateJob} apiBase={apiBase} />
+                    <JobApplicationTab job={job} isGenerating={isGenerating} onGenerate={onGenerate} onRegenerate={onRegenerate} onCancelGenerate={onCancelGenerate} onStatusUpdate={onStatusUpdate} onUpdateJob={onUpdateJob} apiBase={apiBase} />
                 )}
                 {activeTab === 'interview' && <JobInterviewTab job={job} apiBase={apiBase} />}
                 {activeTab === 'company' && <JobCompanyTab job={job} apiBase={apiBase} />}

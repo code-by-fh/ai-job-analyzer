@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect } from 'react';
 import { useLanguage } from '../../../components/LanguageProvider';
 import { Platform, LastRun } from './types';
 import { CrawlJob } from '../CrawlStatus';
@@ -21,10 +22,14 @@ interface PlatformCardProps {
     onIntervalChange: (id: number, minutes: number) => void;
     onToggleAdapter: (platform: Platform, adapter: string) => void;
     onOpenTemplateModal: (platform: Platform) => void;
+    onOpenPushoverModal: (platform: Platform) => void;
     onSendTestPushover: (platformId: number) => void;
     onTriggerCrawl: (platform: Platform) => void;
     onToggleActive: (id: number, isActive: boolean) => void;
     onRemove: (id: number) => void;
+    onUrlChange: (id: number, url: string) => void;
+    onNameChange: (id: number, name: string) => void;
+    onGenerateName: (id: number) => void;
 }
 
 export default function PlatformCard({
@@ -41,12 +46,69 @@ export default function PlatformCard({
     onIntervalChange,
     onToggleAdapter,
     onOpenTemplateModal,
+    onOpenPushoverModal,
     onSendTestPushover,
     onTriggerCrawl,
     onToggleActive,
     onRemove,
+    onUrlChange,
+    onNameChange,
+    onGenerateName,
 }: PlatformCardProps) {
     const { t } = useLanguage();
+    const [isEditingUrl, setIsEditingUrl] = useState(false);
+    const [editedUrl, setEditedUrl] = useState(platform.url);
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editedName, setEditedName] = useState(platform.name);
+
+    useEffect(() => {
+        setEditedUrl(platform.url);
+    }, [platform.url]);
+
+    useEffect(() => {
+        setEditedName(platform.name);
+    }, [platform.name]);
+
+    const handleUrlSubmit = () => {
+        if (editedUrl && editedUrl !== platform.url) {
+            try {
+                const newDomain = new URL(editedUrl).hostname.replace('www.', '');
+                const oldDomain = new URL(platform.url).hostname.replace('www.', '');
+                if (newDomain !== oldDomain) {
+                    setEditedUrl(platform.url);
+                    setIsEditingUrl(false);
+                    return;
+                }
+                onUrlChange(platform.id, editedUrl);
+            } catch (e) {
+                setEditedUrl(platform.url);
+            }
+        }
+        setIsEditingUrl(false);
+    };
+
+    const handleNameSubmit = () => {
+        if (editedName && editedName !== platform.name) {
+            onNameChange(platform.id, editedName);
+        }
+        setIsEditingName(false);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent, type: 'url' | 'name') => {
+        if (e.key === 'Enter') {
+            if (type === 'url') handleUrlSubmit();
+            else handleNameSubmit();
+        }
+        if (e.key === 'Escape') {
+            if (type === 'url') {
+                setEditedUrl(platform.url);
+                setIsEditingUrl(false);
+            } else {
+                setEditedName(platform.name);
+                setIsEditingName(false);
+            }
+        }
+    };
 
     return (
         <div className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden
@@ -63,7 +125,7 @@ export default function PlatformCard({
             <div className="p-4 sm:p-5">
                 {/* Responsive Content Wrapper */}
                 <div className="flex flex-col gap-4">
-                    
+
                     {/* Top Row: Logo, Name, Toggle */}
                     <div className="flex items-center gap-3">
                         {/* Favicon */}
@@ -89,39 +151,138 @@ export default function PlatformCard({
 
                         {/* Name + URL */}
                         <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`font-semibold text-sm leading-tight transition-colors
-                                    ${platform.is_active
-                                        ? 'text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
-                                        : 'text-slate-400 dark:text-slate-500'
-                                    }`}
-                                >
-                                    {platform.name}
-                                </span>
-                                {!platform.is_active && (
-                                    <span className="px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-widest text-slate-400 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
-                                        {t('deactivated')}
-                                    </span>
-                                )}
-                                {isBusy && (
-                                    <span className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-widest text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 rounded border border-indigo-200 dark:border-indigo-800/50">
-                                        <svg className="w-2 h-2 animate-spin" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            {isEditingName ? (
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="text"
+                                        value={editedName}
+                                        onChange={(e) => setEditedName(e.target.value)}
+                                        onKeyDown={(e) => handleKeyDown(e, 'name')}
+                                        autoFocus
+                                        className="text-sm font-semibold flex-1 bg-slate-50 dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white transition-all focus:border-indigo-400 dark:focus:border-indigo-600 focus:ring-1 focus:ring-indigo-400/20"
+                                    />
+                                    <button
+                                        onClick={handleNameSubmit}
+                                        className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors cursor-pointer"
+                                        title={t('confirm') || 'Save'}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                                         </svg>
-                                        Scanning
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setEditedName(platform.name);
+                                            setIsEditingName(false);
+                                        }}
+                                        className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                                        title={t('cancel') || 'Cancel'}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 flex-wrap group/name">
+                                    <span className={`font-semibold text-sm leading-tight transition-colors
+                                        ${platform.is_active
+                                            ? 'text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
+                                            : 'text-slate-400 dark:text-slate-500'
+                                        }`}
+                                    >
+                                        {platform.name}
                                     </span>
-                                )}
-                            </div>
-                            <a
-                                href={platform.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[11px] text-slate-400 hover:text-indigo-500 hover:underline truncate block transition-colors mt-0.5 max-w-full"
-                                title={platform.url}
-                            >
-                                {platform.url}
-                            </a>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover/name:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => setIsEditingName(true)}
+                                            className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-500 transition-colors cursor-pointer"
+                                            title={t('edit') || 'Edit'}
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            onClick={() => onGenerateName(platform.id)}
+                                            className="p-0.5 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded text-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                            title="AI Generate Name"
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    {!platform.is_active && (
+                                        <span className="px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-widest text-slate-400 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
+                                            {t('deactivated')}
+                                        </span>
+                                    )}
+                                    {isBusy && (
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-widest text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 rounded border border-indigo-200 dark:border-indigo-800/50">
+                                            <svg className="w-2 h-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                            </svg>
+                                            Scanning
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                            {isEditingUrl ? (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                    <input
+                                        type="url"
+                                        value={editedUrl}
+                                        onChange={(e) => setEditedUrl(e.target.value)}
+                                        onKeyDown={(e) => handleKeyDown(e, 'url')}
+                                        autoFocus
+                                        className="text-[11px] flex-1 bg-slate-50 dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded px-1.5 py-0.5 outline-none text-slate-600 dark:text-slate-300 transition-all focus:border-indigo-400 dark:focus:border-indigo-600 focus:ring-1 focus:ring-indigo-400/20"
+                                    />
+                                    <button
+                                        onClick={handleUrlSubmit}
+                                        className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors cursor-pointer"
+                                        title={t('confirm') || 'Save'}
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setEditedUrl(platform.url);
+                                            setIsEditingUrl(false);
+                                        }}
+                                        className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                                        title={t('cancel') || 'Cancel'}
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1.5 mt-0.5 group/url">
+                                    <a
+                                        href={platform.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[11px] text-slate-400 hover:text-indigo-500 hover:underline truncate block transition-colors max-w-[calc(100%-20px)]"
+                                        title={platform.url}
+                                    >
+                                        {platform.url}
+                                    </a>
+                                    <button
+                                        onClick={() => setIsEditingUrl(true)}
+                                        className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-500 transition-colors cursor-pointer"
+                                        title={t('edit') || 'Edit'}
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Status Toggle (Main action moved to primary spot on mobile) */}
@@ -145,6 +306,7 @@ export default function PlatformCard({
                                 configuredAdapters={configuredAdapters}
                                 onToggleAdapter={onToggleAdapter}
                                 onOpenTemplateModal={onOpenTemplateModal}
+                                onOpenPushoverModal={onOpenPushoverModal}
                                 pushoverTestStatus={pushoverTestStatus}
                                 pushoverTestError={pushoverTestError}
                                 onSendTestPushover={onSendTestPushover}

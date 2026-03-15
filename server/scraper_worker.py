@@ -12,6 +12,8 @@ from playwright.sync_api import sync_playwright
 import redis
 
 from scraper_celery_config import celery_app, REDIS_URL
+from intelligence_service import extract_job_details, get_model, get_api_key
+from database import SessionLocal, UserProfile
 
 # Logging Setup
 from logger import get_logger
@@ -65,7 +67,6 @@ def get_clean_content(html):
     try:
         soup = BeautifulSoup(html, "html.parser")
 
-        # Radikales Entfernen von Noise
         for tag in soup(
             [
                 "script",
@@ -88,10 +89,9 @@ def get_clean_content(html):
             "consent",
             "Partner",
         ]:
-            for element in soup.find_all(text=re.compile(text_junk, re.I)):
-                parent = element.find_parent(["div", "section"])
-                if parent:
-                    parent.decompose()
+            for tag in soup.find_all(["div", "section"]):
+                if re.search(text_junk, tag.get_text(), re.I):
+                    tag.decompose()
 
         text = markdownify.markdownify(
             str(soup), heading_style="ATX", strip=["img", "a"]
@@ -125,6 +125,7 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
                         "job_id": job_id,
                         "user_id": user_id,
                         "platform": start_url,
+                        "started_at": str(int(time.time() * 1000)),
                     }
                 ),
             )
@@ -202,6 +203,11 @@ def schedule_crawls_task(args):
             )
 
             if job_id:
+                total_found_bytes = r.hget(f"crawl_job:{job_id}", "total_found")
+                total_found = (
+                    int(total_found_bytes.decode("utf-8")) if total_found_bytes else 0
+                )
+
                 r.hset(f"crawl_job:{job_id}", "status", "completed")
                 r.srem(f"user:{user_id}:active_crawls", job_id)
                 r.publish(
@@ -211,6 +217,8 @@ def schedule_crawls_task(args):
                             "type": "crawl_job_completed",
                             "job_id": job_id,
                             "user_id": user_id,
+                            "total": 0,
+                            "total_found": total_found,
                         }
                     ),
                 )
@@ -225,10 +233,18 @@ def schedule_crawls_task(args):
         r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
 
         if job_id:
+            # Use total_found already set by dedup step, or fall back to len(filtered_links)
+            existing_total_found = r.hget(f"crawl_job:{job_id}", "total_found")
+            total_found = (
+                int(existing_total_found)
+                if existing_total_found is not None
+                else len(filtered_links)
+            )
             r.hset(
                 f"crawl_job:{job_id}",
                 mapping={
                     "total": len(filtered_links),
+                    "total_found": total_found,
                     "completed": 0,
                     "status": "crawling",
                 },
@@ -246,6 +262,7 @@ def schedule_crawls_task(args):
                         "user_id": user_id,
                         "platform": platform_url,
                         "total": len(filtered_links),
+                        "total_found": total_found,
                         "completed": 0,
                     }
                 ),
@@ -273,6 +290,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
 
     r = redis.from_url(REDIS_URL)
+    db = SessionLocal()
 
     try:
         html = get_html_with_browser(url)
@@ -283,6 +301,39 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
         content = get_clean_content(html)
         if not content:
             logger.warning(f"No clean content extracted from {url}")
+
+        # Intelligent extraction of job details using AI
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if not profile:
+            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+
+        user_language = getattr(profile, "language", "de") if profile else "de"
+        model = get_model(db)
+        api_key = get_api_key(db)
+
+        if job_id:
+            extracting_count = int(r.hincrby(f"crawl_job:{job_id}", "extracting_count", 1))
+            total_bytes = r.hget(f"crawl_job:{job_id}", "total")
+            extr_total = int(total_bytes.decode("utf-8")) if total_bytes else 0
+            platform_bytes = r.hget(f"crawl_job:{job_id}", "platform_url")
+            extr_platform = platform_bytes.decode("utf-8") if platform_bytes else "Unknown"
+            r.publish("job_updates", json.dumps({
+                "type": "crawl_job_extracting",
+                "job_id": job_id,
+                "user_id": user_id,
+                "platform": extr_platform,
+                "extracting_count": extracting_count,
+                "total": extr_total,
+            }))
+
+        logger.info(f"Extracting job details intelligently for {url}...")
+        intelligent_content = extract_job_details(
+            content, model=model, api_key=api_key, language=user_language
+        )
+
+        # Use intelligent_content as the new description, truncated to 4000 characters
+        # for initial storage (analyze_job will get the full data if needed or stay within limits)
+        final_description = (intelligent_content or content)[:10000]
 
         soup = BeautifulSoup(html, "html.parser")
         title = (
@@ -296,7 +347,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
             "id": extracted_job_id,
             "title": title,
             "company": urlparse(url).netloc,
-            "description": content[:4000],
+            "description": final_description,
             "url": url,
             "user_id": user_id,
             "crawl_job_id": job_id,
@@ -312,6 +363,12 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
             )
             total_bytes = r.hget(f"crawl_job:{job_id}", "total")
             total = int(total_bytes.decode("utf-8")) if total_bytes else 0
+
+            total_found_bytes = r.hget(f"crawl_job:{job_id}", "total_found")
+            total_found = (
+                int(total_found_bytes.decode("utf-8")) if total_found_bytes else total
+            )
+
             platform_bytes = r.hget(f"crawl_job:{job_id}", "platform_url")
             platform_url = (
                 platform_bytes.decode("utf-8") if platform_bytes else "Unknown"
@@ -326,6 +383,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
                         "user_id": user_id,
                         "platform": platform_url,
                         "total": total,
+                        "total_found": total_found,
                         "scraping_completed": scraping_completed,
                     }
                 ),
@@ -334,8 +392,8 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     except Exception as e:
         logger.error(f"Error in scrape_job_detail_task for {url}: {e}", exc_info=True)
         if job_id:
-            job_data = r.hgetall(f"crawl_job:{job_id}")
-            if job_data:
+            job_data_redis = r.hgetall(f"crawl_job:{job_id}")
+            if job_data_redis:
                 scraping_completed = int(
                     r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1)
                 )
@@ -344,3 +402,5 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
 
                 if scraping_completed >= total and total > 0:
                     logger.warning(f"Job {job_id} completed with errors")
+    finally:
+        db.close()

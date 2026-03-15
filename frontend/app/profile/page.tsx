@@ -177,12 +177,12 @@ export default function Profile() {
 
   return (
     <PageWrapper>
-      <PageHeader title="Profile & Resume" subtitle={t('profileSubtitle')} />
+      <PageHeader title={t('profileAndResume')} subtitle={t('profileSubtitle')} />
 
       {/* Profile Completion */}
       <div className="glass-card rounded-2xl p-4 mb-6">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Profile Completion</span>
+          <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">{t('profileCompletion')}</span>
           <span className={`text-sm font-bold tabular-nums ${pctTextColor}`}>{pct}%</span>
         </div>
         <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
@@ -207,7 +207,7 @@ export default function Profile() {
           >
             <div className="flex items-center justify-center gap-2">
               {tab === 'target' ? <Target size={14} /> : <FileText size={14} />}
-              {tab === 'target' ? 'Target Job' : 'Resume'}
+              {tab === 'target' ? t('targetJob') : t('resume')}
             </div>
           </button>
         ))}
@@ -323,7 +323,7 @@ export default function Profile() {
               value={formData.cv_data.education}
               onChange={(e) => setFormData({ ...formData, cv_data: { ...formData.cv_data, education: e.target.value } })}
               className={`${inputCls} min-h-[120px] resize-none`}
-              placeholder="University, Degree..."
+              placeholder={t('universityPlaceholder')}
               rows={4}
             />
           </div>

@@ -90,6 +90,7 @@ class UserProfile(Base):
     active_notification_service = Column(
         String, default="NONE"
     )  # NONE, GMAIL, PUSHOVER
+    language = Column(String, default="de")
 
 
 class SystemSettings(Base):
@@ -122,10 +123,24 @@ class JobPlatform(Base):
     notification_adapters = Column(JSON, default=[])
     gmail_template = Column(Text, nullable=True)
     gmail_recipients = Column(JSON, nullable=True)
+    pushover_template = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
     jobs = relationship("JobEntry", back_populates="platform")
+
+
+class NotificationTemplate(Base):
+    __tablename__ = "notification_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False)  # "GMAIL" or "PUSHOVER"
+    content = Column(Text, nullable=False)
+    is_admin = Column(Boolean, default=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = admin template
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
 
 
 class CompanyProfile(Base):
@@ -207,6 +222,7 @@ class SettingsData(BaseModel):
     pushover_user_key: Optional[str] = None
     pushover_api_token: Optional[str] = None
     active_notification_service: str = "NONE"
+    language: str = "de"
 
 
 class NotificationSettingsData(BaseModel):
@@ -222,12 +238,15 @@ class PlatformCreate(BaseModel):
 
 
 class PlatformUpdate(BaseModel):
+    url: Optional[str] = None
+    name: Optional[str] = None
     crawl_interval_minutes: Optional[int] = None
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
     gmail_template: Optional[str] = None
     gmail_recipients: Optional[List[str]] = None
+    pushover_template: Optional[str] = None
 
 
 class PlatformResponse(BaseModel):
@@ -242,7 +261,32 @@ class PlatformResponse(BaseModel):
     notification_adapters: List[str] = []
     gmail_template: Optional[str] = None
     gmail_recipients: Optional[List[str]] = None
+    pushover_template: Optional[str] = None
     job_count: int = 0
+
+    class Config:
+        orm_mode = True
+
+
+class NotificationTemplateCreate(BaseModel):
+    name: str
+    type: str  # "GMAIL" or "PUSHOVER"
+    content: str
+
+
+class NotificationTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    content: Optional[str] = None
+
+
+class NotificationTemplateResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    content: str
+    is_admin: bool
+    user_id: Optional[int] = None
+    created_at: str
 
     class Config:
         orm_mode = True

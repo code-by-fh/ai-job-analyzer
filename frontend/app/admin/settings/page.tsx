@@ -8,6 +8,7 @@ import PageHeader from '../../components/PageHeader';
 import ConfirmModal from '../../components/ConfirmModal';
 import { logger } from '../../lib/logger';
 import { Key, Bot, ChevronDown, CheckCircle2, RefreshCw, Search, X, ExternalLink } from 'lucide-react';
+import TemplateManager from '../../components/TemplateManager';
 
 interface OpenRouterModel {
     id: string;
@@ -399,6 +400,11 @@ export default function AdminSettingsPage() {
                         )}
                     </div>
                 </form>
+            </div>
+
+            {/* Notification Templates */}
+            <div className="relative z-10 mt-8 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <TemplateManager isAdmin={true} adminMode={true} />
             </div>
 
             {/* Danger Zone */}

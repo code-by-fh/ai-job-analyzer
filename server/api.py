@@ -61,6 +61,10 @@ from database import (
     JobStatusHistoryEntry,
     DomainUrlPattern,
     JobDocument,
+    NotificationTemplate,
+    NotificationTemplateCreate,
+    NotificationTemplateUpdate,
+    NotificationTemplateResponse,
 )
 from auth import (
     create_access_token,
@@ -230,7 +234,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -254,6 +258,10 @@ def extract_text_from_pdf(file_bytes):
 class SystemSettingsUpdate(BaseModel):
     openrouter_model: str
     openrouter_api_key: Optional[str] = None
+
+
+class GenerateRequest(BaseModel):
+    improvement_notes: Optional[str] = None
 
 
 @app.get("/admin/settings")
@@ -594,6 +602,37 @@ async def get_system_status():
     return {"crawling": bool(is_crawling), "ai_error": ai_error}
 
 
+@app.get("/jobs/counts")
+def get_job_counts(current_user: User = Depends(get_current_user), is_archived: bool = False):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        base_filters = [
+            JobEntry.user_id == current_user.id,
+            JobEntry.is_archived == is_archived,
+        ]
+
+        status_rows = db.query(JobEntry.status, func.count(JobEntry.id)).filter(
+            *base_filters,
+            JobEntry.status.isnot(None),
+        ).group_by(JobEntry.status).all()
+        status_counts = {status: count for status, count in status_rows}
+
+        domain_rows = db.query(JobEntry.company, func.count(JobEntry.id)).filter(
+            *base_filters,
+            JobEntry.company.isnot(None),
+            JobEntry.company != "",
+        ).group_by(JobEntry.company).all()
+        domains_sorted = sorted(
+            [{"domain": company, "count": count} for company, count in domain_rows],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+        return {"status_counts": status_counts, "domain_counts": domains_sorted}
+    finally:
+        db.close()
+
+
 @app.get("/jobs/domains")
 def get_job_domains(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -617,7 +656,7 @@ def get_jobs(
     limit: Optional[int] = None,
     offset: int = 0,
     filter_type: Optional[str] = None,
-    sort_by: Optional[str] = "score",
+    sort_by: Optional[str] = "date",
     has_application: Optional[bool] = None,
     status_filter: Optional[str] = None,
     platform_id: Optional[int] = None,
@@ -704,7 +743,7 @@ def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
 
 
 @app.post("/jobs/{job_id}/generate")
-def trigger_generation(job_id: str, current_user: User = Depends(get_current_user)):
+def trigger_generation(job_id: str, request: Optional[GenerateRequest] = None, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         job = (
@@ -716,9 +755,11 @@ def trigger_generation(job_id: str, current_user: User = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Job not found")
         job.status = "GENERATING"
         db.commit()
-        # Pass user_id to task so it can use correct profile
+        improvement_notes = request.improvement_notes if request else None
         celery_app.send_task(
-            "ai.generate_application", args=[job_id, current_user.id], queue="ai_queue"
+            "ai.generate_application",
+            args=[job_id, current_user.id, improvement_notes],
+            queue="ai_queue"
         )
         return {"status": "started"}
     finally:
@@ -800,6 +841,25 @@ def download_application_pdf(
         return Response(
             content=pdf_bytes, media_type="application/pdf", headers=headers
         )
+    finally:
+        db.close()
+
+
+@app.post("/jobs/{job_id}/cancel-generation")
+def cancel_generation(job_id: str, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status == "GENERATING":
+            job.status = "COMPLETED" if job.application_draft else "OPEN"
+            db.commit()
+        return {"status": "cancelled"}
     finally:
         db.close()
 
@@ -1092,6 +1152,26 @@ def save_notification_settings(
         db.close()
 
 
+class LanguagePreferenceData(BaseModel):
+    language: str = "de"
+
+
+@app.post("/language-preference")
+def save_language_preference(data: LanguagePreferenceData, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile:
+            profile = UserProfile(user_id=current_user.id)
+            db.add(profile)
+        lang = data.language if data.language in ('en', 'de') else 'de'
+        profile.language = lang
+        db.commit()
+        return {"status": "saved", "language": lang}
+    finally:
+        db.close()
+
+
 @app.delete("/settings")
 def delete_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -1210,6 +1290,7 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     "notification_adapters": p.notification_adapters or [],
                     "gmail_template": p.gmail_template,
                     "gmail_recipients": p.gmail_recipients,
+                    "pushover_template": p.pushover_template,
                     "job_count": count,
                 }
             )
@@ -1235,11 +1316,11 @@ def create_platform(
         if existing:
             raise HTTPException(status_code=400, detail="Platform URL already exists")
 
-        # Basic name extraction from URL
         from urllib.parse import urlparse
-
         domain = urlparse(platform.url).netloc
-        name = domain.replace("www.", "")
+
+        from intelligence_service import generate_platform_name
+        name = generate_platform_name(platform.url, db=db)
 
         # Favicon URL (using Google's service)
         favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
@@ -1281,6 +1362,36 @@ def update_platform(
         if not db_platform:
             raise HTTPException(status_code=404, detail="Platform not found")
 
+        if platform_update.url is not None:
+            from urllib.parse import urlparse
+            new_domain = urlparse(platform_update.url).netloc.replace("www.", "")
+            old_domain = urlparse(db_platform.url).netloc.replace("www.", "")
+            
+            if new_domain != old_domain:
+                raise HTTPException(status_code=400, detail=f"Domain change not allowed. Must remain on {old_domain}")
+
+            # Check for duplicates
+            existing = (
+                db.query(JobPlatform)
+                .filter(
+                    JobPlatform.user_id == current_user.id,
+                    JobPlatform.url == platform_update.url,
+                    JobPlatform.id != platform_id
+                )
+                .first()
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Platform URL already exists")
+
+            db_platform.url = platform_update.url
+            domain = new_domain
+            if domain:
+                db_platform.name = domain.replace("www.", "")
+                db_platform.favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
+
+        if platform_update.name is not None:
+            db_platform.name = platform_update.name
+
         if platform_update.crawl_interval_minutes is not None:
             db_platform.crawl_interval_minutes = platform_update.crawl_interval_minutes
         if platform_update.is_active is not None:
@@ -1298,13 +1409,19 @@ def update_platform(
             db_platform.gmail_template = platform_update.gmail_template or None
         if "gmail_recipients" in platform_update.__fields_set__:
             db_platform.gmail_recipients = platform_update.gmail_recipients or None
+        if "pushover_template" in platform_update.__fields_set__:
+            db_platform.pushover_template = platform_update.pushover_template or None
 
         db.commit()
         db.refresh(db_platform)
 
         # Get job count
         job_count = (
-            db.query(JobEntry).filter(JobEntry.platform_id == db_platform.id).count()
+            db.query(JobEntry).filter(
+                JobEntry.platform_id == db_platform.id,
+                JobEntry.user_id == current_user.id,
+                JobEntry.is_archived == False
+            ).count()
         )
 
         return {
@@ -1323,8 +1440,32 @@ def update_platform(
             "notification_adapters": db_platform.notification_adapters or [],
             "gmail_template": db_platform.gmail_template,
             "gmail_recipients": db_platform.gmail_recipients,
+            "pushover_template": db_platform.pushover_template,
             "job_count": job_count,
         }
+    finally:
+        db.close()
+
+
+@app.post("/platforms/{platform_id}/generate-name")
+def trigger_platform_name_generation(platform_id: int, current_user: User = Depends(get_current_user)):
+    from intelligence_service import generate_platform_name
+    db = SessionLocal()
+    try:
+        db_platform = (
+            db.query(JobPlatform)
+            .filter(
+                JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id
+            )
+            .first()
+        )
+        if not db_platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        new_name = generate_platform_name(db_platform.url, db=db)
+        db_platform.name = new_name
+        db.commit()
+        return {"id": platform_id, "name": new_name}
     finally:
         db.close()
 
@@ -1409,7 +1550,7 @@ def test_pushover_notification(
             reasoning = "Strong match based on your Python and FastAPI experience."
             url = "https://example.com/job/123"
 
-        if not _send_via_pushover(_FakeJob(), profile):
+        if not _send_via_pushover(_FakeJob(), profile, platform=platform):
             raise HTTPException(status_code=500, detail="Pushover delivery failed")
         return {"ok": True}
     except HTTPException:
@@ -1417,6 +1558,186 @@ def test_pushover_notification(
     except Exception as e:
         logger.error("test-pushover failed for platform %s: %s", platform_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Notification Templates
+# ---------------------------------------------------------------------------
+
+def _template_to_dict(t: NotificationTemplate) -> dict:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "type": t.type,
+        "content": t.content,
+        "is_admin": t.is_admin,
+        "user_id": t.user_id,
+        "created_at": t.created_at.isoformat() if t.created_at else "",
+    }
+
+
+@app.get("/notification-templates", response_model=List[NotificationTemplateResponse])
+def list_notification_templates(
+    type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        q = db.query(NotificationTemplate).filter(
+            or_(
+                NotificationTemplate.is_admin == True,
+                NotificationTemplate.user_id == current_user.id,
+            )
+        )
+        if type:
+            q = q.filter(NotificationTemplate.type == type.upper())
+        templates = q.order_by(NotificationTemplate.is_admin.desc(), NotificationTemplate.name).all()
+        return [_template_to_dict(t) for t in templates]
+    finally:
+        db.close()
+
+
+@app.post("/notification-templates", response_model=NotificationTemplateResponse)
+def create_notification_template(
+    body: NotificationTemplateCreate,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        if body.type.upper() not in ("GMAIL", "PUSHOVER"):
+            raise HTTPException(status_code=400, detail="type must be GMAIL or PUSHOVER")
+        t = NotificationTemplate(
+            name=body.name,
+            type=body.type.upper(),
+            content=body.content,
+            is_admin=False,
+            user_id=current_user.id,
+        )
+        db.add(t)
+        db.commit()
+        db.refresh(t)
+        return _template_to_dict(t)
+    finally:
+        db.close()
+
+
+@app.put("/notification-templates/{template_id}", response_model=NotificationTemplateResponse)
+def update_notification_template(
+    template_id: int,
+    body: NotificationTemplateUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        t = db.query(NotificationTemplate).filter(
+            NotificationTemplate.id == template_id,
+            NotificationTemplate.user_id == current_user.id,
+            NotificationTemplate.is_admin == False,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Template not found")
+        if body.name is not None:
+            t.name = body.name
+        if body.content is not None:
+            t.content = body.content
+        db.commit()
+        db.refresh(t)
+        return _template_to_dict(t)
+    finally:
+        db.close()
+
+
+@app.delete("/notification-templates/{template_id}")
+def delete_notification_template(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        t = db.query(NotificationTemplate).filter(
+            NotificationTemplate.id == template_id,
+            NotificationTemplate.user_id == current_user.id,
+            NotificationTemplate.is_admin == False,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Template not found or cannot be deleted")
+        db.delete(t)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+# Admin notification template endpoints
+
+@app.post("/admin/notification-templates", response_model=NotificationTemplateResponse)
+def admin_create_notification_template(
+    body: NotificationTemplateCreate,
+    current_user: User = Depends(get_current_admin_user),
+):
+    db = SessionLocal()
+    try:
+        if body.type.upper() not in ("GMAIL", "PUSHOVER"):
+            raise HTTPException(status_code=400, detail="type must be GMAIL or PUSHOVER")
+        t = NotificationTemplate(
+            name=body.name,
+            type=body.type.upper(),
+            content=body.content,
+            is_admin=True,
+            user_id=None,
+        )
+        db.add(t)
+        db.commit()
+        db.refresh(t)
+        return _template_to_dict(t)
+    finally:
+        db.close()
+
+
+@app.put("/admin/notification-templates/{template_id}", response_model=NotificationTemplateResponse)
+def admin_update_notification_template(
+    template_id: int,
+    body: NotificationTemplateUpdate,
+    current_user: User = Depends(get_current_admin_user),
+):
+    db = SessionLocal()
+    try:
+        t = db.query(NotificationTemplate).filter(
+            NotificationTemplate.id == template_id,
+            NotificationTemplate.is_admin == True,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Admin template not found")
+        if body.name is not None:
+            t.name = body.name
+        if body.content is not None:
+            t.content = body.content
+        db.commit()
+        db.refresh(t)
+        return _template_to_dict(t)
+    finally:
+        db.close()
+
+
+@app.delete("/admin/notification-templates/{template_id}")
+def admin_delete_notification_template(
+    template_id: int,
+    current_user: User = Depends(get_current_admin_user),
+):
+    db = SessionLocal()
+    try:
+        t = db.query(NotificationTemplate).filter(
+            NotificationTemplate.id == template_id,
+            NotificationTemplate.is_admin == True,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Admin template not found")
+        db.delete(t)
+        db.commit()
+        return {"ok": True}
     finally:
         db.close()
 
@@ -1453,12 +1774,15 @@ def delete_platform(
             if row[0]
         ]
 
-        # Delete job status history for these jobs
+        # Delete job status history and documents for these jobs
         job_ids_subquery = (
             db.query(JobEntry.id).filter(JobEntry.platform_id == platform_id).subquery()
         )
         db.query(JobStatusHistory).filter(
             JobStatusHistory.job_id.in_(job_ids_subquery)
+        ).delete(synchronize_session=False)
+        db.query(JobDocument).filter(
+            JobDocument.job_id.in_(job_ids_subquery)
         ).delete(synchronize_session=False)
 
         # Delete all jobs of this platform unconditionally
@@ -1510,7 +1834,17 @@ def delete_platform_jobs(
         if keep_applications:
             query = query.filter(JobEntry.status == "OPEN")
 
-        deleted_count = query.delete()
+        # Get job IDs to delete associated history and documents
+        job_ids = [r[0] for r in query.with_entities(JobEntry.id).all()]
+        if job_ids:
+            db.query(JobStatusHistory).filter(
+                JobStatusHistory.job_id.in_(job_ids)
+            ).delete(synchronize_session=False)
+            db.query(JobDocument).filter(
+                JobDocument.job_id.in_(job_ids)
+            ).delete(synchronize_session=False)
+
+        deleted_count = query.delete(synchronize_session=False)
 
         db.commit()
         return {"status": "deleted", "deleted_count": deleted_count}
@@ -2118,6 +2452,7 @@ def wipe_database(
         if request.wipe_all_users:
             # Delete EVERYTHING (Jobs, History, Platforms, Companies, Patterns)
             db.query(JobStatusHistory).delete(synchronize_session=False)
+            db.query(JobDocument).delete(synchronize_session=False)
             db.query(JobEntry).delete(synchronize_session=False)
             db.query(JobPlatform).delete(synchronize_session=False)
             db.query(CompanyProfile).delete(synchronize_session=False)
@@ -2125,17 +2460,28 @@ def wipe_database(
         else:
             # Delete ONLY for admin user
             admin_id = current_user.id
+            logger.info(f"Wiping data for user {admin_id}")
 
-            # History
-            job_ids = db.query(JobEntry.id).filter(JobEntry.user_id == admin_id)
-            db.query(JobStatusHistory).filter(
-                JobStatusHistory.job_id.in_(job_ids)
-            ).delete(synchronize_session=False)
+            # History & Documents
+            job_ids_query = db.query(JobEntry.id).filter(JobEntry.user_id == admin_id)
+            job_ids = [r[0] for r in job_ids_query.all()]
+            logger.info(f"Found {len(job_ids)} jobs to delete")
+
+            if job_ids:
+                h_del = db.query(JobStatusHistory).filter(
+                    JobStatusHistory.job_id.in_(job_ids)
+                ).delete(synchronize_session=False)
+                d_del = db.query(JobDocument).filter(
+                    JobDocument.job_id.in_(job_ids)
+                ).delete(synchronize_session=False)
+                logger.info(f"Deleted {h_del} history entries and {d_del} documents")
 
             # Jobs
-            db.query(JobEntry).filter(JobEntry.user_id == admin_id).delete(
+            j_del = db.query(JobEntry).filter(JobEntry.user_id == admin_id).delete(
                 synchronize_session=False
             )
+            logger.info(f"Deleted {j_del} jobs")
+
 
             # Platforms
             db.query(JobPlatform).filter(JobPlatform.user_id == admin_id).delete(

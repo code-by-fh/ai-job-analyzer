@@ -1,10 +1,11 @@
-import { Loader2, ExternalLink, CheckCircle, Circle, Pause } from 'lucide-react';
+import { CheckCircle, Circle, ExternalLink, Loader2, Pause } from 'lucide-react';
 import { useLanguage } from '../../components/LanguageProvider';
 
 export interface CrawlJob {
     job_id: string;
     platform: string;
     total: number;
+    total_found?: number;
     scraping_completed: number;
     analysis_completed: number;
     jobs_saved?: number;
@@ -16,6 +17,7 @@ export interface CrawlJob {
     show_success?: boolean;
     analyzing_jobs?: string[];
     all_job_titles?: string[];
+    extracting_count?: number;
 }
 
 interface CrawlStatusProps {
@@ -34,6 +36,8 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
     const isFound = job.total > 0;
     const isScraping = job.scraping_completed > 0 && job.scraping_completed < job.total && !isFailed;
     const isScrapingDone = job.scraping_completed >= job.total && job.total > 0;
+    const isExtracting = (job.extracting_count ?? 0) > 0 && !isScrapingDone && !isFailed;
+    const isExtractionDone = isScrapingDone;
     const isAnalyzing = (job.analyzing_jobs && job.analyzing_jobs.length > 0) || (job.analysis_completed > 0 && !job.show_success && !isFailed);
     const isAnalysisDone = job.show_success === true;
 
@@ -49,8 +53,8 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
             {/* Step 1: Suche */}
             <div className={`flex items-center ${gap}`}>
                 <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${isSearching ? 'border-indigo-600 bg-white dark:bg-slate-900'
-                        : isFailed && job.total === 0 ? 'border-rose-500 bg-rose-500'
-                            : 'border-emerald-500 bg-emerald-500'
+                    : isFailed && job.total === 0 ? 'border-rose-500 bg-rose-500'
+                        : 'border-emerald-500 bg-emerald-500'
                     }`}>
                     {isSearching ? (
                         <Loader2 className={`${ii} text-indigo-600 animate-spin`} />
@@ -70,7 +74,7 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
             {/* Step 2: Gefunden */}
             <div className={`flex items-center ${gap}`}>
                 <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isFound ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                        : 'border-emerald-500 bg-emerald-500'
+                    : 'border-emerald-500 bg-emerald-500'
                     }`}>
                     {!isFound ? (
                         <Circle className={`${ii} text-slate-300 dark:text-slate-600`} />
@@ -80,7 +84,7 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
                 </div>
                 <div className="flex items-center gap-2">
                     <span className={`${tc} ${isFound ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-600'}`}>
-                        {isFound ? `${job.total} ${t('jobsFound')}` : t('jobsFound')}
+                        {isFound ? `${job.total_found ?? job.total} ${t('jobsFound')}` : t('jobsFound')}
                     </span>
                     {isFound && !compact && (
                         <span className="text-xs bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold">Match!</span>
@@ -88,11 +92,32 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
                 </div>
             </div>
 
-            {/* Step 3: Details laden */}
+            {/* Step 3: KI-Extraktion */}
+            <div className={`flex items-center ${gap}`}>
+                <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isExtracting && !isExtractionDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                    : isExtractionDone ? 'border-emerald-500 bg-emerald-500'
+                        : 'border-violet-600 bg-white dark:bg-slate-900'
+                    }`}>
+                    {!isExtracting && !isExtractionDone ? (
+                        <Circle className={`${ii} text-slate-300 dark:text-slate-600`} />
+                    ) : isExtractionDone ? (
+                        <CheckCircle className={`${ii} text-white`} />
+                    ) : (
+                        <Loader2 className={`${ii} text-violet-600 animate-spin`} />
+                    )}
+                </div>
+                <span className={`${tc} ${isExtracting ? 'font-medium text-violet-600 dark:text-violet-400' : isExtractionDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
+                    {isExtracting
+                        ? t('aiExtractionCount', { count: job.extracting_count ?? 0, total: job.total })
+                        : t('aiExtraction')}
+                </span>
+            </div>
+
+            {/* Step 4: Details laden */}
             <div className={`flex items-center ${gap}`}>
                 <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isScraping && !isScrapingDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                        : isScrapingDone ? 'border-emerald-500 bg-emerald-500'
-                            : 'border-indigo-600 bg-white dark:bg-slate-900'
+                    : isScrapingDone ? 'border-emerald-500 bg-emerald-500'
+                        : 'border-indigo-600 bg-white dark:bg-slate-900'
                     }`}>
                     {!isScraping && !isScrapingDone ? (
                         <Circle className={`${ii} text-slate-300 dark:text-slate-600`} />
@@ -102,23 +127,18 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
                         <Loader2 className={`${ii} text-indigo-600 animate-spin`} />
                     )}
                 </div>
-                <div className="flex flex-col">
-                    <span className={`${tc} ${isScraping ? 'font-medium text-indigo-600 dark:text-indigo-400' : isScrapingDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
-                        {isScraping || isScrapingDone
-                            ? t('processingJobDetails', { count: job.scraping_completed, total: job.total })
-                            : t('loadJobDetails')}
-                    </span>
-                    {isScraping && !compact && (
-                        <span className="text-[10px] text-slate-400">{t('extractingDescriptions')}</span>
-                    )}
-                </div>
+                <span className={`${tc} ${isScraping ? 'font-medium text-indigo-600 dark:text-indigo-400' : isScrapingDone ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'}`}>
+                    {isScraping || isScrapingDone
+                        ? t('processingJobDetails', { count: job.scraping_completed, total: job.total })
+                        : t('loadJobDetails')}
+                </span>
             </div>
 
             {/* Step 4: Analyse */}
             <div className={`flex items-center ${gap}`}>
                 <div className={`relative z-10 flex items-center justify-center ${ic} rounded-full border-2 transition-colors duration-300 ${!isAnalyzing && !isAnalysisDone ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
-                        : isAnalysisDone ? 'border-emerald-500 bg-emerald-500'
-                            : 'border-amber-600 bg-white dark:bg-slate-900'
+                    : isAnalysisDone ? 'border-emerald-500 bg-emerald-500'
+                        : 'border-amber-600 bg-white dark:bg-slate-900'
                     }`}>
                     {!isAnalyzing && !isAnalysisDone ? (
                         <Pause className={`${ii} text-slate-300 dark:text-slate-600`} />
@@ -173,7 +193,8 @@ export function CrawlSteps({ job, compact = false, onCancel }: {
                                 {!compact && <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">An error occurred</p>}
                                 <p className={`${compact ? 'text-xs' : 'text-xs mt-1'} text-rose-600 dark:text-rose-400 break-words`}>
                                     {job.error_message || 'Unknown error'}
-                                </p>                            </div>
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

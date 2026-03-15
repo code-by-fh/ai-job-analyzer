@@ -16,7 +16,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const savedLang = localStorage.getItem('language') as Language | null;
-        if (savedLang && (savedLang === 'en' || savedLang === 'de')) {
+        if (savedLang === 'en' || savedLang === 'de') {
             setLanguageState(savedLang);
         } else {
             // Check browser language
@@ -25,11 +25,28 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
                 setLanguageState(browserLang as Language);
             }
         }
+
+        // Fetch authoritative language from backend
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, { credentials: 'include' })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data?.language === 'en' || data?.language === 'de') {
+                    setLanguageState(data.language as Language);
+                    localStorage.setItem('language', data.language);
+                }
+            })
+            .catch(() => {});
     }, []);
 
     const setLanguage = (lang: Language) => {
         setLanguageState(lang);
         localStorage.setItem('language', lang);
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/language-preference`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: lang }),
+        }).catch(() => {});
     };
 
     const t = (key: TranslationKey, variables?: Record<string, string | number>): string => {

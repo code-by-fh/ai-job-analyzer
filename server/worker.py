@@ -1,10 +1,13 @@
 import os
 import json
 import logging
-import io
-import sys
-from openai import OpenAI, NotFoundError, AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
-from pypdf import PdfReader
+from openai import (
+    NotFoundError,
+    AuthenticationError,
+    RateLimitError,
+    APIConnectionError,
+    APIStatusError,
+)
 import redis
 from celery_config import celery_app
 from urllib.parse import urlparse
@@ -14,9 +17,7 @@ from database import (
     SessionLocal,
     JobEntry,
     UserProfile,
-    SettingsData,
     JobPlatform,
-    SystemSettings,
     DomainUrlPattern,
     User,
 )
@@ -29,56 +30,16 @@ import requests
 # Logging Setup
 from logger import get_logger
 
+from intelligence_service import (
+    get_model,
+    get_api_key,
+    format_cv_for_prompt,
+    detect_url_pattern_with_ai,
+    analyze_job,
+    generate_application,
+)
+
 logger = get_logger(__name__)
-
-def get_client(db=None):
-    try:
-        if db:
-            settings = db.query(SystemSettings).first()
-            if settings and settings.openrouter_api_key:
-                return OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=settings.openrouter_api_key,
-                )
-    except Exception:
-        pass
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key="",
-    )
-
-
-def get_current_model():
-    db = SessionLocal()
-    try:
-        settings = db.query(SystemSettings).first()
-        return (
-            settings.openrouter_model
-            if settings
-            else "tngtech/deepseek-r1t2-chimera:free"
-        )
-    except Exception:
-        return "tngtech/deepseek-r1t2-chimera:free"
-    finally:
-        db.close()
-
-
-def format_cv_for_prompt(cv_json):
-    if not cv_json:
-        return "No detailed experience provided."
-
-    text = "PROFESSIONAL EXPERIENCE:\n"
-    for exp in cv_json.get("experience", []):
-        text += f"- {exp['role']} bei {exp['company']} ({exp['duration']}): {exp['description']}\n"
-
-    text += "\nPROJECTS:\n"
-    for proj in cv_json.get("projects", []):
-        text += (
-            f"- {proj['name']} (Tech: {proj['tech_stack']}): {proj['description']}\n"
-        )
-
-    text += f"\nEDUCATION:\n{cv_json.get('education', '')}"
-    return text
 
 
 def _send_via_gmail_batch(jobs, profile, platform=None, userName="Candidate"):
@@ -103,9 +64,13 @@ def _send_via_gmail_batch(jobs, profile, platform=None, userName="Candidate"):
         from string import Template
 
         # Provide jobCount and userName globally in the template
-        custom_template = Template(custom_template).safe_substitute(jobCount=count, userName=userName)
+        custom_template = Template(custom_template).safe_substitute(
+            jobCount=count, userName=userName
+        )
 
-        loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", custom_template, re.DOTALL)
+        loop_match = re.search(
+            r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", custom_template, re.DOTALL
+        )
         if loop_match:
             job_block = loop_match.group(1)
             rendered_jobs = "".join(
@@ -120,7 +85,11 @@ def _send_via_gmail_batch(jobs, profile, platform=None, userName="Candidate"):
                 )
                 for j in jobs
             )
-            html = custom_template[:loop_match.start()] + rendered_jobs + custom_template[loop_match.end():]
+            html = (
+                custom_template[: loop_match.start()]
+                + rendered_jobs
+                + custom_template[loop_match.end() :]
+            )
         else:
             # No loop block — render template once per job, separated by <hr>
             html = "\n<hr>\n".join(
@@ -173,7 +142,10 @@ def _flush_gmail_digest(crawl_job_id, user_id, db, r):
         return
     r.delete(key)
 
-    job_ids = [int(jid) for jid in job_ids_raw]
+    job_ids = [
+        jid.decode("utf-8") if isinstance(jid, bytes) else str(jid)
+        for jid in job_ids_raw
+    ]
     jobs = db.query(JobEntry).filter(JobEntry.id.in_(job_ids)).all()
     if not jobs:
         return
@@ -185,8 +157,15 @@ def _flush_gmail_digest(crawl_job_id, user_id, db, r):
     user = db.query(User).filter(User.id == user_id).first()
     userName = user.username if user else "Candidate"
 
+    # Get platform from the first job if available
+    platform = None
+    if jobs[0].platform_id:
+        platform = (
+            db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
+        )
+
     try:
-        _send_via_gmail_batch(jobs, profile, platform, userName=userName)
+        _send_via_gmail_batch(jobs, profile, platform=platform, userName=userName)
     except Exception as e:
         logger.error(f"Gmail digest failed: {e}")
 
@@ -207,6 +186,7 @@ def _send_via_gmail(job, profile, platform=None, userName="Candidate"):
     custom_template = platform.gmail_template if platform else None
     if custom_template:
         from string import Template
+
         html = Template(custom_template).safe_substitute(
             jobCount=1,
             userName=userName,
@@ -247,17 +227,30 @@ def _send_via_gmail(job, profile, platform=None, userName="Candidate"):
     return True
 
 
-def _send_via_pushover(job, profile):
+def _send_via_pushover(job, profile, platform=None):
     """Send a notification via Pushover. Returns True on success."""
     if not profile.pushover_user_key or not profile.pushover_api_token:
         logger.warning("Pushover notification enabled but credentials missing.")
         return False
 
+    template = getattr(platform, "pushover_template", None) if platform else None
+    if template:
+        message = template
+        message = message.replace("$title", job.title or "")
+        message = message.replace("$company", job.company or "")
+        message = message.replace(
+            "$match_score", str(int(job.match_score)) if job.match_score else "0"
+        )
+        message = message.replace("$reasoning", job.reasoning or "")
+        message = message.replace("$url", job.url or "")
+    else:
+        message = f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}..."
+
     payload = {
         "token": profile.pushover_api_token,
         "user": profile.pushover_user_key,
         "title": f"{job.title}",
-        "message": f"{job.company} - Score: {int(job.match_score)}%\n\n{job.reasoning[:100]}...",
+        "message": message,
         "url": job.url,
         "url_title": "View details",
     }
@@ -273,18 +266,24 @@ def _send_via_pushover(job, profile):
         return False
 
 
-def send_notification(job, profile, adapters=None, platform=None):
+def send_notification(job, profile, db, adapters=None, platform=None):
     """
     Sends notifications via the specified adapters (e.g. ['GMAIL', 'PUSHOVER']).
     If adapters is None or empty, falls back to profile.active_notification_service.
     Sends via all specified adapters and returns True if at least one succeeded.
     """
-    user_obj = db.query(User).filter(User.id == profile.user_id).first() if hasattr(profile, 'user_id') else None
+    user_obj = (
+        db.query(User).filter(User.id == profile.user_id).first()
+        if hasattr(profile, "user_id")
+        else None
+    )
     userName = user_obj.username if user_obj else "Candidate"
 
     _adapter_fns = {
-        "GMAIL": lambda j, p: _send_via_gmail(j, p, platform=platform, userName=userName),
-        "PUSHOVER": _send_via_pushover,
+        "GMAIL": lambda j, p: _send_via_gmail(
+            j, p, platform=platform, userName=userName
+        ),
+        "PUSHOVER": lambda j, p: _send_via_pushover(j, p, platform=platform),
     }
 
     # Determine which adapters to use
@@ -310,65 +309,6 @@ def send_notification(job, profile, adapters=None, platform=None):
             logger.error(f"Notification via {service} failed: {e}")
 
     return any_sent
-
-
-def _detect_url_pattern_with_ai(base_url, urls_list):
-    """
-    Uses AI to detect the job-detail URL path pattern for a domain.
-    Returns (pattern: str, job_urls: list[str]).
-    Only URLs present in urls_list are returned (anti-hallucination).
-    """
-    model = get_current_model()
-    system_prompt = """You are a URL analysis expert for job platforms.
-Analyze the URL list and identify the URL path prefix that exclusively identifies job detail pages (individual job postings), not listing, category, or overview pages.
-
-Reply ONLY with valid JSON (no markdown):
-{
-  "pattern": "/jobs/",
-  "job_urls": ["https://...", "https://..."]
-}
-
-- "pattern": URL path prefix of job detail pages (e.g. "/jobs/", "/stellenangebote/", "/career/detail/")
-- "job_urls": All URLs from the given list that match this pattern
-"""
-    sample = urls_list[:150]
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"Base URL: {base_url}\nURL list:\n{json.dumps(sample)}",
-                },
-            ],
-            temperature=0.0,
-        )
-    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
-        from intelligence_service import store_ai_404_error
-        if isinstance(e, AuthenticationError):
-            store_ai_404_error("OpenRouter API key invalid (401). Please check your settings.")
-        elif isinstance(e, RateLimitError):
-            store_ai_404_error("OpenRouter rate limit reached (429). Please wait a moment.")
-        elif isinstance(e, NotFoundError):
-            store_ai_404_error("AI model not found on OpenRouter (404). Please check your model setting.")
-        elif isinstance(e, APIConnectionError):
-            store_ai_404_error("Connection to OpenRouter failed. Check your network or service status.")
-        else:
-            store_ai_404_error(f"OpenRouter server error ({e.status_code}). Please try again later.")
-        logger.error(f"OpenRouter error in _detect_url_pattern_with_ai: {e}")
-        return "", []
-    content = (
-        response.choices[0]
-        .message.content.strip()
-        .replace("```json", "")
-        .replace("```", "")
-    )
-    data = json.loads(content)
-    pattern = data.get("pattern", "")
-    urls_set = set(urls_list)
-    job_urls = [url for url in data.get("job_urls", []) if url in urls_set]
-    return pattern, job_urls
 
 
 @celery_app.task(name="ai.filter_urls")
@@ -417,8 +357,11 @@ def filter_urls_task(args):
                     "Re-detecting pattern with AI..."
                 )
                 try:
-                    new_pattern, filtered_urls = _detect_url_pattern_with_ai(
-                        base_url, urls_list
+                    new_pattern, filtered_urls = detect_url_pattern_with_ai(
+                        base_url,
+                        urls_list,
+                        model=get_model(db),
+                        api_key=get_api_key(db),
                     )
                     if new_pattern:
                         existing_entry.url_pattern = new_pattern
@@ -434,8 +377,8 @@ def filter_urls_task(args):
         else:
             logger.info(f"Unknown domain '{domain}'. Detecting URL pattern with AI...")
             try:
-                pattern, filtered_urls = _detect_url_pattern_with_ai(
-                    base_url, urls_list
+                pattern, filtered_urls = detect_url_pattern_with_ai(
+                    base_url, urls_list, model=get_model(db), api_key=get_api_key(db)
                 )
                 if pattern:
                     db.add(DomainUrlPattern(domain=domain, url_pattern=pattern))
@@ -447,6 +390,7 @@ def filter_urls_task(args):
                 filtered_urls = []
 
         # Early deduplication: skip URLs already scraped for this user
+        total_found_before_dedup = len(filtered_urls)
         if filtered_urls and user_id:
             try:
                 existing_urls = {
@@ -462,6 +406,11 @@ def filter_urls_task(args):
                 skipped = before - len(filtered_urls)
                 if skipped > 0:
                     logger.info(f"Deduplication: {skipped} already-known URLs removed.")
+                    if job_id:
+                        r_dedup = redis.from_url(
+                            os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+                        )
+                        r_dedup.hset(f"crawl_job:{job_id}", "total_found", before)
             except Exception as dedup_e:
                 logger.error(f"Deduplication error: {dedup_e}")
 
@@ -568,6 +517,9 @@ def analyze_job_task(job_data):
                         r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                         r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                         r.delete("system:crawling")
+                        total_found_raw = job_hash.get(b"total_found")
+                        total_found = int(total_found_raw) if total_found_raw else total
+
                         r.publish(
                             "job_updates",
                             json.dumps(
@@ -575,6 +527,8 @@ def analyze_job_task(job_data):
                                     "type": "crawl_job_completed",
                                     "job_id": crawl_job_id,
                                     "user_id": user_id,
+                                    "total": total,
+                                    "total_found": total_found,
                                 }
                             ),
                         )
@@ -594,6 +548,8 @@ def analyze_job_task(job_data):
         if not profile:
             profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
+        user_language = getattr(profile, "language", "de") if profile else "de"
+
         if profile:
             cv_text = format_cv_for_prompt(profile.cv_data)
             profile_str = (
@@ -604,41 +560,16 @@ def analyze_job_task(job_data):
             profile_str = "Python Dev"
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
-        model = get_current_model()
-        response = get_client(db).chat.completions.create(
+        model = get_model(db)
+        api_key = get_api_key(db)
+        data = analyze_job(
+            job_title=job_data["title"],
+            job_description=job_data["description"][:10000],
+            profile_str=profile_str,
+            user_language=user_language,
             model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an experienced career advisor. Analyze the fit between the candidate profile and the job description. "
-                        "Respond exclusively with a JSON object without markdown code blocks:\n"
-                        '{ "score": <integer 0-100>, "reasoning": "<detailed markdown text>" }\n\n'
-                        "The 'reasoning' field must contain the following markdown sections:\n"
-                        "## Summary\n"
-                        "Short evaluation of the overall fit (2-3 sentences).\n\n"
-                        "## Strengths & Match\n"
-                        "Bullet points on areas where the candidate fits particularly well.\n\n"
-                        "## Gaps & Challenges\n"
-                        "Bullet points on missing skills or requirements that the candidate does not fulfill.\n\n"
-                        "## Recommendation\n"
-                        "Concrete recommendation: Apply, apply with reservations, or skip."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Job Title: {job_data['title']}\n\nJob Description:\n{job_data['description'][:10000]}\n\nCandidate Profile:\n{profile_str}",
-                },
-            ],
-            temperature=0.3,
+            api_key=api_key,
         )
-        content = (
-            response.choices[0]
-            .message.content.strip()
-            .replace("```json", "")
-            .replace("```", "")
-        )
-        data = json.loads(content)
         logger.info(
             f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
         )
@@ -692,8 +623,6 @@ def analyze_job_task(job_data):
             }
         )
 
-        from intelligence_service import clear_ai_404_error
-        clear_ai_404_error()
         r.publish("job_updates", payload)
         logger.info(f" WebSocket Event 'new_job' published for {db_job.title}")
 
@@ -736,7 +665,9 @@ def analyze_job_task(job_data):
                     )
 
                     if settings_profile:
-                        platform_adapters = [a.upper() for a in (platform.notification_adapters or [])]
+                        platform_adapters = [
+                            a.upper() for a in (platform.notification_adapters or [])
+                        ]
                         non_gmail = [a for a in platform_adapters if a != "GMAIL"]
                         has_gmail = "GMAIL" in platform_adapters
 
@@ -746,6 +677,7 @@ def analyze_job_task(job_data):
                             sent = send_notification(
                                 db_job,
                                 settings_profile,
+                                db,
                                 adapters=non_gmail,
                                 platform=platform,
                             )
@@ -753,13 +685,27 @@ def analyze_job_task(job_data):
                         # Gmail: queue for batch digest at crawl completion
                         if has_gmail:
                             if crawl_job_id:
-                                r.rpush(f"crawl:{crawl_job_id}:pending_gmail", db_job.id)
+                                r.rpush(
+                                    f"crawl:{crawl_job_id}:pending_gmail", db_job.id
+                                )
                                 r.expire(f"crawl:{crawl_job_id}:pending_gmail", 3600)
                             else:
                                 # No crawl context — send immediately
-                                user_obj = db.query(User).filter(User.id == user_id).first()
-                                userName = user_obj.username if user_obj else "Candidate"
-                                sent = _send_via_gmail(db_job, settings_profile, platform=platform, userName=userName) or sent
+                                user_obj = (
+                                    db.query(User).filter(User.id == user_id).first()
+                                )
+                                userName = (
+                                    user_obj.username if user_obj else "Candidate"
+                                )
+                                sent = (
+                                    _send_via_gmail(
+                                        db_job,
+                                        settings_profile,
+                                        platform=platform,
+                                        userName=userName,
+                                    )
+                                    or sent
+                                )
 
                         if sent or has_gmail:
                             db_job.notification_sent = True
@@ -784,6 +730,9 @@ def analyze_job_task(job_data):
                     r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                     r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                     r.delete("system:crawling")
+                    total_found_raw = job_hash.get(b"total_found")
+                    total_found = int(total_found_raw) if total_found_raw else total
+
                     r.publish(
                         "job_updates",
                         json.dumps(
@@ -791,33 +740,37 @@ def analyze_job_task(job_data):
                                 "type": "crawl_job_completed",
                                 "job_id": crawl_job_id,
                                 "user_id": user_id,
+                                "total": total,
+                                "total_found": total_found,
                             }
                         ),
                     )
                     r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
-    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
-        from intelligence_service import store_ai_404_error
-        if isinstance(e, AuthenticationError):
-            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
-        elif isinstance(e, RateLimitError):
-            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
-        elif isinstance(e, NotFoundError):
-            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
-        elif isinstance(e, APIConnectionError):
-            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
-        else:
-            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
+    except (
+        AuthenticationError,
+        RateLimitError,
+        NotFoundError,
+        APIConnectionError,
+        APIStatusError,
+    ) as e:
         logger.error(f"OpenRouter API error in analyze_job_task for Job {job_id}: {e}")
         db.rollback()
         crawl_job_id = job_data.get("crawl_job_id")
         if crawl_job_id:
             try:
                 import requests as _req
-                SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
+
+                SCRAPER_URL = os.getenv(
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                )
                 _req.post(
                     f"{SCRAPER_URL}/fail-crawl",
-                    json={"job_id": crawl_job_id, "user_id": user_id, "error_message": str(e)},
+                    json={
+                        "job_id": crawl_job_id,
+                        "user_id": user_id,
+                        "error_message": str(e),
+                    },
                     timeout=5,
                 )
             except Exception as cleanup_e:
@@ -852,7 +805,7 @@ def analyze_job_task(job_data):
 
 
 @celery_app.task(name="ai.generate_application")
-def generate_application_task(job_id, user_id=None):
+def generate_application_task(job_id, user_id=None, improvement_notes=None):
     logger.info(
         f"[TASK] Generating application letter for Job ID: {job_id}, User ID: {user_id}"
     )
@@ -907,50 +860,37 @@ def generate_application_task(job_id, user_id=None):
 
         logger.info(f"Data loaded. Job: {job.title}, User: {profile.role}")
 
+        user_language = getattr(profile, "language", "de") if profile else "de"
         cv_text = format_cv_for_prompt(profile.cv_data)
 
-        system_prompt = """
-        Du bist ein professioneller Karriere-Coach und Bewerbungsexperte mit tiefem Verständnis für ATS-Systeme.
-        Schreibe ein überzeugendes, ATS-optimiertes Anschreiben in Markdown, das klar strukturiert, gut lesbar und frei von Floskeln ist.
-        An folgende Vorgaben hast du dich strikt zu halten:
-        1. Die Einleitung soll originell und aufmerksamkeitsstark sein, ohne Standardfloskeln wie „mit großer Begeisterung“ oder „ich freue mich sehr“.
-        2. Nutze ausschließlich realistische Angaben, die der Bewerber liefert. Keine erfundenen Projekte, Zahlen oder Firmen.
-        3. Zeige konkret auf, welchen Mehrwert die Bewerberin/der Bewerber dem Unternehmen bringt.
-        4. Hebe fachliche Kompetenzen, Berufserfahrung, Ausbildung und Motivation präzise hervor.
-        5. Verwende relevante Keywords aus der Stellenanzeige sinnvoll, ohne Keyword-Stuffing.
-        6. Der Stil soll professionell, klar, selbstbewusst und authentisch sein.
-        7. Vermeide Sonderzeichen, Grafiken, Tabellen oder unnötige Formatierungen, die ATS-Systeme stören könnten.
-        8. Das Ergebnis soll ein vollständiges Anschreiben in Markdown sein, keine zusätzlichen Informationen oder Erklärungen.
-        9. Wenn der Bewerber konkrete Zahlen oder Ergebnisse angibt, integriere sie sinnvoll in den Text, um Erfolge messbar darzustellen.
-        """
-
-        user_prompt = f"""
-        STELLENANZEIGE: {job.title} bei {job.company}
-        {job.description[:10000]}
-        
-        BEWERBER: {profile.role}
-        {cv_text}
-        """
-
         logger.info(" Sende Anfrage an OpenAI für Anschreiben...")
-        model = get_current_model()
-        response = get_client(db).chat.completions.create(
+        model = get_model(db)
+        api_key = get_api_key(db)
+        application_text = generate_application(
+            job_title=job.title,
+            job_company=job.company,
+            job_description=job.description[:10000],
+            profile_role=profile.role,
+            cv_text=cv_text,
+            user_language=user_language,
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
+            api_key=api_key,
+            improvement_notes=improvement_notes,
         )
         logger.info("Received AI response for application letter.")
 
-        job.application_draft = response.choices[0].message.content
+        # Check if job was cancelled before saving
+        db.refresh(job)
+        if job.status != "GENERATING":
+            logger.info(
+                f"Job {job_id} was cancelled (status: {job.status}), discarding generated result."
+            )
+            return
+
+        job.application_draft = application_text
         job.status = "COMPLETED"
         db.commit()
         logger.info(f"Application letter for job {job_id} saved to DB.")
-
-        from intelligence_service import clear_ai_404_error
-        clear_ai_404_error()
         r.publish(
             "job_updates",
             json.dumps(
@@ -965,19 +905,16 @@ def generate_application_task(job_id, user_id=None):
         )
         logger.info(f" WebSocket Event 'job_update' für {job.id} gesendet.")
 
-    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError) as e:
-        from intelligence_service import store_ai_404_error
-        if isinstance(e, AuthenticationError):
-            store_ai_404_error("OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.")
-        elif isinstance(e, RateLimitError):
-            store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
-        elif isinstance(e, NotFoundError):
-            store_ai_404_error("KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.")
-        elif isinstance(e, APIConnectionError):
-            store_ai_404_error("Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.")
-        else:
-            store_ai_404_error(f"OpenRouter Serverfehler ({e.status_code}). Bitte später erneut versuchen.")
-        logger.error(f"OpenRouter API error in generate_application_task for Job {job_id}: {e}")
+    except (
+        AuthenticationError,
+        RateLimitError,
+        NotFoundError,
+        APIConnectionError,
+        APIStatusError,
+    ) as e:
+        logger.error(
+            f"OpenRouter API error in generate_application_task for Job {job_id}: {e}"
+        )
         db.rollback()
         try:
             job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
@@ -985,13 +922,18 @@ def generate_application_task(job_id, user_id=None):
                 job.status = "FAILED"
                 job.generation_error = "OpenRouter model not found (404)"
                 db.commit()
-                r.publish("job_updates", json.dumps({
-                    "type": "job_update",
-                    "job_id": job.id,
-                    "status": "FAILED",
-                    "error": "OpenRouter model not found (404)",
-                    "user_id": job.user_id,
-                }))
+                r.publish(
+                    "job_updates",
+                    json.dumps(
+                        {
+                            "type": "job_update",
+                            "job_id": job.id,
+                            "status": "FAILED",
+                            "error": "OpenRouter model not found (404)",
+                            "user_id": job.user_id,
+                        }
+                    ),
+                )
         except Exception as db_e:
             logger.error(f"Failed to save 404 error status: {db_e}")
     except Exception as e:
@@ -1027,7 +969,7 @@ def generate_application_task(job_id, user_id=None):
 @celery_app.task(name="worker.generate_interview_prep_task", bind=True, max_retries=2)
 def generate_interview_prep_task(self, job_id: str, user_id: int):
     """Generiert Interview-Vorbereitung für einen Job via AI."""
-    from intelligence_service import generate_interview_prep, get_model, get_api_key
+    from intelligence_service import generate_interview_prep
 
     db = SessionLocal()
     try:
@@ -1040,8 +982,11 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         )
         cv_summary = ""
-        if user_profile and user_profile.cv_data:
-            cv_summary = format_cv_for_prompt(user_profile.cv_data)
+        user_language = "de"
+        if user_profile:
+            if user_profile.cv_data:
+                cv_summary = format_cv_for_prompt(user_profile.cv_data)
+            user_language = getattr(user_profile, "language", "de") or "de"
 
         model = get_model(db)
         api_key = get_api_key(db)
@@ -1053,6 +998,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             cv_summary=cv_summary,
             model=model,
             api_key=api_key,
+            language=user_language,
         )
 
         logger.info(f"Interview prep data generated: {len(str(prep_data))} chars")
@@ -1071,9 +1017,17 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
         logger.info(f"Interview prep generated for job {job_id}")
         return {"status": "success", "job_id": job_id}
 
-    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError):
+    except (
+        AuthenticationError,
+        RateLimitError,
+        NotFoundError,
+        APIConnectionError,
+        APIStatusError,
+    ):
         # store_ai_404_error already called inside intelligence_service
-        logger.error(f"OpenRouter API error in generate_interview_prep_task for {job_id}, not retrying.")
+        logger.error(
+            f"OpenRouter API error in generate_interview_prep_task for {job_id}, not retrying."
+        )
         db.rollback()
         return {"status": "failed", "reason": "api_error"}
     except Exception as e:
@@ -1087,7 +1041,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
 @celery_app.task(name="worker.generate_company_profile", bind=True, max_retries=2)
 def generate_company_profile(self, domain: str, user_id: int):
     """Generiert ein Firmenprofil inkl. Gehaltsdaten."""
-    from intelligence_service import generate_company_profile_summary, get_model, get_api_key
+    from intelligence_service import generate_company_profile_summary
     from api_clients.review_api import get_salary_data
     from database import CompanyProfile
     from datetime import datetime, timezone as tz
@@ -1112,7 +1066,9 @@ def generate_company_profile(self, domain: str, user_id: int):
             from bs4 import BeautifulSoup as _BS
 
             # 1. Search DuckDuckGo for company info pages
-            search_q = quote_plus(f"{company_name} Unternehmen Über uns Investor Relations Geschichte")
+            search_q = quote_plus(
+                f"{company_name} Unternehmen Über uns Investor Relations Geschichte"
+            )
             search_html = get_html_with_browser(
                 f"https://html.duckduckgo.com/html/?q={search_q}"
             )
@@ -1124,12 +1080,27 @@ def generate_company_profile(self, domain: str, user_id: int):
                     href = link.get("href", "")
                     if href.startswith("http") and any(
                         kw in href.lower()
-                        for kw in ["about", "investor", "history", "ueber", "unternehmen", "company", "konzern"]
+                        for kw in [
+                            "about",
+                            "investor",
+                            "history",
+                            "ueber",
+                            "unternehmen",
+                            "company",
+                            "konzern",
+                        ]
                     ):
                         candidate_urls.append(href)
 
             # 2. Always try common company pages directly
-            for path in ["/about", "/about-us", "/ueber-uns", "/investor-relations", "/company", "/unternehmen"]:
+            for path in [
+                "/about",
+                "/about-us",
+                "/ueber-uns",
+                "/investor-relations",
+                "/company",
+                "/unternehmen",
+            ]:
                 candidate_urls.insert(0, f"https://{domain}{path}")
 
             # 3. Fetch and clean up to 3 pages
@@ -1144,17 +1115,28 @@ def generate_company_profile(self, domain: str, user_id: int):
                     if html:
                         clean = get_clean_content(html)
                         if clean and len(clean) > 300:
-                            raw_info += f"\n\n--- Webinhalt: {url} ---\n{clean[:6000]}\n"
+                            raw_info += (
+                                f"\n\n--- Webinhalt: {url} ---\n{clean[:6000]}\n"
+                            )
                             pages_fetched += 1
                 except Exception as _fe:
                     logger.warning(f"Web fetch failed for {url}: {_fe}")
 
-            logger.info(f"Web research: fetched {pages_fetched} page(s) for {company_name}")
+            logger.info(
+                f"Web research: fetched {pages_fetched} page(s) for {company_name}"
+            )
         except Exception as web_err:
             logger.warning(f"Web research skipped for {domain}: {web_err}")
 
         model = get_model(db)
         api_key = get_api_key(db)
+
+        user_profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        )
+        user_language = (
+            getattr(user_profile, "language", "de") if user_profile else "de"
+        )
 
         profile_data = generate_company_profile_summary(
             domain=domain,
@@ -1162,6 +1144,7 @@ def generate_company_profile(self, domain: str, user_id: int):
             raw_info=raw_info,
             model=model,
             api_key=api_key,
+            language=user_language,
         )
 
         # Get salary data
@@ -1197,9 +1180,17 @@ def generate_company_profile(self, domain: str, user_id: int):
         logger.info(f"Company profile generated for {domain}")
         return {"status": "success", "domain": domain}
 
-    except (AuthenticationError, RateLimitError, NotFoundError, APIConnectionError, APIStatusError):
+    except (
+        AuthenticationError,
+        RateLimitError,
+        NotFoundError,
+        APIConnectionError,
+        APIStatusError,
+    ):
         # store_ai_404_error already called inside intelligence_service
-        logger.error(f"OpenRouter API error in generate_company_profile for {domain}, not retrying.")
+        logger.error(
+            f"OpenRouter API error in generate_company_profile for {domain}, not retrying."
+        )
         db.rollback()
         return {"status": "failed", "reason": "api_error"}
     except Exception as e:

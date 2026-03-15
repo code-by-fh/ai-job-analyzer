@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Optional
 import logging
 import uuid
@@ -132,7 +133,6 @@ def fail_crawl_job(job_id: str, user_id: int, error_message: str):
         logger.error(f"Error during fail of job {job_id}: {e}")
 
 
-# Cleanup on startup
 cleanup_stale_jobs()
 
 
@@ -161,7 +161,7 @@ async def search_jobs(search: JobSearch):
             "analysis_completed": 0,
             "jobs_saved": 0,
             "status": "starting",
-            "started_at": str(int(os.times().elapsed * 1000)),
+            "started_at": str(int(time.time() * 1000)),
             "is_initial_run": int(search.is_initial_run),
         },
     )
@@ -181,6 +181,43 @@ async def search_jobs(search: JobSearch):
     return {"status": "Started", "job_id": job_id}
 
 
+class JobImport(BaseModel):
+    url: str
+    user_id: int = 1
+
+
+@app.post("/import-job")
+async def import_job(data: JobImport):
+    if not data.url.startswith("http"):
+        return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
+
+    job_id = str(uuid.uuid4())
+
+    r.hset(
+        f"crawl_job:{job_id}",
+        mapping={
+            "user_id": data.user_id,
+            "platform_url": data.url,
+            "total": 1,
+            "scraping_completed": 0,
+            "analysis_completed": 0,
+            "jobs_saved": 0,
+            "status": "starting",
+            "started_at": str(int(time.time() * 1000)),
+            "is_initial_run": 0,
+        },
+    )
+    r.expire(f"crawl_job:{job_id}", 3600)
+    r.sadd(f"user:{data.user_id}:active_crawls", job_id)
+
+    celery_app.send_task(
+        "scraper.scrape_detail",
+        args=[data.url, data.user_id, job_id, None],
+        queue="scraper_queue",
+    )
+    return {"status": "Started", "job_id": job_id}
+
+
 @app.get("/crawl-status")
 async def get_crawl_status(user_id: int):
     job_ids = r.smembers(f"user:{user_id}:active_crawls")
@@ -191,18 +228,21 @@ async def get_crawl_status(user_id: int):
         job_data = r.hgetall(f"crawl_job:{job_id}")
 
         if job_data:
-            # Get all_job_titles from Redis list
             all_job_titles_bytes = r.lrange(f"crawl_job:{job_id}:all_job_titles", 0, -1)
             all_job_titles = [title.decode("utf-8") for title in all_job_titles_bytes]
             logger.info(
                 f"Crawl status for {job_id}: Retrieved {len(all_job_titles)} job titles from Redis"
             )
 
+            total = int(job_data.get(b"total", 0))
+            total_found_raw = job_data.get(b"total_found", None)
+            total_found = int(total_found_raw) if total_found_raw is not None else total
             jobs.append(
                 {
                     "job_id": job_id,
                     "platform": job_data.get(b"platform_url", b"").decode("utf-8"),
-                    "total": int(job_data.get(b"total", 0)),
+                    "total": total,
+                    "total_found": total_found,
                     "scraping_completed": int(job_data.get(b"scraping_completed", 0)),
                     "analysis_completed": int(job_data.get(b"analysis_completed", 0)),
                     "jobs_saved": int(job_data.get(b"jobs_saved", 0)),

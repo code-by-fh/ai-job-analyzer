@@ -8,7 +8,9 @@ import { fetchWithAuth } from '../../components/AuthProvider';
 import { Platform, LastRun } from './JobPlatforms/types';
 import PlatformCard from './JobPlatforms/PlatformCard';
 import GmailTemplateModal from './JobPlatforms/GmailTemplateModal';
+import PushoverTemplateModal from './JobPlatforms/PushoverTemplateModal';
 import AddPlatformInput from './JobPlatforms/AddPlatformInput';
+import { NotificationTemplate } from '../../components/TemplateManager';
 
 interface JobPlatformsManagerProps {
     token: string | null;
@@ -19,11 +21,11 @@ interface JobPlatformsManagerProps {
 
 type TestStatus = 'idle' | 'sending' | 'ok' | 'error';
 
-const sortByName = (list: Platform[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
+const sortByCreation = (list: Platform[]) => [...list].sort((a, b) => b.id - a.id);
 
 export default function JobPlatformsManager({ token, user, initialPlatforms, configuredAdapters = [] }: JobPlatformsManagerProps) {
     const { t } = useLanguage();
-    const [platforms, setPlatforms] = useState<Platform[]>(sortByName(initialPlatforms || []));
+    const [platforms, setPlatforms] = useState<Platform[]>(sortByCreation(initialPlatforms || []));
     const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
     const [lastRunByPlatform, setLastRunByPlatform] = useState<Record<string, LastRun>>({});
     const [expandedLog, setExpandedLog] = useState<string | null>(null);
@@ -36,6 +38,13 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [templateValue, setTemplateValue] = useState<string>('');
     const [recipientsValue, setRecipientsValue] = useState<string[]>([]);
     const [recipientInput, setRecipientInput] = useState<string>('');
+
+    const [pushoverModalPlatform, setPushoverModalPlatform] = useState<Platform | null>(null);
+    const [pushoverTemplateValue, setPushoverTemplateValue] = useState<string>('');
+    const [pushoverModalTestStatus, setPushoverModalTestStatus] = useState<TestStatus>('idle');
+    const [pushoverModalTestError, setPushoverModalTestError] = useState<string | null>(null);
+
+    const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
 
     const [testMailStatus, setTestMailStatus] = useState<TestStatus>('idle');
     const [testMailError, setTestMailError] = useState<string | null>(null);
@@ -61,6 +70,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                         ...prev,
                         [job.platform]: {
                             total: job.total ?? 0,
+                            total_found: job.total_found ?? job.total ?? 0,
                             saved: job.jobs_saved ?? 0,
                             skipped: job.jobs_skipped ?? 0,
                             scraping_completed: job.scraping_completed ?? 0,
@@ -93,7 +103,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms`);
             if (res.ok) {
                 const data: Platform[] = await res.json();
-                setPlatforms(sortByName(data));
+                setPlatforms(sortByCreation(data));
                 setLastRunByPlatform(prev => {
                     const next = { ...prev };
                     const platformUrls = new Set(data.map(p => p.url));
@@ -123,6 +133,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             fetchPlatforms();
         }
     }, [token, initialPlatforms]);
+
+    useEffect(() => {
+        if (!token) return;
+        fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/notification-templates`)
+            .then(res => res.ok ? res.json() : [])
+            .then(setNotificationTemplates)
+            .catch(() => { });
+    }, [token]);
 
     const addPlatform = async () => {
         if (!newUrl) return;
@@ -204,11 +222,35 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             if (res.ok) {
                 fetchPlatforms();
             } else {
-                logger.error({ status: res.status }, "Update platform failed");
+                const err = await res.json().catch(() => ({}));
+                setStatus(`${t('error')}: ${err.detail || 'Failed to update'} ❌`);
+                setTimeout(() => setStatus(''), 3000);
+                logger.error({ status: res.status, err }, "Update platform failed");
             }
         } catch (e) {
+            setStatus(t('networkError') || 'Network Error');
+            setTimeout(() => setStatus(''), 3000);
             logger.error({ err: e }, "Update platform failed");
         }
+    };
+
+    const generatePlatformName = async (id: number) => {
+        setStatus(t('generating') || 'Generating...');
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}/generate-name`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                fetchPlatforms();
+                setStatus(t('updated') || 'Updated');
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setStatus(`${t('error')}: ${err.detail || 'Failed to generate'} ❌`);
+            }
+        } catch (e) {
+            setStatus(t('error'));
+        }
+        setTimeout(() => setStatus(''), 3000);
     };
 
     const openTemplateModal = (platform: Platform) => {
@@ -233,6 +275,43 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setRecipientsValue(prev => [...prev, email]);
         }
         setRecipientInput('');
+    };
+
+    const openPushoverModal = (platform: Platform) => {
+        setPushoverModalPlatform(platform);
+        setPushoverTemplateValue(platform.pushover_template || '');
+        setPushoverModalTestStatus('idle');
+        setPushoverModalTestError(null);
+    };
+
+    const savePushoverTemplate = async () => {
+        if (!pushoverModalPlatform) return;
+        await updatePlatform(pushoverModalPlatform.id, {
+            pushover_template: pushoverTemplateValue || null,
+        });
+        setPushoverModalPlatform(null);
+    };
+
+    const sendTestPushoverFromModal = async () => {
+        if (!pushoverModalPlatform) return;
+        setPushoverModalTestStatus('sending');
+        setPushoverModalTestError(null);
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${pushoverModalPlatform.id}/test-pushover`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                setPushoverModalTestStatus('ok');
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setPushoverModalTestError(body?.detail || `HTTP ${res.status}`);
+                setPushoverModalTestStatus('error');
+            }
+        } catch (e: any) {
+            setPushoverModalTestError(e?.message || 'Network error');
+            setPushoverModalTestStatus('error');
+        }
+        setTimeout(() => setPushoverModalTestStatus('idle'), 5000);
     };
 
     const sendTestMail = async () => {
@@ -332,6 +411,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             {templatePlatform && (
                 <GmailTemplateModal
                     platform={templatePlatform}
+                    templates={notificationTemplates}
                     templateValue={templateValue}
                     onTemplateChange={setTemplateValue}
                     recipientsValue={recipientsValue}
@@ -344,6 +424,21 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                     testMailStatus={testMailStatus}
                     testMailError={testMailError}
                     onSendTestMail={sendTestMail}
+                    isAdmin={!!user?.is_admin}
+                />
+            )}
+
+            {pushoverModalPlatform && (
+                <PushoverTemplateModal
+                    platform={pushoverModalPlatform}
+                    templates={notificationTemplates}
+                    templateValue={pushoverTemplateValue}
+                    onTemplateChange={setPushoverTemplateValue}
+                    onClose={() => setPushoverModalPlatform(null)}
+                    onSave={savePushoverTemplate}
+                    testStatus={pushoverModalTestStatus}
+                    testError={pushoverModalTestError}
+                    onSendTest={sendTestPushoverFromModal}
                     isAdmin={!!user?.is_admin}
                 />
             )}
@@ -377,10 +472,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                             onIntervalChange={(id, minutes) => updatePlatform(id, { crawl_interval_minutes: minutes })}
                             onToggleAdapter={toggleAdapter}
                             onOpenTemplateModal={openTemplateModal}
+                            onOpenPushoverModal={openPushoverModal}
                             onSendTestPushover={sendTestPushover}
                             onTriggerCrawl={triggerCrawl}
                             onToggleActive={(id, isActive) => updatePlatform(id, { is_active: isActive })}
                             onRemove={(id) => setPlatformToRemove(id)}
+                            onUrlChange={(id, url) => updatePlatform(id, { url })}
+                            onNameChange={(id, name) => updatePlatform(id, { name })}
+                            onGenerateName={generatePlatformName}
                         />
                     );
                 })}
