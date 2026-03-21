@@ -163,64 +163,34 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
         return (
             <div
                 onClick={() => setIsExpanded(true)}
-                className="group relative flex flex-col p-5 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/50 rounded-3xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/40 transition-all hover:shadow-xl hover:shadow-indigo-500/5 active:scale-[0.99] overflow-hidden"
+                className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all duration-200"
             >
-                {/* Background Glow */}
-                <div className={`absolute -right-8 -top-8 w-32 h-32 rounded-full ${scoreColor} opacity-[0.03] blur-3xl group-hover:opacity-[0.08] transition-opacity`} />
-                
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6 px-2">
-                    {/* Section 1: Status (Left) */}
-                    <div className="flex-1 flex justify-center md:justify-start">
-                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-black uppercase tracking-tight ${statusMeta.pillCls}`}>
-                            <DynamicIcon name={statusMeta.icon} className="w-3.5 h-3.5" />
-                            {t(statusMeta.labelKey)}
-                        </span>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-8">
+                    {/* Score (Neu hinzugefügt) */}
+                    <div className="flex items-center gap-3 bg-white dark:bg-slate-800 px-3.5 py-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                         <span className={`text-lg font-black ${scoreTextColor} tracking-tighter`}>{score}%</span>
+                         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest border-l border-slate-200 dark:border-slate-700 pl-3">Match</span>
                     </div>
 
-                    {/* Section 2: Score (Center) */}
-                    <div className="relative flex-shrink-0">
-                        <svg className="w-20 h-20 transform -rotate-90 drop-shadow-sm">
-                            <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100 dark:text-slate-800/60" />
-                            <circle
-                                cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent"
-                                strokeDasharray={2 * Math.PI * 36}
-                                strokeDashoffset={2 * Math.PI * 36 * (1 - score / 100)}
-                                className={`${scoreTextColor} transition-all duration-1000 ease-out`}
-                                strokeLinecap="round"
-                            />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <span className={`text-2xl font-black ${scoreTextColor} tracking-tighter`}>{score}%</span>
+                    {/* Status */}
+                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider ${statusMeta.pillCls}`}>
+                        <DynamicIcon name={statusMeta.icon} className="w-3.5 h-3.5" />
+                        {t(statusMeta.labelKey)}
+                    </span>
+
+                    {/* Date */}
+                    {job.created_at && (
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                            <CalendarDays className="w-4 h-4 text-slate-400" />
+                            <span>{new Date(job.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                         </div>
-                    </div>
-
-                    {/* Section 3: Meta Info (Right) */}
-                    <div className="flex-1 flex flex-col items-center md:items-end gap-1.5 min-w-0">
-                        {job.created_at && (
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
-                                <CalendarDays className="w-3 h-3 text-slate-400" />
-                                <span>{new Date(job.created_at).toLocaleDateString('en-US')}</span>
-                            </div>
-                        )}
-                        {job.url && (
-                            <div className="flex items-center gap-2 text-[11px] text-indigo-500 dark:text-indigo-400 font-bold uppercase tracking-wide truncate max-w-full">
-                                <ExternalLink className="w-3 h-3" />
-                                <span className="truncate">{new URL(job.url).hostname.replace('www.', '')}</span>
-                            </div>
-                        )}
-                    </div>
+                    )}
                 </div>
 
-                {/* Interaction Footer */}
-                <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Brain className="w-4 h-4 text-indigo-500" />
-                        <span className="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-[0.2em]">{t('analysis') || 'AI Analysis'}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest group-hover:gap-2.5 transition-all">
-                        {t('viewDetails') || 'View Analysis'}
-                        <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
-                    </div>
+                {/* Plain Button */}
+                <div className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-md shadow-indigo-500/10 transition-all">
+                    {t('viewDetails') || 'Analyse anzeigen'}
+                    <ChevronDown className="w-4 h-4" />
                 </div>
             </div>
         );
