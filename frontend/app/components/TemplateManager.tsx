@@ -1,12 +1,13 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { fetchWithAuth } from './AuthProvider';
-import { FileText, Plus, Pencil, Trash2, Lock, Mail, Smartphone, Check, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Lock, Smartphone, Mail, Check, X } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 
 export interface NotificationTemplate {
     id: number;
     name: string;
-    type: string; // "GMAIL" | "PUSHOVER"
+    type: string; // "PUSHOVER" | "RESEND"
     content: string;
     is_admin: boolean;
     user_id: number | null;
@@ -20,7 +21,7 @@ interface TemplateManagerProps {
     adminMode: boolean;
 }
 
-type TabType = 'GMAIL' | 'PUSHOVER';
+type TabType = 'PUSHOVER' | 'EMAIL';
 
 interface EditState {
     id: number | null; // null = new
@@ -28,7 +29,13 @@ interface EditState {
     content: string;
 }
 
-const GMAIL_PLACEHOLDER = `<html>
+const PUSHOVER_PLACEHOLDER = `$company - Score: $match_score%
+
+$reasoning
+
+$url`;
+
+const RESEND_PLACEHOLDER = `<html>
 <body>
   <p>Hallo $userName,</p>
   <h1>$jobCount neue Job-Matches für dich</h1>
@@ -42,22 +49,18 @@ const GMAIL_PLACEHOLDER = `<html>
 </body>
 </html>`;
 
-const PUSHOVER_PLACEHOLDER = `$company - Score: $match_score%
-
-$reasoning
-
-$url`;
-
 export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerProps) {
-    const [activeTab, setActiveTab] = useState<TabType>('GMAIL');
+    const [activeTab, setActiveTab] = useState<TabType>('PUSHOVER');
     const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
     const [loading, setLoading] = useState(true);
     const [editState, setEditState] = useState<EditState | null>(null);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState<NotificationTemplate | null>(null);
 
     const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const mutateBase = adminMode ? `${baseUrl}/admin/notification-templates` : `${baseUrl}/notification-templates`;
+    const placeholder = activeTab === 'EMAIL' ? RESEND_PLACEHOLDER : PUSHOVER_PLACEHOLDER;
 
     const fetchTemplates = async () => {
         try {
@@ -71,7 +74,10 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
 
     useEffect(() => { fetchTemplates(); }, []);
 
-    const filtered = templates.filter(t => t.type === activeTab);
+    const filtered = (activeTab === 'EMAIL'
+        ? templates.filter(t => ['RESEND', 'MAILJET', 'SMTP'].includes(t.type))
+        : templates.filter(t => t.type === activeTab)
+    ).filter(t => !adminMode || t.is_admin);
 
     const startNew = () => setEditState({ id: null, name: '', content: '' });
 
@@ -91,7 +97,7 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                 res = await fetchWithAuth(mutateBase, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: editState.name, type: activeTab, content: editState.content }),
+                    body: JSON.stringify({ name: editState.name, type: activeTab === 'EMAIL' ? 'RESEND' : activeTab, content: editState.content }),
                 });
             } else {
                 // Update
@@ -121,7 +127,6 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
     };
 
     const deleteTemplate = async (t: NotificationTemplate) => {
-        if (!confirm(`Template "${t.name}" löschen?`)) return;
         const url = adminMode
             ? `${baseUrl}/admin/notification-templates/${t.id}`
             : `${baseUrl}/notification-templates/${t.id}`;
@@ -148,7 +153,12 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
 
             {/* Tabs */}
             <div className="flex gap-1 mb-4 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl w-fit">
-                {(['GMAIL', 'PUSHOVER'] as TabType[]).map(tab => (
+                {(['PUSHOVER', 'EMAIL'] as TabType[]).map(tab => {
+                    const count = (tab === 'EMAIL'
+                        ? templates.filter(t => ['RESEND', 'MAILJET', 'SMTP'].includes(t.type))
+                        : templates.filter(t => t.type === tab)
+                    ).filter(t => !adminMode || t.is_admin).length;
+                    return (
                     <button
                         key={tab}
                         type="button"
@@ -158,15 +168,16 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                             : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                             }`}
                     >
-                        {tab === 'GMAIL' ? <Mail className="w-3.5 h-3.5" /> : <Smartphone className="w-3.5 h-3.5" />}
-                        {tab === 'GMAIL' ? 'Gmail' : 'Pushover'}
-                        {filtered.filter(t => t.type === tab).length > 0 && (
+                        {tab === 'PUSHOVER' ? <Smartphone className="w-3.5 h-3.5" /> : <Mail className="w-3.5 h-3.5" />}
+                        {tab === 'PUSHOVER' ? 'Pushover' : 'E-Mail'}
+                        {count > 0 && (
                             <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-full text-[10px]">
-                                {templates.filter(t => t.type === tab).length}
+                                {count}
                             </span>
                         )}
                     </button>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Template List */}
@@ -175,7 +186,11 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                     <p className="text-sm text-slate-400 animate-pulse">Lade Templates...</p>
                 ) : filtered.length === 0 && !editState ? (
                     <div className="text-center py-8 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        <p className="text-sm text-slate-400">Noch keine {activeTab === 'GMAIL' ? 'Gmail' : 'Pushover'}-Templates</p>
+                        <p className="text-sm text-slate-400">
+                            {activeTab === 'PUSHOVER'
+                                ? (adminMode ? 'Noch keine globalen Pushover-Templates' : 'Noch keine Pushover-Templates')
+                                : (adminMode ? 'Noch keine globalen E-Mail-Templates' : 'Noch keine E-Mail-Templates')}
+                        </p>
                     </div>
                 ) : null}
 
@@ -188,7 +203,7 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                             onSave={save}
                             onCancel={cancelEdit}
                             saving={saving}
-                            placeholder={activeTab === 'GMAIL' ? GMAIL_PLACEHOLDER : PUSHOVER_PLACEHOLDER}
+                            placeholder={placeholder}
                             activeTab={activeTab}
                         />
                     ) : (
@@ -222,7 +237,7 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                                 {canDelete(t) && (
                                     <button
                                         type="button"
-                                        onClick={() => deleteTemplate(t)}
+                                        onClick={() => setConfirmDelete(t)}
                                         className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer"
                                         title="Löschen"
                                     >
@@ -242,7 +257,7 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                         onSave={save}
                         onCancel={cancelEdit}
                         saving={saving}
-                        placeholder={activeTab === 'GMAIL' ? GMAIL_PLACEHOLDER : PUSHOVER_PLACEHOLDER}
+                        placeholder={PUSHOVER_PLACEHOLDER}
                         activeTab={activeTab}
                     />
                 )}
@@ -256,9 +271,21 @@ export default function TemplateManager({ isAdmin, adminMode }: TemplateManagerP
                     className="mt-3 flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors cursor-pointer"
                 >
                     <Plus className="w-3.5 h-3.5" />
-                    Neues {activeTab === 'GMAIL' ? 'Gmail' : 'Pushover'} Template
+                    {activeTab === 'PUSHOVER'
+                        ? (adminMode ? 'Globales Pushover Template anlegen' : 'Neues Pushover Template')
+                        : (adminMode ? 'Globales E-Mail Template anlegen' : 'Neues E-Mail Template')}
                 </button>
             )}
+
+            <ConfirmModal
+                isOpen={confirmDelete !== null}
+                onClose={() => setConfirmDelete(null)}
+                onConfirm={() => { if (confirmDelete) deleteTemplate(confirmDelete); }}
+                title="Template löschen"
+                message={`Template "${confirmDelete?.name}" wirklich löschen?`}
+                confirmText="Löschen"
+                isDestructive
+            />
         </div>
     );
 }
@@ -289,21 +316,18 @@ function TemplateEditForm({
                 placeholder="Template-Name"
                 className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            {activeTab === 'GMAIL' && (
-                <p className="text-[10px] text-slate-500">
-                    Variablen: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$jobCount</code>. In <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{`{{#jobs}}`}</code>: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code>
-                </p>
-            )}
-            {activeTab === 'PUSHOVER' && (
-                <p className="text-[10px] text-slate-500">
-                    Variablen: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code>
-                </p>
-            )}
+            <p className="text-[10px] text-slate-500">
+                {activeTab !== 'PUSHOVER' ? (
+                    <>Loop: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{'{{#jobs}}'}</code>…<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{'{{/jobs}}'}</code> &nbsp;|&nbsp; im Loop: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code> &nbsp;|&nbsp; außerhalb: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$jobCount</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$jobs_html</code></>
+                ) : (
+                    <>Variablen: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code></>
+                )}
+            </p>
             <textarea
                 value={editState.content}
                 onChange={e => onChange({ ...editState, content: e.target.value })}
                 placeholder={placeholder}
-                rows={activeTab === 'GMAIL' ? 8 : 4}
+                rows={4}
                 className="w-full font-mono text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[100px]"
                 spellCheck={false}
             />

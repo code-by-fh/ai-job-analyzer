@@ -1,5 +1,5 @@
 "use client";
-import { Loader2, Archive, AlertTriangle } from 'lucide-react';
+import { Loader2, Archive, AlertTriangle, Trash2, RotateCcw } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
@@ -10,6 +10,8 @@ import ApplicationModal from '../../components/ApplicationModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import FilterBar from '../../components/FilterBar';
 import JobCard from '../../components/JobCard/JobCard';
+import JobBoard from '../../components/JobBoard';
+import JobDetailModal from '../../components/JobDetailModal';
 import PageWrapper from '../../components/PageWrapper';
 import PageHeader from '../../components/PageHeader';
 import SearchHeader from '../../components/SearchHeader';
@@ -46,6 +48,16 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [availableDomains, setAvailableDomains] = useState<{ domain: string; count: number }[]>([]);
     const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
+    const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+    useEffect(() => {
+        const stored = localStorage.getItem('jobAgent_viewMode');
+        if (stored === 'board' || stored === 'list') setViewMode(stored);
+    }, []);
+    const handleViewModeChange = (mode: 'list' | 'board') => {
+        setViewMode(mode);
+        localStorage.setItem('jobAgent_viewMode', mode);
+    };
+
     const [initialDataLoaded, setInitialDataLoaded] = useState(false);
     const [initialJobs, setInitialJobs] = useState<Job[]>([]);
 
@@ -62,6 +74,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [platforms, setPlatforms] = useState<{ id: number; name: string }[]>([]);
+    const [selectedJobForDetail, setSelectedJobForDetail] = useState<Job | null>(null);
 
     useEffect(() => {
         if (token) {
@@ -75,7 +88,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const handleBulkDeleteCompanyJobs = async () => {
         if (!companyToBulkDelete) return;
         try {
-            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs?company=${encodeURIComponent(companyToBulkDelete)}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}`, {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs?company=${encodeURIComponent(companyToBulkDelete)}&keep_favorites=${keepFavorites}&keep_applications=${keepApplications}&permanent=${isArchived}`, {
                 method: 'DELETE',
             });
             if (res.ok) {
@@ -128,7 +141,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         handleToggleFavorite,
         handleUpdateStatus,
         updateJob,
-        bulkDeleteJobs
+        bulkDeleteJobs,
+        bulkRestoreJobs
     } = useJobs({
         token,
         logout,
@@ -359,26 +373,38 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 token={token}
             />
 
+            <JobDetailModal
+                isOpen={!!selectedJobForDetail}
+                onClose={() => setSelectedJobForDetail(null)}
+                job={selectedJobForDetail!}
+                isGenerating={selectedJobForDetail ? (pendingIds.includes(selectedJobForDetail.id) || selectedJobForDetail.status === 'GENERATING') : false}
+                onGenerate={handleGenerate}
+                onStatusUpdate={handleUpdateStatus}
+                onToggleFavorite={handleToggleFavorite}
+                onUpdateJob={updateJob}
+                onArchive={setJobToDelete}
+            />
+
             <ConfirmModal
                 isOpen={!!jobToDelete}
                 onClose={() => setJobToDelete(null)}
                 onConfirm={confirmDeleteJob}
-                title={t('archiveJob')}
-                message={t('archiveConfirm')}
-                confirmText={t('archiveJob')}
+                title={isArchived ? t('deletePermanent' as any) : t('archiveJob')}
+                message={isArchived ? t('deletePermanentConfirm' as any) : t('archiveConfirm')}
+                confirmText={isArchived ? t('deletePermanent' as any) : t('archiveJob')}
                 cancelText={t('cancel')}
-                isDestructive={false}
+                isDestructive={isArchived}
             />
 
             <ConfirmModal
                 isOpen={!!companyToBulkDelete}
                 onClose={() => { setCompanyToBulkDelete(null); setKeepFavorites(true); setKeepApplications(true); }}
                 onConfirm={handleBulkDeleteCompanyJobs}
-                title={t('archiveAllFromCompany').replace('{company}', companyToBulkDelete || '')}
-                message={t('areYouCertain')}
-                confirmText={t('archiveJob')}
+                title={isArchived ? t('deleteAllFromCompany').replace('{company}', companyToBulkDelete || '') : t('archiveAllFromCompany').replace('{company}', companyToBulkDelete || '')}
+                message={isArchived ? t('deletePermanentConfirm' as any) : t('areYouCertain')}
+                confirmText={isArchived ? t('deletePermanent' as any) : t('archiveJob')}
                 cancelText={t('cancel')}
-                isDestructive={false}
+                isDestructive={isArchived}
             >
                 <div className="mt-2 flex flex-col gap-1.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center gap-2">
@@ -412,11 +438,11 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 isOpen={isBulkDeleteModalOpen}
                 onClose={() => setIsBulkDeleteModalOpen(false)}
                 onConfirm={confirmBulkDelete}
-                title={t('archiveSelected')}
-                message={t('areYouCertain')}
-                confirmText={t('archiveJob')}
+                title={isArchived ? t('deletePermanent' as any) : t('archiveSelected')}
+                message={isArchived ? t('deletePermanentConfirm' as any) : t('areYouCertain')}
+                confirmText={isArchived ? t('deletePermanent' as any) : t('archiveJob')}
                 cancelText={t('cancel')}
-                isDestructive={false}
+                isDestructive={isArchived}
             />
 
             {!isArchived && (
@@ -467,6 +493,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                     setPlatformNameFilter(id ? platforms.find(p => p.id === id)?.name : undefined);
                 }}
                 availablePlatforms={platforms}
+                viewMode={viewMode}
+                setViewMode={isArchived ? undefined : handleViewModeChange}
             />
 
             {/* JOB LIST */}
@@ -510,20 +538,32 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                     </div>
                 )}
 
-                {visibleJobs.map((job, index) => (
-                    <JobCard
-                        key={job.id}
-                        job={job}
-                        isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
-                        onGenerate={handleGenerate}
-                        onStatusUpdate={handleUpdateStatus}
-                        onToggleFavorite={handleToggleFavorite}
-                        isSelected={selectedJobIds.includes(job.id)}
-                        onSelect={handleSelectJob}
-                        onUpdateJob={updateJob}
-                        onArchive={setJobToDelete}
-                    />
-                ))}
+                {(!isArchived && viewMode === 'board') ? (
+                    <div className="-mx-4 sm:mx-0 pt-2 pb-4">
+                        <JobBoard 
+                            jobs={visibleJobs} 
+                            onStatusUpdate={handleUpdateStatus} 
+                            onArchive={setJobToDelete}
+                            onOpenDetail={setSelectedJobForDetail}
+                            statusCounts={statusCounts}
+                        />
+                    </div>
+                ) : (
+                    visibleJobs.map((job, index) => (
+                        <JobCard
+                            key={job.id}
+                            job={job}
+                            isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
+                            onGenerate={handleGenerate}
+                            onStatusUpdate={handleUpdateStatus}
+                            onToggleFavorite={handleToggleFavorite}
+                            isSelected={selectedJobIds.includes(job.id)}
+                            onSelect={handleSelectJob}
+                            onUpdateJob={updateJob}
+                            onArchive={setJobToDelete}
+                        />
+                    ))
+                )}
 
                 {/* Infinite Scroll Trigger */}
                 {hasMore && (
@@ -534,7 +574,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             </div>
 
             {/* Bulk Actions Floating Bar */}
-            {selectedJobIds.length > 0 && !isArchived && (
+            {selectedJobIds.length > 0 && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300">
                     <div className="bg-white dark:bg-slate-900 shadow-2xl dark:shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-800 rounded-full px-6 py-3 flex items-center gap-4">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -552,8 +592,12 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                                             className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 cursor-pointer active:scale-95 whitespace-nowrap border border-indigo-200/50 dark:border-indigo-500/30"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            <span className="hidden sm:inline">{t('archiveAllFromCompany').replace('{company}', companies[0] as string)}</span>
-                                            <span className="sm:hidden">{t('archiveAllFromCompany').replace(' {company}', '')}</span>
+                                            <span className="hidden sm:inline">
+                                                {isArchived ? t('deleteAllFromCompany').replace('{company}', companies[0] as string) : t('archiveAllFromCompany').replace('{company}', companies[0] as string)}
+                                            </span>
+                                            <span className="sm:hidden">
+                                                {isArchived ? t('deleteAllFromCompany').replace(' {company}', '') : t('archiveAllFromCompany').replace(' {company}', '')}
+                                            </span>
                                         </button>
                                     </>
                                 );
@@ -562,6 +606,24 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                         })()}
 
                         <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+                        {isArchived && (
+                            <button
+                                onClick={async () => {
+                                    setIsBulkDeleting(true);
+                                    const success = await bulkRestoreJobs(selectedJobIds);
+                                    if (success) {
+                                        setSelectedJobIds([]);
+                                        fetchJobs(true); // Ensure counts update
+                                    }
+                                    setIsBulkDeleting(false);
+                                }}
+                                disabled={isBulkDeleting}
+                                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:text-emerald-400 cursor-pointer active:scale-95 border border-emerald-200/50 dark:border-emerald-500/30"
+                            >
+                                <RotateCcw className="w-4 h-4" />
+                                <span className="hidden sm:inline">{t('restoreJob')}</span>
+                            </button>
+                        )}
                         <button
                             onClick={handleBulkDelete}
                             disabled={isBulkDeleting}
@@ -573,8 +635,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                                 }
                             `}
                         >
-                            {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-                            {t('archiveSelected')}
+                            {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : (isArchived ? <Trash2 className="w-4 h-4" /> : <Archive className="w-4 h-4" />)}
+                            {isArchived ? t('deletePermanent' as any) : t('archiveSelected')}
                         </button>
                         <button
                             onClick={() => setSelectedJobIds([])}

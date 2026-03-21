@@ -187,6 +187,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class FactoryResetRequest(BaseModel):
+    password: str
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Redis listener task...")
@@ -237,6 +241,32 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+
+_SKIP_LOG_PATHS = {"/health", "/metrics", "/sse"}
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        if request.url.path in _SKIP_LOG_PATHS or request.url.path.startswith("/scraper"):
+            return await call_next(request)
+        start = time.monotonic()
+        response = await call_next(request)
+        duration_ms = (time.monotonic() - start) * 1000
+        level = logging.WARNING if response.status_code >= 400 else logging.INFO
+        logger.log(
+            level,
+            "%s %s → %d (%.0fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+        return response
+
+app.add_middleware(RequestLoggingMiddleware)
 
 from scraper_api import app as scraper_app
 
@@ -661,6 +691,13 @@ def get_job_counts(current_user: User = Depends(get_current_user), is_archived: 
         ).group_by(JobEntry.status).all()
         status_counts = {status: count for status, count in status_rows}
 
+        # Global totals for the ARCHIVE counter (regardless of view)
+        archived_total = db.query(JobEntry.id).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.is_archived == True
+        ).count()
+        status_counts["ARCHIVE"] = archived_total
+
         domain_rows = db.query(JobEntry.company, func.count(JobEntry.id)).filter(
             *base_filters,
             JobEntry.company.isnot(None),
@@ -946,6 +983,11 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        if job.is_archived:
+            db.delete(job)
+            db.commit()
+            return {"status": "deleted"}
+
         job.is_archived = True
         db.commit()
         return {"status": "archived"}
@@ -968,22 +1010,30 @@ def delete_bulk_jobs(
 ):
     db = SessionLocal()
     try:
-        # Prevent massive accidental deletions or empty requests
         if not request.job_ids:
             return {"status": "success", "count": 0}
 
-        query = db.query(JobEntry).filter(
-            JobEntry.user_id == current_user.id, JobEntry.id.in_(request.job_ids)
-        )
+        # 1. Permanently delete those already archived
+        perm_deleted = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.id.in_(request.job_ids),
+            JobEntry.is_archived == True
+        ).delete(synchronize_session=False)
 
-        archived_count = query.update({"is_archived": True}, synchronize_session=False)
+        # 2. Archive the rest
+        archived_count = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.id.in_(request.job_ids),
+            JobEntry.is_archived == False
+        ).update({"is_archived": True}, synchronize_session=False)
+
         db.commit()
-        return {"status": "archived", "count": archived_count}
+        return {"status": "success", "archived": archived_count, "permanently_deleted": perm_deleted}
     except Exception as e:
         db.rollback()
-        logger.error(f"Fehler beim Bulk-Archivieren der Jobs: {e}")
+        logger.error(f"Error in bulk delete: {e}")
         raise HTTPException(
-            status_code=500, detail="Datenbankfehler beim Bulk-Archivieren"
+            status_code=500, detail="Database error during bulk delete"
         )
     finally:
         db.close()
@@ -991,6 +1041,34 @@ def delete_bulk_jobs(
 
 class StatusUpdateRequest(BaseModel):
     status: str
+
+
+@app.post("/jobs/bulk-restore")
+def restore_bulk_jobs(
+    request: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        if not request.job_ids:
+            return {"status": "success", "count": 0}
+
+        restored_count = db.query(JobEntry).filter(
+            JobEntry.user_id == current_user.id,
+            JobEntry.id.in_(request.job_ids),
+            JobEntry.is_archived == True
+        ).update({"is_archived": False}, synchronize_session=False)
+
+        db.commit()
+        return {"status": "success", "restored": restored_count}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in bulk restore: {e}")
+        raise HTTPException(
+            status_code=500, detail="Database error during bulk restore"
+        )
+    finally:
+        db.close()
 
 
 @app.patch("/jobs/{job_id}/update-status")
@@ -1073,6 +1151,8 @@ def patch_job(
             job.notes = request.notes
         if request.application_draft is not None:
             job.application_draft = request.application_draft
+        if request.is_archived is not None:
+            job.is_archived = request.is_archived
 
         db.commit()
         db.refresh(job)
@@ -1189,10 +1269,14 @@ def save_settings(
         profile.job_urls = settings.job_urls
 
         # Save Notification Settings
-        profile.gmail_address = settings.gmail_address
-        profile.gmail_app_password = settings.gmail_app_password
         profile.pushover_user_key = settings.pushover_user_key
+
         profile.pushover_api_token = settings.pushover_api_token
+        profile.resend_api_key = settings.resend_api_key
+        profile.resend_from_email = settings.resend_from_email
+        profile.mailjet_api_key = settings.mailjet_api_key
+        profile.mailjet_secret_key = settings.mailjet_secret_key
+        profile.mailjet_from_email = settings.mailjet_from_email
         profile.active_notification_service = settings.active_notification_service
 
         db.commit()
@@ -1213,10 +1297,18 @@ def save_notification_settings(
         if not profile:
             profile = UserProfile(user_id=current_user.id)
             db.add(profile)
-        profile.gmail_address = settings.gmail_address
-        profile.gmail_app_password = settings.gmail_app_password
         profile.pushover_user_key = settings.pushover_user_key
         profile.pushover_api_token = settings.pushover_api_token
+        profile.resend_api_key = settings.resend_api_key
+        profile.resend_from_email = settings.resend_from_email
+        profile.mailjet_api_key = settings.mailjet_api_key
+        profile.mailjet_secret_key = settings.mailjet_secret_key
+        profile.mailjet_from_email = settings.mailjet_from_email
+        profile.smtp_host = settings.smtp_host
+        profile.smtp_port = settings.smtp_port
+        profile.smtp_user = settings.smtp_user
+        profile.smtp_password = settings.smtp_password
+        profile.smtp_from_email = settings.smtp_from_email
         db.commit()
         return {"status": "saved"}
     finally:
@@ -1273,7 +1365,14 @@ def delete_settings(current_user: User = Depends(get_current_user)):
             db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         )
         if profile:
-            db.delete(profile)
+            # Only reset CV/profile fields — notification adapter config is preserved
+            profile.role = "Software Engineer"
+            profile.skills = "Python, Docker"
+            profile.min_salary = "60000"
+            profile.location = "Remote"
+            profile.preferences = ""
+            profile.cv_data = {}
+            profile.job_urls = []
             db.commit()
             return {"status": "deleted"}
         else:
@@ -1286,27 +1385,45 @@ def delete_settings(current_user: User = Depends(get_current_user)):
         db.close()
 
 
+APPLICATION_STATUSES = ["APPLIED", "INTERVIEW", "OFFER", "ACCEPTED"]
 @app.delete("/jobs")
 def delete_all_jobs(
     keep_favorites: bool = True,
     keep_applications: bool = True,
     company: Optional[str] = None,
+    permanent: bool = False,
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import or_, and_
+
     db = SessionLocal()
     try:
         query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
         if company:
             query = query.filter(JobEntry.company == company)
+            
+        # Conditions for items to NOT be deleted/archived
+        exclude_conditions = []
         if keep_favorites:
-            query = query.filter(JobEntry.is_favorite == False)
+            exclude_conditions.append(JobEntry.is_favorite == True)
         if keep_applications:
-            query = query.filter(JobEntry.status == "OPEN")
-        query = query.filter(JobEntry.is_archived == False)
+            exclude_conditions.append(JobEntry.status.in_(APPLICATION_STATUSES))
+            
+        if exclude_conditions:
+            query = query.filter(~or_(*exclude_conditions))
 
-        archived_count = query.update({"is_archived": True}, synchronize_session=False)
-        db.commit()
-        return {"status": "archived", "count": archived_count}
+        if permanent:
+            # Only delete if they are already archived
+            query = query.filter(JobEntry.is_archived == True)
+            deleted_count = query.delete(synchronize_session=False)
+            db.commit()
+            return {"status": "deleted", "count": deleted_count}
+        else:
+            # Standard path: archive non-archived items
+            query = query.filter(JobEntry.is_archived == False)
+            archived_count = query.update({"is_archived": True}, synchronize_session=False)
+            db.commit()
+            return {"status": "archived", "count": archived_count}
     except Exception as e:
         db.rollback()
         logger.error(f"Fehler beim Archivieren der Jobs: {e}")
@@ -1316,11 +1433,18 @@ def delete_all_jobs(
 
 
 @app.delete("/user/reset")
-def reset_user_data(current_user: User = Depends(get_current_user)):
+def reset_user_data(request: FactoryResetRequest, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if not user or not verify_password(request.password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Incorrect password")
+
         jobs_deleted = (
             db.query(JobEntry).filter(JobEntry.user_id == current_user.id).delete()
+        )
+        platforms_deleted = (
+            db.query(JobPlatform).filter(JobPlatform.user_id == current_user.id).delete()
         )
         profile = (
             db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -1333,8 +1457,11 @@ def reset_user_data(current_user: User = Depends(get_current_user)):
         return {
             "status": "reset complete",
             "jobs_deleted": jobs_deleted,
+            "platforms_deleted": platforms_deleted,
             "profile_deleted": profile_deleted,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Fehler beim Reset der Benutzerdaten: {e}")
@@ -1383,9 +1510,13 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
                     "notification_adapters": p.notification_adapters or [],
-                    "gmail_template": p.gmail_template,
-                    "gmail_recipients": p.gmail_recipients,
                     "pushover_template": p.pushover_template,
+                    "resend_template": p.resend_template,
+                    "resend_recipients": p.resend_recipients,
+                    "mailjet_template": p.mailjet_template,
+                    "mailjet_recipients": p.mailjet_recipients,
+                    "smtp_template": p.smtp_template,
+                    "smtp_recipients": p.smtp_recipients,
                     "job_count": count,
                 }
             )
@@ -1504,12 +1635,20 @@ def update_platform(
             db_platform.is_notification_enabled = (
                 len(platform_update.notification_adapters) > 0
             )
-        if "gmail_template" in platform_update.__fields_set__:
-            db_platform.gmail_template = platform_update.gmail_template or None
-        if "gmail_recipients" in platform_update.__fields_set__:
-            db_platform.gmail_recipients = platform_update.gmail_recipients or None
         if "pushover_template" in platform_update.__fields_set__:
             db_platform.pushover_template = platform_update.pushover_template or None
+        if "resend_template" in platform_update.__fields_set__:
+            db_platform.resend_template = platform_update.resend_template or None
+        if "resend_recipients" in platform_update.__fields_set__:
+            db_platform.resend_recipients = platform_update.resend_recipients or None
+        if "mailjet_template" in platform_update.__fields_set__:
+            db_platform.mailjet_template = platform_update.mailjet_template or None
+        if "mailjet_recipients" in platform_update.__fields_set__:
+            db_platform.mailjet_recipients = platform_update.mailjet_recipients or None
+        if "smtp_template" in platform_update.__fields_set__:
+            db_platform.smtp_template = platform_update.smtp_template or None
+        if "smtp_recipients" in platform_update.__fields_set__:
+            db_platform.smtp_recipients = platform_update.smtp_recipients or None
 
         db.commit()
         db.refresh(db_platform)
@@ -1540,9 +1679,13 @@ def update_platform(
             "is_active": db_platform.is_active,
             "is_notification_enabled": db_platform.is_notification_enabled,
             "notification_adapters": db_platform.notification_adapters or [],
-            "gmail_template": db_platform.gmail_template,
-            "gmail_recipients": db_platform.gmail_recipients,
             "pushover_template": db_platform.pushover_template,
+            "resend_template": db_platform.resend_template,
+            "resend_recipients": db_platform.resend_recipients,
+            "mailjet_template": db_platform.mailjet_template,
+            "mailjet_recipients": db_platform.mailjet_recipients,
+            "smtp_template": db_platform.smtp_template,
+            "smtp_recipients": db_platform.smtp_recipients,
             "job_count": job_count,
         }
     finally:
@@ -1571,56 +1714,6 @@ def trigger_platform_name_generation(platform_id: int, current_user: User = Depe
     finally:
         db.close()
 
-
-class GmailTestRequest(BaseModel):
-    recipients: Optional[List[str]] = None
-    template: Optional[str] = None
-
-
-@app.post("/platforms/{platform_id}/test-gmail")
-def test_gmail_notification(
-    platform_id: int,
-    body: GmailTestRequest = GmailTestRequest(),
-    current_user: User = Depends(get_current_user),
-):
-    from worker import _send_via_gmail_batch
-
-    db = SessionLocal()
-    try:
-        platform = (
-            db.query(JobPlatform)
-            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
-            .first()
-        )
-        if not platform:
-            raise HTTPException(status_code=404, detail="Platform not found")
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.gmail_address or not profile.gmail_app_password:
-            raise HTTPException(status_code=400, detail="Gmail credentials not configured")
-
-        # Allow caller to override recipients and template without saving
-        class _PlatformProxy:
-            gmail_recipients = body.recipients if body.recipients is not None else platform.gmail_recipients
-            gmail_template = body.template if body.template is not None else platform.gmail_template
-
-        class _FakeJob:
-            id = 0
-            title = "Senior Software Engineer"
-            company = "Acme Corp"
-            match_score = 87.0
-            reasoning = "Strong match based on your Python and FastAPI experience."
-            url = "https://example.com/job/123"
-
-        _send_via_gmail_batch([_FakeJob()], profile, _PlatformProxy(), userName=current_user.username)
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("test-gmail failed for platform %s: %s", platform_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 
 @app.post("/platforms/{platform_id}/test-pushover")
@@ -1659,6 +1752,217 @@ def test_pushover_notification(
         raise
     except Exception as e:
         logger.error("test-pushover failed for platform %s: %s", platform_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/platforms/{platform_id}/test-resend")
+def test_resend_notification(
+    platform_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    from worker import _send_via_resend_batch
+
+    db = SessionLocal()
+    try:
+        platform = (
+            db.query(JobPlatform)
+            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
+            .first()
+        )
+        if not platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.resend_api_key or not profile.resend_from_email:
+            raise HTTPException(status_code=400, detail="Resend credentials not configured")
+
+        if not platform.resend_recipients:
+            raise HTTPException(status_code=400, detail="No Resend recipients configured for this platform")
+
+        class _FakeJob:
+            id = 0
+            title = "Senior Software Engineer"
+            company = "Acme Corp"
+            match_score = 87.0
+            reasoning = "Strong match based on your Python and FastAPI experience."
+            url = "https://example.com/job/123"
+            platform_id = None
+
+        if not _send_via_resend_batch([_FakeJob()], profile, platform=platform, userName=current_user.username):
+            raise HTTPException(status_code=500, detail="Resend delivery failed")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("test-resend failed for platform %s: %s", platform_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/platforms/{platform_id}/test-mailjet")
+def test_mailjet_notification(
+    platform_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    from worker import _send_via_mailjet_batch
+
+    db = SessionLocal()
+    try:
+        platform = (
+            db.query(JobPlatform)
+            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
+            .first()
+        )
+        if not platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.mailjet_api_key or not profile.mailjet_secret_key or not profile.mailjet_from_email:
+            raise HTTPException(status_code=400, detail="Mailjet credentials not configured")
+
+        if not platform.mailjet_recipients:
+            raise HTTPException(status_code=400, detail="No Mailjet recipients configured for this platform")
+
+        class _FakeJob:
+            id = 0
+            title = "Senior Software Engineer"
+            company = "Acme Corp"
+            match_score = 87.0
+            reasoning = "Strong match based on your Python and FastAPI experience."
+            url = "https://example.com/job/123"
+            platform_id = None
+
+        if not _send_via_mailjet_batch([_FakeJob()], profile, platform=platform, userName=current_user.username):
+            raise HTTPException(status_code=500, detail="Mailjet delivery failed")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("test-mailjet failed for platform %s: %s", platform_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/platforms/{platform_id}/test-smtp")
+def test_smtp_notification(
+    platform_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    db = SessionLocal()
+    try:
+        platform = (
+            db.query(JobPlatform)
+            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
+            .first()
+        )
+        if not platform:
+            raise HTTPException(status_code=404, detail="Platform not found")
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.smtp_host or not profile.smtp_user or not profile.smtp_password:
+            raise HTTPException(status_code=400, detail="SMTP credentials not configured")
+
+        if not platform.smtp_recipients:
+            raise HTTPException(status_code=400, detail="No SMTP recipients configured for this platform")
+
+        smtp_port = profile.smtp_port or 587
+        from_email = profile.smtp_from_email or profile.smtp_user
+        recipients = platform.smtp_recipients if isinstance(platform.smtp_recipients, list) else [platform.smtp_recipients]
+
+        from worker import _RESEND_DEFAULT_HTML, _RESEND_DEFAULT_JOB_ROW
+
+        class _FakeJob:
+            id = 0
+            title = "Senior Software Engineer"
+            company = "Acme Corp"
+            match_score = 87.0
+            reasoning = "Strong match based on your Python and FastAPI experience."
+            url = "https://example.com/job/123"
+            platform_id = None
+
+        fake_jobs = [_FakeJob()]
+        platform_name = platform.name or "Job Platform"
+        userName = current_user.username
+        count = 1
+
+        job_rows_html = _RESEND_DEFAULT_JOB_ROW.format(
+            title=_FakeJob.title,
+            company=_FakeJob.company,
+            match_score=str(int(_FakeJob.match_score)),
+            reasoning=_FakeJob.reasoning,
+            url_link=f'<a href="{_FakeJob.url}">Details anzeigen</a>',
+        )
+
+        raw_template = platform.smtp_template or ""
+        if raw_template:
+            import re
+            if "{{#jobs}}" in raw_template:
+                loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", raw_template, re.DOTALL)
+                if loop_match:
+                    loop_block = loop_match.group(1)
+                    rendered_jobs = loop_block \
+                        .replace("$title", _FakeJob.title) \
+                        .replace("$company", _FakeJob.company) \
+                        .replace("$match_score", str(int(_FakeJob.match_score))) \
+                        .replace("$reasoning", _FakeJob.reasoning) \
+                        .replace("$url", _FakeJob.url)
+                    html = re.sub(r"\{\{#jobs\}\}.*?\{\{/jobs\}\}", rendered_jobs, raw_template, flags=re.DOTALL)
+                else:
+                    html = raw_template
+                html = html \
+                    .replace("$userName", userName) \
+                    .replace("$jobCount", str(count)) \
+                    .replace("$platform_name", platform_name)
+            elif "$jobs_html" in raw_template:
+                html = raw_template \
+                    .replace("$jobs_html", job_rows_html) \
+                    .replace("$userName", userName) \
+                    .replace("$jobCount", str(count)) \
+                    .replace("$platform_name", platform_name)
+            else:
+                html = raw_template
+        else:
+            html = _RESEND_DEFAULT_HTML.format(
+                userName=userName,
+                count=count,
+                plural="",
+                platform_name=platform_name,
+                job_rows=job_rows_html,
+            )
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[Job Agent] Test E-Mail – {platform_name}"
+        msg["From"] = from_email
+        msg["To"] = ", ".join(recipients)
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        with smtplib.SMTP(profile.smtp_host, smtp_port, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(profile.smtp_user, profile.smtp_password)
+            server.sendmail(from_email, recipients, msg.as_string())
+
+        logger.info("test-smtp sent to %s via %s:%s", recipients, profile.smtp_host, smtp_port)
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except smtplib.SMTPAuthenticationError as e:
+        raise HTTPException(status_code=500, detail=f"SMTP Authentifizierung fehlgeschlagen: {e.smtp_error.decode(errors='replace') if isinstance(e.smtp_error, bytes) else str(e)}")
+    except smtplib.SMTPConnectError as e:
+        raise HTTPException(status_code=500, detail=f"Verbindung zu {profile.smtp_host}:{smtp_port} fehlgeschlagen: {e}")
+    except smtplib.SMTPException as e:
+        raise HTTPException(status_code=500, detail=f"SMTP Fehler: {e}")
+    except Exception as e:
+        logger.error("test-smtp failed for platform %s: %s", platform_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
@@ -1709,8 +2013,8 @@ def create_notification_template(
 ):
     db = SessionLocal()
     try:
-        if body.type.upper() not in ("GMAIL", "PUSHOVER"):
-            raise HTTPException(status_code=400, detail="type must be GMAIL or PUSHOVER")
+        if body.type.upper() not in ("PUSHOVER", "RESEND", "MAILJET"):
+            raise HTTPException(status_code=400, detail="type must be PUSHOVER, RESEND or MAILJET")
         t = NotificationTemplate(
             name=body.name,
             type=body.type.upper(),
@@ -1782,8 +2086,8 @@ def admin_create_notification_template(
 ):
     db = SessionLocal()
     try:
-        if body.type.upper() not in ("GMAIL", "PUSHOVER"):
-            raise HTTPException(status_code=400, detail="type must be GMAIL or PUSHOVER")
+        if body.type.upper() not in ("PUSHOVER", "RESEND", "MAILJET"):
+            raise HTTPException(status_code=400, detail="type must be PUSHOVER, RESEND or MAILJET")
         t = NotificationTemplate(
             name=body.name,
             type=body.type.upper(),
@@ -1917,6 +2221,8 @@ def delete_platform_jobs(
     keep_applications: bool = True,
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import or_, and_
+
     db = SessionLocal()
     try:
         # Verify platform belongs to user
@@ -1931,10 +2237,27 @@ def delete_platform_jobs(
             raise HTTPException(status_code=404, detail="Platform not found")
 
         query = db.query(JobEntry).filter(JobEntry.platform_id == platform_id)
-        if keep_favorites:
-            query = query.filter(JobEntry.is_favorite == False)
-        if keep_applications:
-            query = query.filter(JobEntry.status == "OPEN")
+        if keep_favorites and keep_applications:
+            query = query.filter(
+                and_(
+                    JobEntry.is_favorite == False,
+                    ~JobEntry.status.in_(APPLICATION_STATUSES),
+                )
+            )
+        elif keep_favorites:
+            query = query.filter(
+                or_(
+                    JobEntry.is_favorite == False,
+                    JobEntry.status.in_(APPLICATION_STATUSES),
+                )
+            )
+        elif keep_applications:
+            query = query.filter(
+                or_(
+                    ~JobEntry.status.in_(APPLICATION_STATUSES),
+                    JobEntry.is_favorite == True,
+                )
+            )
 
         # Get job IDs to delete associated history and documents
         job_ids = [r[0] for r in query.with_entities(JobEntry.id).all()]
@@ -2355,8 +2678,13 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
                     "notification_adapters": p.notification_adapters or [],
-                    "gmail_template": p.gmail_template,
-                    "gmail_recipients": p.gmail_recipients,
+                    "pushover_template": p.pushover_template,
+                    "resend_template": p.resend_template,
+                    "resend_recipients": p.resend_recipients,
+                    "mailjet_template": p.mailjet_template,
+                    "mailjet_recipients": p.mailjet_recipients,
+                    "smtp_template": p.smtp_template,
+                    "smtp_recipients": p.smtp_recipients,
                     "job_count": count,
                 }
             )

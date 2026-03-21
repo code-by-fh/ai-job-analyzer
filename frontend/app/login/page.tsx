@@ -103,6 +103,7 @@ export default function LoginPage() {
                             w-full mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl 
                             shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 
                             transition-all active:scale-95
+                            cursor-pointer
                         "
                     >
                         {t('initializeSession')}

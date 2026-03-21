@@ -167,6 +167,33 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         }
     };
 
+    const bulkRestoreJobs = async (jobIds: string[]) => {
+        if (!jobIds.length) return false;
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/bulk-restore`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ job_ids: jobIds })
+            });
+
+            if (res.ok) {
+                setJobs(prev => prev.filter(job => !jobIds.includes(job.id)));
+                return true;
+            } else {
+                const data = await res.json().catch(() => ({}));
+                logger.error({ status: res.status, data }, 'Bulk restore failed');
+                setGlobalError(`Wiederherstellen fehlgeschlagen: ${data.detail || res.statusText}`);
+                return false;
+            }
+        } catch (e) {
+            logger.error({ err: e }, 'Error bulk restoring jobs');
+            setGlobalError('Netzwerkfehler beim Bulk-Wiederherstellen.');
+            return false;
+        }
+    };
+
     const handleUpdateStatus = async (jobId: string, newStatus: JobStatus) => {
         try {
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/update-status`, {
@@ -201,9 +228,15 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                setJobs(prev => prev.map(job =>
-                    job.id === jobId ? { ...job, ...payload } : job
-                ));
+                setJobs(prev => {
+                    // If we're updating is_archived and it now differs from our view (isArchived), remove it
+                    if (payload.is_archived !== undefined && payload.is_archived !== !!isArchived) {
+                        return prev.filter(j => j.id !== jobId);
+                    }
+                    return prev.map(job =>
+                        job.id === jobId ? { ...job, ...payload } : job
+                    );
+                });
             } else {
                 const errorData = await res.json().catch(() => ({}));
                 logger.error({ status: res.status, errorData }, 'Failed to update job');
@@ -229,6 +262,7 @@ export function useJobs({ token, logout, filterType, sortBy, hasApplication, sta
         handleToggleFavorite,
         handleUpdateStatus,
         updateJob,
-        bulkDeleteJobs
+        bulkDeleteJobs,
+        bulkRestoreJobs
     };
 }

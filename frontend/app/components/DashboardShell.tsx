@@ -80,6 +80,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const label = (item: NavItemConfig) => item.labelKey ? t(item.labelKey) : (item.labelLiteral || '');
     const hasAdmin = Boolean(user?.is_admin);
     const adminActive = hasAdmin && ADMIN_NAV_ITEMS.some(item => isActive(item));
+    const mobileBottomItems = MAIN_NAV_ITEMS.filter(item => !item.mobileMore);
+    const mobileMoreItems = MAIN_NAV_ITEMS.filter(item => item.mobileMore);
+    const moreActive = mobileMoreItems.some(item => isActive(item));
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -95,7 +98,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 {/* Logo row */}
                 <div className={`
                     flex items-center h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0
-                    ${sidebarCollapsed ? 'justify-center' : 'justify-between'}
+                    ${sidebarCollapsed ? 'justify-center' : ''}
                 `}>
                     <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
                         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm">
@@ -107,17 +110,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             </span>
                         )}
                     </div>
-                    {!sidebarCollapsed && (
-                        <button
-                            onClick={() => setSidebarCollapsed(true)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer flex-shrink-0"
-                            title={t('collapseSidebar')}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-                            </svg>
-                        </button>
-                    )}
                 </div>
 
                 {/* Nav items */}
@@ -156,35 +148,73 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     )}
                 </nav>
 
-                {/* Footer */}
-                <div className="border-t border-slate-200 dark:border-slate-800 p-2 flex-shrink-0">
-                    {sidebarCollapsed ? (
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={() => setSidebarCollapsed(false)}
-                                className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                title={t('expandSidebar')}
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 rotate-180">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-                                </svg>
-                            </button>
-                            <CollapsedLogout />
-                        </div>
-                    ) : (
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2.5 px-2 py-1.5">
-                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                {/* Footer Section */}
+                <div className="mt-auto p-3 space-y-2 flex-shrink-0">
+                    {/* User Profile Card */}
+                    <div className={`
+                        relative transition-all duration-300 rounded-2xl
+                        ${sidebarCollapsed 
+                            ? 'flex flex-col items-center gap-3 p-1' 
+                            : 'p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/50 space-y-3 shadow-sm hover:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                        }
+                    `}>
+                        {sidebarCollapsed ? (
+                            <>
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md ring-2 ring-white dark:ring-slate-900 transition-transform hover:scale-105">
                                     {initial}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate leading-none">{user?.username || 'User'}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5 leading-none">{user?.is_admin ? t('admin') : t('member')}</p>
+                                <div className="w-8 h-px bg-slate-200 dark:bg-slate-700" />
+                                <CollapsedLogout />
+                            </>
+                        ) : (
+                            <>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-sm ring-1 ring-white/20">
+                                        {initial}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">
+                                            {user?.username || 'User'}
+                                        </p>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-none">
+                                                {user?.is_admin ? t('admin') : t('member')}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <UserMenu />
+                                <div className="pt-2 border-t border-slate-200 dark:border-white/5">
+                                    <UserMenu />
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Sidebar Toggle */}
+                    <button
+                        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        className={`
+                            group w-full flex items-center gap-3 p-2 rounded-xl
+                            text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 
+                            hover:bg-indigo-50 dark:hover:bg-indigo-500/10 
+                            transition-all duration-500 cursor-pointer border border-transparent hover:border-indigo-100 dark:hover:border-indigo-800/30
+                            ${sidebarCollapsed ? 'justify-center p-1.5' : 'px-3'}
+                        `}
+                        title={sidebarCollapsed ? t('expandSidebar') : t('collapseSidebar')}
+                    >
+                        <div className={`
+                            p-1 rounded-lg bg-slate-100 dark:bg-slate-800 
+                            group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50 transition-colors duration-300
+                        `}>
+                            <LucideIcons.ChevronLeft className={`w-4 h-4 transition-transform duration-500 ${sidebarCollapsed ? 'rotate-180' : ''}`} />
                         </div>
-                    )}
+                        {!sidebarCollapsed && (
+                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors duration-300">
+                                {t('collapseSidebar')}
+                            </span>
+                        )}
+                    </button>
                 </div>
             </aside>
 
@@ -223,6 +253,28 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 <div className="px-4 pt-4 pb-3">
                     {/* Drag handle */}
                     <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4" />
+
+                    {/* Main "more" items: Account, Companies, Archive */}
+                    <div className="space-y-0.5 mb-4">
+                        {mobileMoreItems.map(item => (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={() => setMoreOpen(false)}
+                                className={`
+                                    flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
+                                    ${isActive(item)
+                                        ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }
+                                `}
+                            >
+                                <DynamicIcon name={item.icon} className={`w-5 h-5 ${item.color || ''}`} />
+                                <span>{label(item)}</span>
+                            </Link>
+                        ))}
+                    </div>
+                    <div className="h-px bg-slate-100 dark:bg-slate-800 mb-4" />
 
                     {/* Admin items */}
                     {hasAdmin && (
@@ -266,7 +318,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
             {/* ── MOBILE BOTTOM NAV ── */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-stretch">
-                {MAIN_NAV_ITEMS.map(item => {
+                {mobileBottomItems.map(item => {
                     const active = isActive(item);
                     return (
                         <Link
@@ -298,13 +350,13 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     onClick={() => setMoreOpen(v => !v)}
                     className={`
                         flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors duration-200 cursor-pointer
-                        ${moreOpen || adminActive
+                        ${moreOpen || adminActive || moreActive
                             ? 'text-indigo-600 dark:text-indigo-400'
                             : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
                         }
                     `}
                 >
-                    {(moreOpen || adminActive) && (
+                    {(moreOpen || adminActive || moreActive) && (
                         <span className="absolute top-0 inset-x-0 flex justify-center">
                             <span className="w-8 h-0.5 bg-indigo-500 rounded-b-full" />
                         </span>

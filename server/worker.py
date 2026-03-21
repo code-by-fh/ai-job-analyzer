@@ -21,10 +21,6 @@ from database import (
     DomainUrlPattern,
     User,
 )
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import requests
 
 # Logging Setup
@@ -41,102 +37,119 @@ from intelligence_service import (
 
 logger = get_logger(__name__)
 
+_RESEND_DEFAULT_JOB_ROW = """
+<div style="margin-bottom:20px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;">
+  <h3 style="margin:0 0 4px">{title} &ndash; {company}</h3>
+  <p style="margin:0;color:#64748b">Match Score: <strong>{match_score}%</strong></p>
+  <p style="margin:8px 0;font-size:14px;color:#334155">{reasoning}</p>
+  {url_link}
+</div>
+"""
 
-def _send_via_gmail_batch(jobs, profile, platform=None, userName="Candidate"):
-    """Send a single digest Gmail for all jobs in a crawl."""
-    if not profile.gmail_address or not profile.gmail_app_password:
-        logger.warning("Gmail batch notification enabled but credentials missing.")
+_RESEND_DEFAULT_HTML = """<html><body>
+<p>Hi {userName},</p>
+<h2>{count} new job match{plural} from {platform_name}</h2>
+{job_rows}
+<p style="color:#94a3b8;font-size:12px;">Sent by Job Agent</p>
+</body></html>"""
+
+
+def _send_via_resend_batch(jobs, profile, platform=None, userName="Candidate"):
+    """Send a batch digest email via Resend API. Returns True on success."""
+    if not profile.resend_api_key or not profile.resend_from_email:
+        logger.warning("Resend batch notification enabled but credentials missing.")
         return False
 
-    recipients = (platform.gmail_recipients or []) if platform else []
+    recipients = (getattr(platform, "resend_recipients", None) or []) if platform else []
     if not recipients:
-        recipients = [profile.gmail_address]
+        logger.warning("Resend: no recipients configured for platform.")
+        return False
 
-    msg = MIMEMultipart("alternative")
+    platform_name = (getattr(platform, "name", None) or "Job Platform") if platform else "Job Platform"
     count = len(jobs)
-    msg["Subject"] = f"{count} New Job Match{'es' if count != 1 else ''}"
-    msg["From"] = profile.gmail_address
-    msg["To"] = ", ".join(recipients)
 
-    custom_template = platform.gmail_template if platform else None
-    if custom_template:
-        import re
-        from string import Template
-
-        # Provide jobCount and userName globally in the template
-        custom_template = Template(custom_template).safe_substitute(
-            jobCount=count, userName=userName
+    # Build job rows HTML
+    job_rows_html = ""
+    for j in jobs:
+        score = str(int(j.match_score)) if j.match_score else "0"
+        url_link = f'<a href="{j.url}">Details anzeigen</a>' if j.url else ""
+        job_rows_html += _RESEND_DEFAULT_JOB_ROW.format(
+            title=j.title or "",
+            company=j.company or "",
+            match_score=score,
+            reasoning=(j.reasoning or "")[:300],
+            url_link=url_link,
         )
 
-        loop_match = re.search(
-            r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", custom_template, re.DOTALL
-        )
-        if loop_match:
-            job_block = loop_match.group(1)
-            rendered_jobs = "".join(
-                Template(job_block).safe_substitute(
-                    jobCount=count,
-                    userName=userName,
-                    title=j.title,
-                    company=j.company,
-                    match_score=int(j.match_score),
-                    reasoning=j.reasoning or "",
-                    url=j.url,
-                )
-                for j in jobs
-            )
-            html = (
-                custom_template[: loop_match.start()]
-                + rendered_jobs
-                + custom_template[loop_match.end() :]
-            )
+    # Custom template support
+    raw_template = (getattr(platform, "resend_template", None) or "") if platform else ""
+    if raw_template:
+        if "{{#jobs}}" in raw_template:
+            # Mustache-style loop: render block between {{#jobs}} and {{/jobs}} for each job
+            import re
+            loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", raw_template, re.DOTALL)
+            if loop_match:
+                loop_block = loop_match.group(1)
+                rendered_jobs = ""
+                for j in jobs:
+                    score = str(int(j.match_score)) if j.match_score else "0"
+                    rendered_jobs += loop_block\
+                        .replace("$title", j.title or "")\
+                        .replace("$company", j.company or "")\
+                        .replace("$match_score", score)\
+                        .replace("$reasoning", (j.reasoning or "")[:300])\
+                        .replace("$url", j.url or "#")
+                html = re.sub(r"\{\{#jobs\}\}.*?\{\{/jobs\}\}", rendered_jobs, raw_template, flags=re.DOTALL)
+            else:
+                html = raw_template
+            html = html\
+                .replace("$userName", userName)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)
+        elif "$jobs_html" in raw_template:
+            html = raw_template\
+                .replace("$jobs_html", job_rows_html)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)\
+                .replace("$userName", userName)
         else:
-            # No loop block — render template once per job, separated by <hr>
-            html = "\n<hr>\n".join(
-                Template(custom_template).safe_substitute(
-                    jobCount=count,
-                    userName=userName,
-                    title=j.title,
-                    company=j.company,
-                    match_score=int(j.match_score),
-                    reasoning=j.reasoning or "",
-                    url=j.url,
-                )
-                for j in jobs
-            )
+            html = raw_template  # treat as fully custom HTML
     else:
-        job_items = "".join(
-            f"""
-            <div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e7eb">
-              <h3 style="margin:0 0 8px">{j.title} &ndash; {j.company}</h3>
-              <p style="margin:0 0 4px"><b>Match Score:</b> {int(j.match_score)}%</p>
-              <p style="margin:0 0 12px">{j.reasoning}</p>
-              <a href="{j.url}">View details</a>
-            </div>
-            """
-            for j in jobs
+        html = _RESEND_DEFAULT_HTML.format(
+            userName=userName,
+            count=count,
+            plural="es" if count != 1 else "",
+            platform_name=platform_name,
+            job_rows=job_rows_html,
         )
-        html = f"""
-        <html><body>
-          <p>Hello {userName},</p>
-          <h2>{count} New Job Match{'es' if count != 1 else ''}</h2>
-          {job_items}
-        </body></html>
-        """
 
-    msg.attach(MIMEText(html, "html"))
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(profile.gmail_address, profile.gmail_app_password)
-        server.sendmail(profile.gmail_address, recipients, msg.as_string())
+    subject = f"[Job Agent] {count} neue{'r' if count == 1 else ''} Job-Match{'es' if count != 1 else ''} von {platform_name}"
+    payload = {
+        "from": profile.resend_from_email,
+        "to": recipients if isinstance(recipients, list) else [recipients],
+        "subject": subject,
+        "html": html,
+    }
 
-    logger.info(f" Gmail digest sent: {count} jobs to {recipients}")
-    return True
+    resp = requests.post(
+        "https://api.resend.com/emails",
+        json=payload,
+        headers={"Authorization": f"Bearer {profile.resend_api_key}"},
+        timeout=15,
+    )
+    if resp.status_code in (200, 201):
+        logger.info(f" Resend digest sent: {count} jobs → {recipients} (platform: {platform_name})")
+        return True
+    else:
+        logger.error(f"Resend API error {resp.status_code}: {resp.text}")
+        return False
 
 
-def _flush_gmail_digest(crawl_job_id, user_id, db, r):
-    """Send batched Gmail digest for all jobs queued during a crawl, if any."""
-    key = f"crawl:{crawl_job_id}:pending_gmail"
+def _flush_resend_digest(crawl_job_id, user_id, db, r):
+    """Send batched Resend digest for all jobs queued during a crawl, if any."""
+    key = f"crawl:{crawl_job_id}:pending_resend"
     job_ids_raw = r.lrange(key, 0, -1)
     if not job_ids_raw:
         return
@@ -151,80 +164,279 @@ def _flush_gmail_digest(crawl_job_id, user_id, db, r):
         return
 
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    if not profile:
+    if not profile or not profile.resend_api_key:
         return
 
     user = db.query(User).filter(User.id == user_id).first()
     userName = user.username if user else "Candidate"
 
-    # Get platform from the first job if available
     platform = None
     if jobs[0].platform_id:
-        platform = (
-            db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
-        )
+        platform = db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
 
     try:
-        _send_via_gmail_batch(jobs, profile, platform=platform, userName=userName)
+        _send_via_resend_batch(jobs, profile, platform=platform, userName=userName)
     except Exception as e:
-        logger.error(f"Gmail digest failed: {e}")
+        logger.error(f"Resend digest failed: {e}")
 
 
-def _send_via_gmail(job, profile, platform=None, userName="Candidate"):
-    """Send a notification via Gmail. Returns True on success."""
-    if not profile.gmail_address or not profile.gmail_app_password:
-        logger.warning("Gmail notification enabled but credentials missing.")
+def _send_via_mailjet_batch(jobs, profile, platform=None, userName="Candidate"):
+    """Send a batch digest email via Mailjet API. Returns True on success."""
+    if not profile.mailjet_api_key or not profile.mailjet_secret_key or not profile.mailjet_from_email:
+        logger.warning("Mailjet batch notification enabled but credentials missing.")
         return False
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = (
-        f"New Job Match: {job.title} at {job.company} ({int(job.match_score)}%)"
-    )
-    msg["From"] = profile.gmail_address
-    msg["To"] = profile.gmail_address
+    recipients = (getattr(platform, "mailjet_recipients", None) or []) if platform else []
+    if not recipients:
+        logger.warning("Mailjet: no recipients configured for platform.")
+        return False
 
-    custom_template = platform.gmail_template if platform else None
-    if custom_template:
-        from string import Template
+    platform_name = (getattr(platform, "name", None) or "Job Platform") if platform else "Job Platform"
+    count = len(jobs)
 
-        html = Template(custom_template).safe_substitute(
-            jobCount=1,
-            userName=userName,
-            title=job.title,
-            company=job.company,
-            match_score=int(job.match_score),
-            reasoning=job.reasoning or "",
-            url=job.url,
+    # Build job rows HTML (reuse Resend default row template)
+    job_rows_html = ""
+    for j in jobs:
+        score = str(int(j.match_score)) if j.match_score else "0"
+        url_link = f'<a href="{j.url}">Details anzeigen</a>' if j.url else ""
+        job_rows_html += _RESEND_DEFAULT_JOB_ROW.format(
+            title=j.title or "",
+            company=j.company or "",
+            match_score=score,
+            reasoning=(j.reasoning or "")[:300],
+            url_link=url_link,
         )
+
+    # Custom template support (same syntax as Resend)
+    raw_template = (getattr(platform, "mailjet_template", None) or "") if platform else ""
+    if raw_template:
+        if "{{#jobs}}" in raw_template:
+            import re
+            loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", raw_template, re.DOTALL)
+            if loop_match:
+                loop_block = loop_match.group(1)
+                rendered_jobs = ""
+                for j in jobs:
+                    score = str(int(j.match_score)) if j.match_score else "0"
+                    rendered_jobs += loop_block\
+                        .replace("$title", j.title or "")\
+                        .replace("$company", j.company or "")\
+                        .replace("$match_score", score)\
+                        .replace("$reasoning", (j.reasoning or "")[:300])\
+                        .replace("$url", j.url or "#")
+                html = re.sub(r"\{\{#jobs\}\}.*?\{\{/jobs\}\}", rendered_jobs, raw_template, flags=re.DOTALL)
+            else:
+                html = raw_template
+            html = html\
+                .replace("$userName", userName)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)
+        elif "$jobs_html" in raw_template:
+            html = raw_template\
+                .replace("$jobs_html", job_rows_html)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)\
+                .replace("$userName", userName)
+        else:
+            html = raw_template
     else:
-        html = f"""
-    <html>
-      <body>
-        <p>Hello {userName},</p>
-        <h2>New Job Found!</h2>
-        <p><b>Title:</b> {job.title}</p>
-        <p><b>Company:</b> {job.company}</p>
-        <p><b>Match Score:</b> {int(job.match_score)}%</p>
-        <hr>
-        <h3>Reasoning:</h3>
-        <p>{job.reasoning}</p>
-        <hr>
-        <p>
-          <a href="{job.url}">View details</a>
-        </p>
-      </body>
-    </html>
-    """
-    part = MIMEText(html, "html")
-    msg.attach(part)
+        html = _RESEND_DEFAULT_HTML.format(
+            userName=userName,
+            count=count,
+            plural="es" if count != 1 else "",
+            platform_name=platform_name,
+            job_rows=job_rows_html,
+        )
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(profile.gmail_address, profile.gmail_app_password)
-        server.sendmail(profile.gmail_address, profile.gmail_address, msg.as_string())
+    subject = f"[Job Agent] {count} neue{'r' if count == 1 else ''} Job-Match{'es' if count != 1 else ''} von {platform_name}"
+    to_list = [{"Email": r} for r in (recipients if isinstance(recipients, list) else [recipients])]
+    payload = {
+        "Messages": [{
+            "From": {"Email": profile.mailjet_from_email, "Name": "Job Agent"},
+            "To": to_list,
+            "Subject": subject,
+            "HTMLPart": html,
+        }]
+    }
 
-    logger.info(f" Email notification sent for job {job.id}")
-    return True
+    resp = requests.post(
+        "https://api.mailjet.com/v3.1/send",
+        json=payload,
+        auth=(profile.mailjet_api_key, profile.mailjet_secret_key),
+        timeout=15,
+    )
+    if resp.status_code in (200, 201):
+        logger.info(f" Mailjet digest sent: {count} jobs → {recipients} (platform: {platform_name})")
+        return True
+    else:
+        logger.error(f"Mailjet API error {resp.status_code}: {resp.text}")
+        return False
+
+
+def _flush_mailjet_digest(crawl_job_id, user_id, db, r):
+    """Send batched Mailjet digest for all jobs queued during a crawl, if any."""
+    key = f"crawl:{crawl_job_id}:pending_mailjet"
+    job_ids_raw = r.lrange(key, 0, -1)
+    if not job_ids_raw:
+        return
+    r.delete(key)
+
+    job_ids = [
+        jid.decode("utf-8") if isinstance(jid, bytes) else str(jid)
+        for jid in job_ids_raw
+    ]
+    jobs = db.query(JobEntry).filter(JobEntry.id.in_(job_ids)).all()
+    if not jobs:
+        return
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile or not profile.mailjet_api_key:
+        return
+
+    user = db.query(User).filter(User.id == user_id).first()
+    userName = user.username if user else "Candidate"
+
+    platform = None
+    if jobs[0].platform_id:
+        platform = db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
+
+    try:
+        _send_via_mailjet_batch(jobs, profile, platform=platform, userName=userName)
+    except Exception as e:
+        logger.error(f"Mailjet digest failed: {e}")
+
+
+def _send_via_smtp_batch(jobs, profile, platform=None, userName="Candidate"):
+    """Send a batch digest email via SMTP (port 587, STARTTLS). Returns True on success."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    if not profile.smtp_host or not profile.smtp_user or not profile.smtp_password:
+        logger.warning("SMTP batch notification enabled but credentials missing.")
+        return False
+
+    recipients = (getattr(platform, "smtp_recipients", None) or []) if platform else []
+    if not recipients:
+        logger.warning("SMTP: no recipients configured for platform.")
+        return False
+
+    platform_name = (getattr(platform, "name", None) or "Job Platform") if platform else "Job Platform"
+    smtp_port = getattr(profile, "smtp_port", None) or 587
+    from_email = getattr(profile, "smtp_from_email", None) or profile.smtp_user
+    count = len(jobs)
+
+    # Build job rows HTML
+    job_rows_html = ""
+    for j in jobs:
+        score = str(int(j.match_score)) if j.match_score else "0"
+        url_link = f'<a href="{j.url}">Details anzeigen</a>' if j.url else ""
+        job_rows_html += _RESEND_DEFAULT_JOB_ROW.format(
+            title=j.title or "",
+            company=j.company or "",
+            match_score=score,
+            reasoning=(j.reasoning or "")[:300],
+            url_link=url_link,
+        )
+
+    # Custom template support (same syntax as Resend/Mailjet)
+    raw_template = (getattr(platform, "smtp_template", None) or "") if platform else ""
+    if raw_template:
+        if "{{#jobs}}" in raw_template:
+            import re
+            loop_match = re.search(r"\{\{#jobs\}\}(.*?)\{\{/jobs\}\}", raw_template, re.DOTALL)
+            if loop_match:
+                loop_block = loop_match.group(1)
+                rendered_jobs = ""
+                for j in jobs:
+                    score = str(int(j.match_score)) if j.match_score else "0"
+                    rendered_jobs += loop_block\
+                        .replace("$title", j.title or "")\
+                        .replace("$company", j.company or "")\
+                        .replace("$match_score", score)\
+                        .replace("$reasoning", (j.reasoning or "")[:300])\
+                        .replace("$url", j.url or "#")
+                html = re.sub(r"\{\{#jobs\}\}.*?\{\{/jobs\}\}", rendered_jobs, raw_template, flags=re.DOTALL)
+            else:
+                html = raw_template
+            html = html\
+                .replace("$userName", userName)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)
+        elif "$jobs_html" in raw_template:
+            html = raw_template\
+                .replace("$jobs_html", job_rows_html)\
+                .replace("$jobCount", str(count))\
+                .replace("$count", str(count))\
+                .replace("$platform_name", platform_name)\
+                .replace("$userName", userName)
+        else:
+            html = raw_template
+    else:
+        html = _RESEND_DEFAULT_HTML.format(
+            userName=userName,
+            count=count,
+            plural="es" if count != 1 else "",
+            platform_name=platform_name,
+            job_rows=job_rows_html,
+        )
+
+    subject = f"[Job Agent] {count} neue{'r' if count == 1 else ''} Job-Match{'es' if count != 1 else ''} von {platform_name}"
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = ", ".join(recipients if isinstance(recipients, list) else [recipients])
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        with smtplib.SMTP(profile.smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(profile.smtp_user, profile.smtp_password)
+            server.sendmail(from_email, recipients if isinstance(recipients, list) else [recipients], msg.as_string())
+
+        logger.info(f" SMTP digest sent: {count} jobs → {recipients} (platform: {platform_name})")
+        return True
+    except Exception as e:
+        logger.error(f"SMTP error: {e}")
+        return False
+
+
+def _flush_smtp_digest(crawl_job_id, user_id, db, r):
+    """Send batched SMTP digest for all jobs queued during a crawl, if any."""
+    key = f"crawl:{crawl_job_id}:pending_smtp"
+    job_ids_raw = r.lrange(key, 0, -1)
+    if not job_ids_raw:
+        return
+    r.delete(key)
+
+    job_ids = [
+        jid.decode("utf-8") if isinstance(jid, bytes) else str(jid)
+        for jid in job_ids_raw
+    ]
+    jobs = db.query(JobEntry).filter(JobEntry.id.in_(job_ids)).all()
+    if not jobs:
+        return
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile or not profile.smtp_host:
+        return
+
+    user = db.query(User).filter(User.id == user_id).first()
+    userName = user.username if user else "Candidate"
+
+    platform = None
+    if jobs[0].platform_id:
+        platform = db.query(JobPlatform).filter(JobPlatform.id == jobs[0].platform_id).first()
+
+    try:
+        _send_via_smtp_batch(jobs, profile, platform=platform, userName=userName)
+    except Exception as e:
+        logger.error(f"SMTP digest failed: {e}")
 
 
 def _send_via_pushover(job, profile, platform=None):
@@ -268,7 +480,7 @@ def _send_via_pushover(job, profile, platform=None):
 
 def send_notification(job, profile, db, adapters=None, platform=None):
     """
-    Sends notifications via the specified adapters (e.g. ['GMAIL', 'PUSHOVER']).
+    Sends notifications via the specified adapters (e.g. ['PUSHOVER']).
     If adapters is None or empty, falls back to profile.active_notification_service.
     Sends via all specified adapters and returns True if at least one succeeded.
     """
@@ -280,9 +492,6 @@ def send_notification(job, profile, db, adapters=None, platform=None):
     userName = user_obj.username if user_obj else "Candidate"
 
     _adapter_fns = {
-        "GMAIL": lambda j, p: _send_via_gmail(
-            j, p, platform=platform, userName=userName
-        ),
         "PUSHOVER": lambda j, p: _send_via_pushover(j, p, platform=platform),
     }
 
@@ -292,8 +501,6 @@ def send_notification(job, profile, db, adapters=None, platform=None):
     else:
         # Fallback: use all adapters that have credentials configured
         services = []
-        if profile.gmail_address and profile.gmail_app_password:
-            services.append("GMAIL")
         if profile.pushover_user_key and profile.pushover_api_token:
             services.append("PUSHOVER")
 
@@ -516,7 +723,6 @@ def analyze_job_task(job_data):
                         logger.info(
                             f"All jobs processed (some skipped) for crawl {crawl_job_id}. Marking as completed."
                         )
-                        _flush_gmail_digest(crawl_job_id, user_id, db, r)
                         r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                         r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                         r.delete("system:crawling")
@@ -535,6 +741,9 @@ def analyze_job_task(job_data):
                                 }
                             ),
                         )
+                        _flush_resend_digest(crawl_job_id, user_id, db, r)
+                        _flush_mailjet_digest(crawl_job_id, user_id, db, r)
+                        _flush_smtp_digest(crawl_job_id, user_id, db, r)
                         r.publish(
                             "job_updates", json.dumps({"type": "crawl_completed"})
                         )
@@ -679,46 +888,58 @@ def analyze_job_task(job_data):
                         platform_adapters = [
                             a.upper() for a in (platform.notification_adapters or [])
                         ]
-                        non_gmail = [a for a in platform_adapters if a != "GMAIL"]
-                        has_gmail = "GMAIL" in platform_adapters
+                        non_batch = [a for a in platform_adapters if a not in ("RESEND", "MAILJET", "SMTP")]
+                        has_resend = "RESEND" in platform_adapters
+                        has_mailjet = "MAILJET" in platform_adapters
+                        has_smtp = "SMTP" in platform_adapters
 
                         sent = False
-                        # Non-Gmail adapters (e.g. PUSHOVER) fire per job
-                        if non_gmail:
+                        if non_batch:
                             sent = send_notification(
                                 db_job,
                                 settings_profile,
                                 db,
-                                adapters=non_gmail,
+                                adapters=non_batch,
                                 platform=platform,
                             )
 
-                        # Gmail: queue for batch digest at crawl completion
-                        if has_gmail:
+                        # Resend: queue per-job for batch digest at crawl completion
+                        if has_resend:
                             if crawl_job_id:
-                                r.rpush(
-                                    f"crawl:{crawl_job_id}:pending_gmail", db_job.id
-                                )
-                                r.expire(f"crawl:{crawl_job_id}:pending_gmail", 3600)
+                                r.rpush(f"crawl:{crawl_job_id}:pending_resend", db_job.id)
+                                r.expire(f"crawl:{crawl_job_id}:pending_resend", 3600)
                             else:
-                                # No crawl context — send immediately
-                                user_obj = (
-                                    db.query(User).filter(User.id == user_id).first()
-                                )
-                                userName = (
-                                    user_obj.username if user_obj else "Candidate"
-                                )
-                                sent = (
-                                    _send_via_gmail(
-                                        db_job,
-                                        settings_profile,
-                                        platform=platform,
-                                        userName=userName,
-                                    )
-                                    or sent
-                                )
+                                user_obj = db.query(User).filter(User.id == user_id).first()
+                                uname = user_obj.username if user_obj else "Candidate"
+                                sent = _send_via_resend_batch(
+                                    [db_job], settings_profile, platform=platform, userName=uname
+                                ) or sent
 
-                        if sent or has_gmail:
+                        # Mailjet: same batch pattern
+                        if has_mailjet:
+                            if crawl_job_id:
+                                r.rpush(f"crawl:{crawl_job_id}:pending_mailjet", db_job.id)
+                                r.expire(f"crawl:{crawl_job_id}:pending_mailjet", 3600)
+                            else:
+                                user_obj = db.query(User).filter(User.id == user_id).first()
+                                uname = user_obj.username if user_obj else "Candidate"
+                                sent = _send_via_mailjet_batch(
+                                    [db_job], settings_profile, platform=platform, userName=uname
+                                ) or sent
+
+                        # SMTP: same batch pattern
+                        if has_smtp:
+                            if crawl_job_id:
+                                r.rpush(f"crawl:{crawl_job_id}:pending_smtp", db_job.id)
+                                r.expire(f"crawl:{crawl_job_id}:pending_smtp", 3600)
+                            else:
+                                user_obj = db.query(User).filter(User.id == user_id).first()
+                                uname = user_obj.username if user_obj else "Candidate"
+                                sent = _send_via_smtp_batch(
+                                    [db_job], settings_profile, platform=platform, userName=uname
+                                ) or sent
+
+                        if sent or has_resend or has_mailjet or has_smtp:
                             db_job.notification_sent = True
                             db.commit()
         except Exception as notif_e:
@@ -737,7 +958,6 @@ def analyze_job_task(job_data):
                     logger.info(
                         f"All jobs analyzed for crawl {crawl_job_id}. Marking as completed."
                     )
-                    _flush_gmail_digest(crawl_job_id, user_id, db, r)
                     r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                     r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                     r.delete("system:crawling")
@@ -756,6 +976,8 @@ def analyze_job_task(job_data):
                             }
                         ),
                     )
+                    _flush_resend_digest(crawl_job_id, user_id, db, r)
+                    _flush_mailjet_digest(crawl_job_id, user_id, db, r)
                     r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
     except (
@@ -864,7 +1086,6 @@ def save_job_basic_task(job_data):
                     total = int(job_hash.get(b"total", 0))
                     jobs_saved = int(job_hash.get(b"jobs_saved", 0))
                     if (jobs_saved + jobs_skipped) >= total and total > 0:
-                        _flush_gmail_digest(crawl_job_id, user_id, db, r)
                         r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                         r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                         r.delete("system:crawling")
@@ -877,6 +1098,9 @@ def save_job_basic_task(job_data):
                             "total": total,
                             "total_found": total_found,
                         }))
+                        _flush_resend_digest(crawl_job_id, user_id, db, r)
+                        _flush_mailjet_digest(crawl_job_id, user_id, db, r)
+                        _flush_smtp_digest(crawl_job_id, user_id, db, r)
                         r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
 
@@ -948,7 +1172,6 @@ def save_job_basic_task(job_data):
                 total = int(job_hash.get(b"total", 0))
                 jobs_skipped = int(job_hash.get(b"jobs_skipped", 0))
                 if (jobs_saved + jobs_skipped) >= total and total > 0:
-                    _flush_gmail_digest(crawl_job_id, user_id, db, r)
                     r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
                     r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
                     r.delete("system:crawling")
@@ -961,6 +1184,8 @@ def save_job_basic_task(job_data):
                         "total": total,
                         "total_found": total_found,
                     }))
+                    _flush_resend_digest(crawl_job_id, user_id, db, r)
+                    _flush_mailjet_digest(crawl_job_id, user_id, db, r)
                     r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
     except Exception as e:

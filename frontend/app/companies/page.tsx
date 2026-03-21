@@ -224,7 +224,7 @@ function CompanyCard({ company }: { company: any }) {
                                 <Section title="Culture & Vibe" icon={<Users className="w-4 h-4" />} color="indigo">
                                     <div className="relative">
                                         <div className="absolute -left-2 top-0 bottom-0 w-1 bg-indigo-500/20 rounded-full" />
-                                        <p className="text-sm text-indigo-700 dark:text-indigo-300 leading-relaxed italic pl-4">„{d.culture_summary}"</p>
+                                        <p className="text-sm text-indigo-700 dark:text-indigo-300 leading-relaxed italic pl-4">{"\u201E"}{d.culture_summary}{"\""}</p>
                                     </div>
                                 </Section>
                             )}

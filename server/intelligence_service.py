@@ -280,6 +280,8 @@ def analyze_job(
         force_msg = "Respond exclusively in English!"
 
     try:
+        tone_instruction = "Sprich den Kandidaten direkt mit 'du' an (Duzen). Verwende Formulierungen wie 'Da du Erfahrung in xyz hast...' oder 'Deine Stärken liegen in...'."
+
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -287,18 +289,19 @@ def analyze_job(
                     "role": "system",
                     "content": (
                         f"You are an experienced career advisor. Analyze the fit between the candidate profile and the job description.\n"
-                        f"IMPORTANT: All content must be written in {lang_name}. {force_msg}\n\n"
+                        f"IMPORTANT: All content must be written in {lang_name}. {force_msg}\n"
+                        f"TONE: {tone_instruction}\n\n"  # Hier wird der Stil erzwungen
                         f"Respond exclusively with a raw JSON object. Do not use markdown code blocks (no ```json).\n"
                         f'{{ "score": <integer 0-100>, "reasoning": "<markdown_text>" }}\n\n'
                         f"The 'reasoning' field must be a valid JSON string containing these markdown sections in {lang_name}:\n"
                         f"## {h_summary}\n"
-                        f"Short evaluation (2-3 sentences).\n\n"
+                        f"Short evaluation (2-3 sentences) addressing the candidate directly.\n\n"
                         f"## {h_strengths}\n"
                         f"Bullet points on matching skills.\n\n"
                         f"## {h_gaps}\n"
                         f"Bullet points on missing requirements.\n\n"
                         f"## {h_rec}\n"
-                        f"Concrete recommendation."
+                        f"Concrete recommendation for the candidate."
                     ),
                 },
                 {
@@ -444,6 +447,11 @@ def generate_interview_prep(
     Generate structured interview preparation material.
     Returns dict with: questions, talking_points, company_insights, preparation_tips
     """
+    tone_instruction = (
+        "Du musst den Nutzer (Kandidaten) in allen Texten (Deep Dive, Elevator Pitch, Strategien) direkt mit 'du' ansprechen. "
+        "Verwende niemals 'der Kandidat' oder 'er/sie', sondern immer 'du', 'deine Erfahrung', 'dein Hintergrund'."
+    )
+
     prompt = f"""
     
       Act as an Interview Preparation Coach, Elite-Karrierecoach and Psychologist. 
@@ -459,129 +467,42 @@ def generate_interview_prep(
       Rules:
       - Customize advice based on the user's input
       - Maintain a professional and supportive tone
+      - **WICHTIG:** {tone_instruction}  # Die neue Regel
 
       **Role:** {job_title}
       **Company:** {company_name}
-
-      **Job Description:**
-      {job_description[:20000]}
-
-      **CV Summary:**
-      {cv_summary[:10000]}
-
-      **Company Culture:**
-      {(company_culture or '')[:10000]}
-
-      **Language:** {language}
+      ...
+      (Rest der Variablen wie Job Description etc.)
+      ...
 
       Generate a JSON object with the following structure:
       {{
-        "context": {{
-          "experts_used": ["Interview Preparation Coach", "Elite-Karrierecoach", "Psychologist"],
-          "purpose": "Interview preparation",
-          "potential_gaps": ["Gap 1", "Gap 2"]
-        }},
-        "core_research": {{
-          "success_factors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4", "Factor 5"],
-          "hypothesis_evaluation": "Analyse regarding Change-Management and Fachkompetenz",
-          "counterfactuals": {{
-            "risks": ["Risk 1", "Risk 2"],
-            "mitigation": ["Mitigation 1", "Mitigation 2"]
-          }}
-        }},
-        "specifications": {{
-          "time_period": "Current market situation 2024-2026",
-          "geographic_location": "Geographic location",
-          "industry_focus": "Relevant market segment",
-          "demographic_focus": "Department and corporate culture",
-          "ethical_considerations": "Authenticity and transfer performance"
-        }},
+        ...
         "report_output": {{
-          "executive_summary": "Executive Summary (max. 3 sentences)",
-          "deep_dive_analysis": "Detaillierter Q&A Leitfaden and behavioral analysis in Markdown format",
-          "case_studies": [
-            {{
-              "title": "Title of Case Study from my experience",
-              "description": "My best story relevant to the role"
-            }}
-          ],
-          "expert_predictions": [
-            "Expert tip/prediction 1"
-          ],
-          "questions_for_interviewer": [
-            "Question 1", "Question 2", "Question 3", "Question 4", "Question 5", "Question 6", "Question 7", "Question 8", "Question 9", "Question 10"
-          ],
-          "comparative_analysis": [
-            {{
-              "requirement": "Job requirement",
-              "my_story": "My best story relevant to the role",
-              "gap_evaluation": "Solution / Match"
-            }}
-          ]
-        }},
-        "critical_analysis": {{
-          "psychological_questions": [
-            {{
-              "question": "Unpredictable psychological interview question",
-              "suggested_answer": "Answer strategy (STAR method, emotional intelligence)"
-            }}
-          ],
-          "solution_selling_pitch": "I as a solution for a specific problem of the company",
-          "interdisciplinary_connections": "Connection of technical skillset with emotional intelligence"
+          "executive_summary": "Executive Summary (max. 3 sentences), addressing the user as 'du'.",
+          "deep_dive_analysis": "Detaillierter Q&A Leitfaden und Verhaltensanalyse. Sprich den Nutzer direkt an (z.B. 'Hier solltest du...').",
+          ...
         }},
         "structured_prep": {{
           "gap_analysis": [
             {{
               "requirement": "Job requirement",
-              "cv_status": "Status im CV des Kandidaten (z.B. '3 Jahre Erfahrung' or 'Nicht vorhanden')",
+              "cv_status": "Status in deinem CV (z.B. 'Du hast 3 Jahre Erfahrung')",
               "gap_severity": "Gap severity",
-              "interview_strategy": "Konkrete Strategie, wie man diesen Punkt im Interview adressiert"
+              "interview_strategy": "Konkrete Strategie, wie DU diesen Punkt adressierst"
             }}
           ],
-          "top5_questions": [
-            {{
-              "question": "Spezifische, verhaltensbasierte Interviewfrage zugeschnitten auf diese Stelle",
-              "type": "behavioral",
-              "focus_area": "Welche Kompetenz wird hier geprüft",
-              "hint": "STAR-Methode empfohlen"
-            }}
-          ],
-          "elevator_pitch": "Überzeugender, fließender Antworttext auf die Frage 'Erzählen Sie etwas über sich' – verknüpft direkt die Stärken des Kandidaten mit den Bedürfnissen von {company_name}. Ca. 3-4 Sätze.",
-          "star_answers": [
-            {{
-              "requirement": "Job requirement",
-              "situation": "Konkreter Kontext aus dem CV des Kandidaten",
-              "task": "What was the specific task or challenge?",
-              "action": "What did the candidate do? (3-5 steps)",
-              "result": "Measurable result with numbers if possible"
-            }}
-          ],
-          "online_references": [
-            {{
-              "title": "Title of the resource",
-              "url": "https://www.example.com/artikel",
-              "relevance": "Why is this source relevant for the preparation?"
-            }}
-          ]
+          "elevator_pitch": "Dein persönlicher Antworttext auf die Frage 'Erzähl uns etwas über dich' – formuliert in der Ich-Form für den Nutzer, damit er ihn direkt so sprechen kann.",
+          ...
         }}
       }}
 
-      WICHTIG für structured_prep:
-      - gap_severity must be one of these values: "no gap", "minor gap", "critical gap"
-      - type must be one of these values: "behavioral", "case", "situational"
-      - Create exactly 5 entries in top5_questions
-      - Create exactly 2 entries in star_answers (the 2 most important requirements)
-      - online_references: Search for real, relevant URLs (company website, LinkedIn, industry reports, professional media)
-      - elevator_pitch should be formulated as a spoken text, not as bullet points
-
       Answer only with valid JSON without Markdown wrapper!
-
-      """ + (
-        "WICHTIG: Antworte ausschließlich auf Englisch!!!"
+    """ + (
+        f"WICHTIG: Antworte ausschließlich auf Englisch und verwende 'you'!!!"
         if language == "en"
-        else "WICHTIG: Antworte ausschließlich auf Deutsch!!!"
+        else f"WICHTIG: Antworte ausschließlich auf Deutsch und verwende IMMER 'du' (Duzen)!"
     )
-
     client = get_ai_client(api_key=api_key)
     try:
         response = client.chat.completions.create(

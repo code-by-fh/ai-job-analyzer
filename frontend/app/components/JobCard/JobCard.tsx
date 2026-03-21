@@ -1,4 +1,4 @@
-import { Star } from 'lucide-react';
+import { Star, Trash2, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLanguage } from '../LanguageProvider';
@@ -101,6 +101,28 @@ export default function JobCard({
                                         </svg>
                                     </div>
                                 </label>
+                            )}
+                            {job.is_archived && (
+                                <>
+                                    {onUpdateJob && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onUpdateJob(job.id, { is_archived: false }); }}
+                                            className="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-90 cursor-pointer text-slate-300 dark:text-slate-600 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-500/30"
+                                            title={t('restoreJob')}
+                                        >
+                                            <RotateCcw className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                    {onArchive && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onArchive(job.id); }}
+                                            className="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-90 cursor-pointer text-slate-300 dark:text-slate-600 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-transparent hover:border-rose-200 dark:hover:border-rose-500/30"
+                                            title={t('deletePermanent')}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </>
                             )}
                             <button
                                 onClick={() => onToggleFavorite(job.id, job.is_favorite || false)}

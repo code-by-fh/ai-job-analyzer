@@ -175,9 +175,7 @@ export default function AdminSettingsPage() {
         setStatus('Saving...');
         try {
             const payload: Record<string, string | null> = { openrouter_model: model };
-            if (apiKey !== '') {
-                payload.openrouter_api_key = apiKey || null;
-            }
+            if (apiKey !== '') payload.openrouter_api_key = apiKey || null;
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/admin/settings`, {
                 method: 'POST',
                 headers: {
@@ -432,6 +430,12 @@ export default function AdminSettingsPage() {
 
             {/* Notification Templates */}
             <div className="relative z-10 mt-8 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2 mb-1">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Globale Benachrichtigungs-Templates</h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-5">
+                    Templates, die hier angelegt werden, sind für alle Nutzer verfügbar (als globale Vorlagen) – für Pushover <span className="font-medium text-slate-700 dark:text-slate-300">und</span> E-Mail.
+                </p>
                 <TemplateManager isAdmin={true} adminMode={true} />
             </div>
 

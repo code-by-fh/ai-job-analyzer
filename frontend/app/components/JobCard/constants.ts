@@ -106,6 +106,16 @@ export const STATUS_META: Record<string, StatusMeta> = {
         stepActive: '', 
         connectorCls: '' 
     },
+    ARCHIVE: {
+        icon: 'Archive',
+        label: 'Archive',
+        labelKey: 'archive' as any,
+        pillCls: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600',
+        cardBorder: 'border-slate-200 dark:border-slate-800 opacity-60',
+        stepDone: '',
+        stepActive: '',
+        connectorCls: ''
+    }
 };
 
 

@@ -43,6 +43,8 @@ interface FilterBarProps {
     platformFilter: number | undefined;
     setPlatformFilter: (id: number | undefined) => void;
     availablePlatforms: { id: number; name: string }[];
+    viewMode?: 'list' | 'board';
+    setViewMode?: (mode: 'list' | 'board') => void;
 }
 
 export default function FilterBar({
@@ -63,6 +65,8 @@ export default function FilterBar({
     platformFilter,
     setPlatformFilter,
     availablePlatforms = [],
+    viewMode = 'list',
+    setViewMode,
 }: FilterBarProps) {
     const { t } = useLanguage();
     const [isStatusOpen, setIsStatusOpen] = useState(false);
@@ -136,6 +140,34 @@ export default function FilterBar({
                         </button>
                     )}
                 </div>
+
+                {/* View Mode Toggle */}
+                {setViewMode && (
+                    <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm shrink-0">
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`flex items-center justify-center p-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                                viewMode === 'list'
+                                ? 'bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                            }`}
+                            title={t('listView' as any) || 'List View'}
+                        >
+                            <LucideIcons.List className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('board')}
+                            className={`flex items-center justify-center p-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                                viewMode === 'board'
+                                ? 'bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                            }`}
+                            title={t('boardView' as any) || 'Board View'}
+                        >
+                            <LucideIcons.Kanban className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Sort */}
                 <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm shrink-0">

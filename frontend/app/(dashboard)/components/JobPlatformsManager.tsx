@@ -7,8 +7,11 @@ import { logger } from '../../lib/logger';
 import { fetchWithAuth } from '../../components/AuthProvider';
 import { Platform, LastRun } from './JobPlatforms/types';
 import PlatformCard from './JobPlatforms/PlatformCard';
-import GmailTemplateModal from './JobPlatforms/GmailTemplateModal';
 import PushoverTemplateModal from './JobPlatforms/PushoverTemplateModal';
+import ResendTemplateModal from './JobPlatforms/ResendTemplateModal';
+import MailjetTemplateModal from './JobPlatforms/MailjetTemplateModal';
+import SmtpTemplateModal from './JobPlatforms/SmtpTemplateModal';
+import NotificationAdaptersModal from './JobPlatforms/NotificationAdaptersModal';
 import AddPlatformInput from './JobPlatforms/AddPlatformInput';
 import { NotificationTemplate } from '../../components/TemplateManager';
 
@@ -35,20 +38,40 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
     const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
     const [isAddingPlatform, setIsAddingPlatform] = useState(false);
 
-    const [templatePlatform, setTemplatePlatform] = useState<Platform | null>(null);
-    const [templateValue, setTemplateValue] = useState<string>('');
-    const [recipientsValue, setRecipientsValue] = useState<string[]>([]);
-    const [recipientInput, setRecipientInput] = useState<string>('');
-
     const [pushoverModalPlatform, setPushoverModalPlatform] = useState<Platform | null>(null);
     const [pushoverTemplateValue, setPushoverTemplateValue] = useState<string>('');
     const [pushoverModalTestStatus, setPushoverModalTestStatus] = useState<TestStatus>('idle');
     const [pushoverModalTestError, setPushoverModalTestError] = useState<string | null>(null);
 
-    const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
+    const [resendModalPlatform, setResendModalPlatform] = useState<Platform | null>(null);
+    const [resendTemplateValue, setResendTemplateValue] = useState<string>('');
+    const [resendRecipientsValue, setResendRecipientsValue] = useState<string>('');
+    const [resendModalTestStatus, setResendModalTestStatus] = useState<TestStatus>('idle');
+    const [resendModalTestError, setResendModalTestError] = useState<string | null>(null);
+    const [resendModalSaveStatus, setResendModalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [resendModalSaveError, setResendModalSaveError] = useState<string | null>(null);
 
-    const [testMailStatus, setTestMailStatus] = useState<TestStatus>('idle');
-    const [testMailError, setTestMailError] = useState<string | null>(null);
+    const [mailjetModalPlatform, setMailjetModalPlatform] = useState<Platform | null>(null);
+    const [mailjetTemplateValue, setMailjetTemplateValue] = useState<string>('');
+    const [mailjetRecipientsValue, setMailjetRecipientsValue] = useState<string>('');
+    const [mailjetModalTestStatus, setMailjetModalTestStatus] = useState<TestStatus>('idle');
+    const [mailjetModalTestError, setMailjetModalTestError] = useState<string | null>(null);
+    const [mailjetModalSaveStatus, setMailjetModalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [mailjetModalSaveError, setMailjetModalSaveError] = useState<string | null>(null);
+
+    const [smtpModalPlatform, setSmtpModalPlatform] = useState<Platform | null>(null);
+    const [smtpTemplateValue, setSmtpTemplateValue] = useState<string>('');
+    const [smtpRecipientsValue, setSmtpRecipientsValue] = useState<string>('');
+    const [smtpModalTestStatus, setSmtpModalTestStatus] = useState<TestStatus>('idle');
+    const [smtpModalTestError, setSmtpModalTestError] = useState<string | null>(null);
+    const [smtpModalSaveStatus, setSmtpModalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [smtpModalSaveError, setSmtpModalSaveError] = useState<string | null>(null);
+
+    const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
+    const [notificationModalPlatformId, setNotificationModalPlatformId] = useState<number | null>(null);
+    const notificationModalPlatform = platforms.find(p => p.id === notificationModalPlatformId) ?? null;
+    const [returnToNotificationPlatformId, setReturnToNotificationPlatformId] = useState<number | null>(null);
+
     const [pushoverTestStatus, setPushoverTestStatus] = useState<Record<number, TestStatus>>({});
     const [pushoverTestError, setPushoverTestError] = useState<Record<number, string | null>>({});
 
@@ -143,6 +166,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             .catch(() => { });
     }, [token]);
 
+    const anyTemplateModalOpen = !!(pushoverModalPlatform || resendModalPlatform || mailjetModalPlatform || smtpModalPlatform);
+    useEffect(() => {
+        if (!anyTemplateModalOpen && returnToNotificationPlatformId) {
+            setNotificationModalPlatformId(returnToNotificationPlatformId);
+            setReturnToNotificationPlatformId(null);
+        }
+    }, [anyTemplateModalOpen]);
+
     const addPlatform = async () => {
         if (!newUrl) return;
         try {
@@ -166,9 +197,14 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 body: JSON.stringify({ url: newUrl })
             });
             if (res.ok) {
+                const newPlatform: Platform = await res.json();
                 setNewUrl('');
                 fetchPlatforms();
                 setStatus(t('platformAdded'));
+                setIsAddingPlatform(false);
+                setTimeout(() => setStatus(''), 3000);
+                triggerCrawl(newPlatform);
+                return;
             } else {
                 const err = await res.json();
                 setStatus(`${t('error')}: ${err.detail || 'Failed to add'} ❌`);
@@ -215,7 +251,7 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         setTimeout(() => setStatus(''), 3000);
     };
 
-    const updatePlatform = async (id: number, data: any) => {
+    const updatePlatform = async (id: number, data: any): Promise<boolean> => {
         try {
             const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${id}`, {
                 method: 'PATCH',
@@ -224,16 +260,19 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             });
             if (res.ok) {
                 fetchPlatforms();
+                return true;
             } else {
                 const err = await res.json().catch(() => ({}));
                 setStatus(`${t('error')}: ${err.detail || 'Failed to update'} ❌`);
                 setTimeout(() => setStatus(''), 3000);
                 logger.error({ status: res.status, err }, "Update platform failed");
+                return false;
             }
         } catch (e) {
             setStatus(t('networkError') || 'Network Error');
             setTimeout(() => setStatus(''), 3000);
             logger.error({ err: e }, "Update platform failed");
+            return false;
         }
     };
 
@@ -254,30 +293,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setStatus(t('error'));
         }
         setTimeout(() => setStatus(''), 3000);
-    };
-
-    const openTemplateModal = (platform: Platform) => {
-        setTemplatePlatform(platform);
-        setTemplateValue(platform.gmail_template || '');
-        setRecipientsValue(platform.gmail_recipients || []);
-        setRecipientInput('');
-    };
-
-    const saveTemplate = async () => {
-        if (!templatePlatform) return;
-        await updatePlatform(templatePlatform.id, {
-            gmail_template: templateValue || null,
-            gmail_recipients: recipientsValue,
-        });
-        setTemplatePlatform(null);
-    };
-
-    const addRecipient = () => {
-        const email = recipientInput.trim().toLowerCase();
-        if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !recipientsValue.includes(email)) {
-            setRecipientsValue(prev => [...prev, email]);
-        }
-        setRecipientInput('');
     };
 
     const openPushoverModal = (platform: Platform) => {
@@ -317,33 +332,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
         setTimeout(() => setPushoverModalTestStatus('idle'), 5000);
     };
 
-    const sendTestMail = async () => {
-        if (!templatePlatform) return;
-        setTestMailStatus('sending');
-        setTestMailError(null);
-        try {
-            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${templatePlatform.id}/test-gmail`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    recipients: recipientsValue.length > 0 ? recipientsValue : null,
-                    template: templateValue || null,
-                }),
-            });
-            if (res.ok) {
-                setTestMailStatus('ok');
-            } else {
-                const body = await res.json().catch(() => ({}));
-                setTestMailError(body?.detail || `HTTP ${res.status}`);
-                setTestMailStatus('error');
-            }
-        } catch (e: any) {
-            setTestMailError(e?.message || 'Network error');
-            setTestMailStatus('error');
-        }
-        setTimeout(() => setTestMailStatus('idle'), 5000);
-    };
-
     const sendTestPushover = async (platformId: number) => {
         setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'sending' }));
         setPushoverTestError(prev => ({ ...prev, [platformId]: null }));
@@ -363,6 +351,238 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
             setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'error' }));
         }
         setTimeout(() => setPushoverTestStatus(prev => ({ ...prev, [platformId]: 'idle' })), 5000);
+    };
+
+    const openResendModal = (platform: Platform) => {
+        setResendModalPlatform(platform);
+        setResendTemplateValue(platform.resend_template || '');
+        setResendRecipientsValue((platform.resend_recipients || []).join(', '));
+        setResendModalTestStatus('idle');
+        setResendModalTestError(null);
+        setResendModalSaveStatus('idle');
+        setResendModalSaveError(null);
+    };
+
+    const saveResendTemplate = async () => {
+        if (!resendModalPlatform) return;
+        const recipients = resendRecipientsValue.split(',').map(s => s.trim()).filter(Boolean);
+        setResendModalSaveStatus('saving');
+        setResendModalSaveError(null);
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${resendModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    resend_template: resendTemplateValue || null,
+                    resend_recipients: recipients.length > 0 ? recipients : null,
+                }),
+            });
+            if (res.ok) {
+                fetchPlatforms();
+                setResendModalSaveStatus('saved');
+                setTimeout(() => setResendModalPlatform(null), 800);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setResendModalSaveError(err.detail || 'Speichern fehlgeschlagen');
+                setResendModalSaveStatus('error');
+            }
+        } catch (e: any) {
+            setResendModalSaveError(e?.message || 'Netzwerkfehler');
+            setResendModalSaveStatus('error');
+        }
+    };
+
+    const sendTestResendFromModal = async () => {
+        if (!resendModalPlatform) return;
+        setResendModalTestStatus('sending');
+        setResendModalTestError(null);
+        try {
+            const recipients = resendRecipientsValue
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${resendModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    resend_template: resendTemplateValue || null,
+                    resend_recipients: recipients.length > 0 ? recipients : null,
+                }),
+            });
+
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${resendModalPlatform.id}/test-resend`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                setResendModalTestStatus('ok');
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setResendModalTestError(body?.detail || `HTTP ${res.status}`);
+                setResendModalTestStatus('error');
+            }
+        } catch (e: any) {
+            setResendModalTestError(e?.message || 'Network error');
+            setResendModalTestStatus('error');
+        }
+        setTimeout(() => setResendModalTestStatus('idle'), 5000);
+    };
+
+    const openSmtpModal = (platform: Platform) => {
+        setSmtpModalPlatform(platform);
+        setSmtpTemplateValue(platform.smtp_template || '');
+        setSmtpRecipientsValue((platform.smtp_recipients || []).join(', '));
+        setSmtpModalTestStatus('idle');
+        setSmtpModalTestError(null);
+        setSmtpModalSaveStatus('idle');
+        setSmtpModalSaveError(null);
+    };
+
+    const saveSmtpTemplate = async () => {
+        if (!smtpModalPlatform) return;
+        const recipients = smtpRecipientsValue
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+        setSmtpModalSaveStatus('saving');
+        setSmtpModalSaveError(null);
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${smtpModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    smtp_template: smtpTemplateValue || null,
+                    smtp_recipients: recipients.length > 0 ? recipients : null,
+                }),
+            });
+            if (res.ok) {
+                fetchPlatforms();
+                setSmtpModalSaveStatus('saved');
+                setTimeout(() => setSmtpModalPlatform(null), 800);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setSmtpModalSaveError(err.detail || 'Speichern fehlgeschlagen');
+                setSmtpModalSaveStatus('error');
+            }
+        } catch (e: any) {
+            setSmtpModalSaveError(e?.message || 'Netzwerkfehler');
+            setSmtpModalSaveStatus('error');
+        }
+    };
+
+    const sendTestSmtpFromModal = async () => {
+        if (!smtpModalPlatform) return;
+        const recipients = smtpRecipientsValue
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+        if (recipients.length === 0) {
+            setSmtpModalTestStatus('error');
+            setSmtpModalTestError('Bitte mindestens einen Empfänger eintragen.');
+            setTimeout(() => setSmtpModalTestStatus('idle'), 5000);
+            return;
+        }
+        setSmtpModalTestStatus('sending');
+        setSmtpModalTestError(null);
+        try {
+            // Save recipients and template first so the test endpoint can read them from DB
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${smtpModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    smtp_template: smtpTemplateValue || null,
+                    smtp_recipients: recipients,
+                }),
+            });
+
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${smtpModalPlatform.id}/test-smtp`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                setSmtpModalTestStatus('ok');
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setSmtpModalTestError(body?.detail || `HTTP ${res.status}`);
+                setSmtpModalTestStatus('error');
+            }
+        } catch (e: any) {
+            setSmtpModalTestError(e?.message || 'Network error');
+            setSmtpModalTestStatus('error');
+        }
+        setTimeout(() => setSmtpModalTestStatus('idle'), 5000);
+    };
+
+    const openMailjetModal = (platform: Platform) => {
+        setMailjetModalPlatform(platform);
+        setMailjetTemplateValue(platform.mailjet_template || '');
+        setMailjetRecipientsValue((platform.mailjet_recipients || []).join(', '));
+        setMailjetModalTestStatus('idle');
+        setMailjetModalTestError(null);
+        setMailjetModalSaveStatus('idle');
+        setMailjetModalSaveError(null);
+    };
+
+    const saveMailjetTemplate = async () => {
+        if (!mailjetModalPlatform) return;
+        const recipients = mailjetRecipientsValue.split(',').map(s => s.trim()).filter(Boolean);
+        setMailjetModalSaveStatus('saving');
+        setMailjetModalSaveError(null);
+        try {
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${mailjetModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailjet_template: mailjetTemplateValue || null,
+                    mailjet_recipients: recipients.length > 0 ? recipients : null,
+                }),
+            });
+            if (res.ok) {
+                fetchPlatforms();
+                setMailjetModalSaveStatus('saved');
+                setTimeout(() => setMailjetModalPlatform(null), 800);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setMailjetModalSaveError(err.detail || 'Speichern fehlgeschlagen');
+                setMailjetModalSaveStatus('error');
+            }
+        } catch (e: any) {
+            setMailjetModalSaveError(e?.message || 'Netzwerkfehler');
+            setMailjetModalSaveStatus('error');
+        }
+    };
+
+    const sendTestMailjetFromModal = async () => {
+        if (!mailjetModalPlatform) return;
+        setMailjetModalTestStatus('sending');
+        setMailjetModalTestError(null);
+        try {
+            const recipients = mailjetRecipientsValue
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${mailjetModalPlatform.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailjet_template: mailjetTemplateValue || null,
+                    mailjet_recipients: recipients.length > 0 ? recipients : null,
+                }),
+            });
+
+            const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/platforms/${mailjetModalPlatform.id}/test-mailjet`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                setMailjetModalTestStatus('ok');
+            } else {
+                const body = await res.json().catch(() => ({}));
+                setMailjetModalTestError(body?.detail || `HTTP ${res.status}`);
+                setMailjetModalTestStatus('error');
+            }
+        } catch (e: any) {
+            setMailjetModalTestError(e?.message || 'Network error');
+            setMailjetModalTestStatus('error');
+        }
+        setTimeout(() => setMailjetModalTestStatus('idle'), 5000);
     };
 
     const toggleAdapter = async (platform: Platform, adapter: string) => {
@@ -421,26 +641,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 </div>
             </ConfirmModal>
 
-            {templatePlatform && (
-                <GmailTemplateModal
-                    platform={templatePlatform}
-                    templates={notificationTemplates}
-                    templateValue={templateValue}
-                    onTemplateChange={setTemplateValue}
-                    recipientsValue={recipientsValue}
-                    onRemoveRecipient={(email) => setRecipientsValue(prev => prev.filter(r => r !== email))}
-                    recipientInput={recipientInput}
-                    onRecipientInputChange={setRecipientInput}
-                    onAddRecipient={addRecipient}
-                    onClose={() => setTemplatePlatform(null)}
-                    onSave={saveTemplate}
-                    testMailStatus={testMailStatus}
-                    testMailError={testMailError}
-                    onSendTestMail={sendTestMail}
-                    isAdmin={!!user?.is_admin}
-                />
-            )}
-
             {pushoverModalPlatform && (
                 <PushoverTemplateModal
                     platform={pushoverModalPlatform}
@@ -453,6 +653,74 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                     testError={pushoverModalTestError}
                     onSendTest={sendTestPushoverFromModal}
                     isAdmin={!!user?.is_admin}
+                />
+            )}
+
+            {smtpModalPlatform && (
+                <SmtpTemplateModal
+                    platform={smtpModalPlatform}
+                    templates={notificationTemplates}
+                    templateValue={smtpTemplateValue}
+                    onTemplateChange={setSmtpTemplateValue}
+                    recipientsValue={smtpRecipientsValue}
+                    onRecipientsChange={setSmtpRecipientsValue}
+                    onClose={() => setSmtpModalPlatform(null)}
+                    onSave={saveSmtpTemplate}
+                    saveStatus={smtpModalSaveStatus}
+                    saveError={smtpModalSaveError}
+                    testStatus={smtpModalTestStatus}
+                    testError={smtpModalTestError}
+                    onSendTest={sendTestSmtpFromModal}
+                />
+            )}
+
+            {mailjetModalPlatform && (
+                <MailjetTemplateModal
+                    platform={mailjetModalPlatform}
+                    templates={notificationTemplates}
+                    templateValue={mailjetTemplateValue}
+                    onTemplateChange={setMailjetTemplateValue}
+                    recipientsValue={mailjetRecipientsValue}
+                    onRecipientsChange={setMailjetRecipientsValue}
+                    onClose={() => setMailjetModalPlatform(null)}
+                    onSave={saveMailjetTemplate}
+                    saveStatus={mailjetModalSaveStatus}
+                    saveError={mailjetModalSaveError}
+                    testStatus={mailjetModalTestStatus}
+                    testError={mailjetModalTestError}
+                    onSendTest={sendTestMailjetFromModal}
+                />
+            )}
+
+            {notificationModalPlatform && (
+                <NotificationAdaptersModal
+                    platform={notificationModalPlatform}
+                    configuredAdapters={configuredAdapters}
+                    onClose={() => setNotificationModalPlatformId(null)}
+                    onToggleAdapter={toggleAdapter}
+                    onOpenPushoverModal={(p) => { setReturnToNotificationPlatformId(p.id); setNotificationModalPlatformId(null); openPushoverModal(p); }}
+                    onOpenResendModal={(p) => { setReturnToNotificationPlatformId(p.id); setNotificationModalPlatformId(null); openResendModal(p); }}
+                    onOpenMailjetModal={(p) => { setReturnToNotificationPlatformId(p.id); setNotificationModalPlatformId(null); openMailjetModal(p); }}
+                    onOpenSmtpModal={(p) => { setReturnToNotificationPlatformId(p.id); setNotificationModalPlatformId(null); openSmtpModal(p); }}
+                    isAdmin={!!user?.is_admin}
+                />
+            )}
+
+            {resendModalPlatform && (
+                <ResendTemplateModal
+                    platform={resendModalPlatform}
+                    templates={notificationTemplates}
+                    templateValue={resendTemplateValue}
+                    onTemplateChange={setResendTemplateValue}
+                    recipientsValue={resendRecipientsValue}
+                    onRecipientsChange={setResendRecipientsValue}
+                    onClose={() => setResendModalPlatform(null)}
+                    onSave={saveResendTemplate}
+                    saveStatus={resendModalSaveStatus}
+                    saveError={resendModalSaveError}
+                    testStatus={resendModalTestStatus}
+                    testError={resendModalTestError}
+                    onSendTest={sendTestResendFromModal}
                 />
             )}
 
@@ -477,16 +745,9 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                             activeJob={activeJob}
                             lastRun={lastRunByPlatform[p.url]}
                             expandedLog={expandedLog}
-                            configuredAdapters={configuredAdapters}
-                            pushoverTestStatus={pushoverTestStatus}
-                            pushoverTestError={pushoverTestError}
-                            isAdmin={!!user?.is_admin}
                             onToggleLog={(url) => setExpandedLog(expandedLog === url ? null : url)}
                             onScheduleChange={(id, time, days) => updatePlatform(id, { schedule_time: time, schedule_days: days })}
-                            onToggleAdapter={toggleAdapter}
-                            onOpenTemplateModal={openTemplateModal}
-                            onOpenPushoverModal={openPushoverModal}
-                            onSendTestPushover={sendTestPushover}
+                            onOpenNotificationModal={(platform) => setNotificationModalPlatformId(platform.id)}
                             onTriggerCrawl={triggerCrawl}
                             onCancelCrawl={(jobId) => setCrawlToCancel(jobId)}
                             onToggleActive={(id, isActive) => updatePlatform(id, { is_active: isActive })}

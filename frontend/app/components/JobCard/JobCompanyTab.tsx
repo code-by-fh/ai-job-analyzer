@@ -151,13 +151,6 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
         localStorage.removeItem(`gen_company_${job.id}`);
     };
 
-    if (companyLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-            </div>
-        );
-    }
 
     if (companyQueued) {
         return (

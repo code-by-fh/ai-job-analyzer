@@ -83,13 +83,21 @@ class UserProfile(Base):
     job_urls = Column(JSON, default=[])
 
     # Notification Settings
-    gmail_address = Column(String, nullable=True)
-    gmail_app_password = Column(String, nullable=True)
     pushover_user_key = Column(String, nullable=True)
     pushover_api_token = Column(String, nullable=True)
+    resend_api_key = Column(String, nullable=True)
+    resend_from_email = Column(String, nullable=True)
+    mailjet_api_key = Column(String, nullable=True)
+    mailjet_secret_key = Column(String, nullable=True)
+    mailjet_from_email = Column(String, nullable=True)
+    smtp_host = Column(String, nullable=True)
+    smtp_port = Column(Integer, nullable=True)
+    smtp_user = Column(String, nullable=True)
+    smtp_password = Column(String, nullable=True)
+    smtp_from_email = Column(String, nullable=True)
     active_notification_service = Column(
         String, default="NONE"
-    )  # NONE, GMAIL, PUSHOVER
+    )  # NONE, PUSHOVER, RESEND, MAILJET
     language = Column(String, default="de")
     timezone = Column(String, default="Europe/Berlin")
 
@@ -124,9 +132,13 @@ class JobPlatform(Base):
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
     notification_adapters = Column(JSON, default=[])
-    gmail_template = Column(Text, nullable=True)
-    gmail_recipients = Column(JSON, nullable=True)
     pushover_template = Column(Text, nullable=True)
+    resend_template = Column(Text, nullable=True)
+    resend_recipients = Column(JSON, nullable=True)
+    mailjet_template = Column(Text, nullable=True)
+    mailjet_recipients = Column(JSON, nullable=True)
+    smtp_template = Column(Text, nullable=True)
+    smtp_recipients = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -137,7 +149,7 @@ class NotificationTemplate(Base):
     __tablename__ = "notification_templates"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    type = Column(String, nullable=False)  # "GMAIL" or "PUSHOVER"
+    type = Column(String, nullable=False)  # "PUSHOVER"
     content = Column(Text, nullable=False)
     is_admin = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = admin template
@@ -220,20 +232,36 @@ class SettingsData(BaseModel):
     cv_data: CVDataModel
     job_urls: List[str] = []
 
-    gmail_address: Optional[str] = None
-    gmail_app_password: Optional[str] = None
     pushover_user_key: Optional[str] = None
     pushover_api_token: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    resend_from_email: Optional[str] = None
+    mailjet_api_key: Optional[str] = None
+    mailjet_secret_key: Optional[str] = None
+    mailjet_from_email: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
     active_notification_service: str = "NONE"
     language: str = "de"
     timezone: str = "Europe/Berlin"
 
 
 class NotificationSettingsData(BaseModel):
-    gmail_address: Optional[str] = None
-    gmail_app_password: Optional[str] = None
     pushover_user_key: Optional[str] = None
     pushover_api_token: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    resend_from_email: Optional[str] = None
+    mailjet_api_key: Optional[str] = None
+    mailjet_secret_key: Optional[str] = None
+    mailjet_from_email: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
 
 
 class PlatformCreate(BaseModel):
@@ -250,9 +278,13 @@ class PlatformUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
-    gmail_template: Optional[str] = None
-    gmail_recipients: Optional[List[str]] = None
     pushover_template: Optional[str] = None
+    resend_template: Optional[str] = None
+    resend_recipients: Optional[List[str]] = None
+    mailjet_template: Optional[str] = None
+    mailjet_recipients: Optional[List[str]] = None
+    smtp_template: Optional[str] = None
+    smtp_recipients: Optional[List[str]] = None
 
 
 class PlatformResponse(BaseModel):
@@ -267,9 +299,13 @@ class PlatformResponse(BaseModel):
     is_active: bool
     is_notification_enabled: bool = False
     notification_adapters: List[str] = []
-    gmail_template: Optional[str] = None
-    gmail_recipients: Optional[List[str]] = None
     pushover_template: Optional[str] = None
+    resend_template: Optional[str] = None
+    resend_recipients: Optional[List[str]] = None
+    mailjet_template: Optional[str] = None
+    mailjet_recipients: Optional[List[str]] = None
+    smtp_template: Optional[str] = None
+    smtp_recipients: Optional[List[str]] = None
     job_count: int = 0
 
     class Config:
@@ -278,7 +314,7 @@ class PlatformResponse(BaseModel):
 
 class NotificationTemplateCreate(BaseModel):
     name: str
-    type: str  # "GMAIL" or "PUSHOVER"
+    type: str  # "PUSHOVER"
     content: str
 
 
@@ -338,6 +374,7 @@ class JobPatchRequest(BaseModel):
     note: Optional[str] = None
     notes: Optional[str] = None
     application_draft: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 
 class CompanyAnalyzeRequest(BaseModel):

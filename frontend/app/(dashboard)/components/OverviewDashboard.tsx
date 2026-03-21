@@ -43,8 +43,10 @@ export default function OverviewDashboard() {
 
                 // Track configured adapters
                 const adapters = [
-                    ...(p.gmail_address && p.gmail_app_password ? ['GMAIL'] : []),
                     ...(p.pushover_user_key && p.pushover_api_token ? ['PUSHOVER'] : []),
+                    ...(p.resend_api_key && p.resend_from_email ? ['RESEND'] : []),
+                    ...(p.mailjet_api_key && p.mailjet_secret_key && p.mailjet_from_email ? ['MAILJET'] : []),
+                    ...(p.smtp_host && p.smtp_user && p.smtp_password ? ['SMTP'] : []),
                 ];
                 setConfiguredAdapters(adapters);
 

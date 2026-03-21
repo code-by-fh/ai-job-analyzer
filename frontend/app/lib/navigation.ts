@@ -29,6 +29,10 @@ export interface NavItemConfig {
      * Tailwind color class for the icon (e.g. 'text-blue-500')
      */
     color?: string;
+    /**
+     * If true, this item is hidden from the mobile bottom bar and shown in the "More" panel instead.
+     */
+    mobileMore?: boolean;
 }
 
 export const MAIN_NAV_ITEMS: NavItemConfig[] = [
@@ -66,6 +70,7 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         labelKey: 'account',
         matchType: 'startsWith',
         color: 'text-cyan-500',
+        mobileMore: true,
     },
     {
         href: '/companies',
@@ -73,6 +78,7 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         labelKey: 'companies',
         matchType: 'startsWith',
         color: 'text-orange-500',
+        mobileMore: true,
     },
     {
         href: '/archive',
@@ -80,6 +86,7 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
         labelKey: 'archivePageTitle',
         matchType: 'startsWith',
         color: 'text-slate-400',
+        mobileMore: true,
     },
 ];
 

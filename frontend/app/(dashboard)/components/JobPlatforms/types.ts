@@ -11,9 +11,13 @@ export interface Platform {
     job_count: number;
     is_notification_enabled: boolean;
     notification_adapters: string[];
-    gmail_template: string | null;
-    gmail_recipients: string[] | null;
     pushover_template: string | null;
+    resend_template: string | null;
+    resend_recipients: string[] | null;
+    mailjet_template: string | null;
+    mailjet_recipients: string[] | null;
+    smtp_template: string | null;
+    smtp_recipients: string[] | null;
 }
 
 export type LastRun = {

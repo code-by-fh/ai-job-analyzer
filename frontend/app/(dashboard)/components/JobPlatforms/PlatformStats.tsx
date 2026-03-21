@@ -14,9 +14,12 @@ interface PlatformStatsProps {
     expandedLog: string | null;
     onToggleLog: (url: string) => void;
     onScheduleChange: (id: number, time: string | null, days: number[] | null) => void;
+    onOpenNotificationModal: (platform: Platform) => void;
 }
 
 const DAY_KEYS = ['dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat', 'daySun'] as const;
+
+const ADAPTER_SHORT: Record<string, string> = { PUSHOVER: 'Push', RESEND: 'Resend', MAILJET: 'MJ', SMTP: 'SMTP' };
 
 export default function PlatformStats({
     platform,
@@ -26,6 +29,7 @@ export default function PlatformStats({
     expandedLog,
     onToggleLog,
     onScheduleChange,
+    onOpenNotificationModal,
 }: PlatformStatsProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -136,6 +140,32 @@ export default function PlatformStats({
                 </svg>
                 <span className="font-medium">{scheduleLabel}</span>
             </button>
+
+            {/* Notification chip */}
+            {(() => {
+                const active = platform.notification_adapters || [];
+                return (
+                    <button
+                        type="button"
+                        onClick={() => onOpenNotificationModal(platform)}
+                        title="Benachrichtigungsadapter konfigurieren"
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md border transition-all cursor-pointer
+                            ${active.length > 0
+                                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200/70 dark:border-indigo-700/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
+                                : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/50 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
+                            }`}
+                    >
+                        <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                        {active.length > 0 ? (
+                            <span className="font-medium">{active.map(a => ADAPTER_SHORT[a] ?? a).join(' · ')}</span>
+                        ) : (
+                            <span className="font-medium">Off</span>
+                        )}
+                    </button>
+                );
+            })()}
 
             {/* Schedule popover — rendered in portal to escape overflow:hidden */}
             {open && typeof document !== 'undefined' && createPortal(

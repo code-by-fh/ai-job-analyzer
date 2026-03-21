@@ -417,6 +417,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
                         onStatusUpdate={handleUpdateStatus}
                         onToggleFavorite={handleToggleFavorite}
                         onUpdateJob={updateJob}
+                        onArchive={setJobToDelete}
                     />
                 ))}
 
