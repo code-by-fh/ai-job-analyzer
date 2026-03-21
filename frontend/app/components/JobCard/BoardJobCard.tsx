@@ -34,7 +34,7 @@ export default function BoardJobCard({ job, onClick }: BoardJobCardProps) {
         target.classList.remove('opacity-50');
     };
 
-    const statusMeta = STATUS_META[job.status || 'OPEN'];
+    const statusMeta = STATUS_META[job.status || 'OPEN'] ?? STATUS_META['OPEN'];
     
     // Fallback logic for translation keys
     const matchScoreStr = job.match_score ? `${Math.round(job.match_score)}%` : '--';

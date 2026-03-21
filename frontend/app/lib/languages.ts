@@ -217,6 +217,7 @@ export const translations = {
         neverScanned: "Never scanned",
         lastScan: "Last Scan",
         lastScanned: "Last: {date}",
+        urlsCached: "URLs cached",
         addPlatformPlaceholder: "Add new platform URL (e.g. LinkedIn, Indeed...)",
         invalidUrl: "Invalid URL format",
         invalidUrlProtocol: "URL must start with http:// or https://",
@@ -312,7 +313,7 @@ export const translations = {
         timezoneSaved: "Timezone saved",
 
         // First Run / Manual Analysis
-        firstRunNotice: "Note: On the first run, no automatic AI analysis is performed. You can trigger it manually from the job card.",
+        firstRunNotice: "Note: On the first run, no automatic AI analysis is performed.",
         triggerAnalysis: "Trigger AI Analysis",
         analysisTriggered: "AI analysis started",
         timezoneSaving: "Saving...",
@@ -684,6 +685,7 @@ export const translations = {
         neverScanned: "Noch nie gescannt",
         lastScan: "Letzter Scan",
         lastScanned: "Zuletzt: {date}",
+        urlsCached: "URLs gefunden",
         addPlatformPlaceholder: "Neue Plattform-URL hinzufügen (z.B. LinkedIn, Indeed...)",
         invalidUrl: "Ungültiges URL-Format",
         invalidUrlProtocol: "URL muss mit http:// oder https:// beginnen",
@@ -779,7 +781,7 @@ export const translations = {
         timezoneSaved: "Zeitzone gespeichert",
 
         // First Run / Manual Analysis
-        firstRunNotice: "Hinweis: Beim ersten Lauf wird keine automatische KI-Analyse durchgeführt. Du kannst diese später manuell anstoßen.",
+        firstRunNotice: "Hinweis: Beim ersten Lauf wird keine automatische KI-Analyse durchgeführt.",
         triggerAnalysis: "KI-Analyse anstoßen",
         analysisTriggered: "KI-Analyse gestartet",
         timezoneSaving: "Speichern...",

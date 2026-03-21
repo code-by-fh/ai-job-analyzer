@@ -25,6 +25,9 @@ const BOARD_COLUMNS: (JobStatus | 'ARCHIVE')[] = [
     'OPEN', 'DRAFTED', 'APPLIED', 'INTERVIEW', 'OFFER', 'ACCEPTED', 'REJECTED', 'ARCHIVE'
 ];
 
+// Statuses that have their own column — anything else falls into OPEN
+const KNOWN_STATUSES = new Set(BOARD_COLUMNS);
+
 export default function JobBoard({ jobs, onStatusUpdate, onArchive, onOpenDetail, statusCounts }: JobBoardProps) {
     const { t } = useLanguage();
     const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export default function JobBoard({ jobs, onStatusUpdate, onArchive, onOpenDetail
     const handleDrop = (e: DragEvent<HTMLDivElement>, newStatus: JobStatus | 'ARCHIVE') => {
         e.preventDefault();
         setDragOverColumn(null);
-        
+
         const jobId = e.dataTransfer.getData('text/plain');
         if (!jobId) return;
 
@@ -65,19 +68,25 @@ export default function JobBoard({ jobs, onStatusUpdate, onArchive, onOpenDetail
                 {BOARD_COLUMNS.map(status => {
                     const meta = STATUS_META[status];
                     if (!meta) return null;
-                    
-                    const columnJobs = jobs.filter(j => (j.status || 'OPEN') === status);
+
+                    const columnJobs = jobs.filter(j => {
+                        const jobStatus = j.status || 'OPEN';
+                        if (status === 'OPEN') {
+                            return jobStatus === 'OPEN' || jobStatus === 'GENERATING' || !KNOWN_STATUSES.has(jobStatus as any);
+                        }
+                        return jobStatus === status;
+                    });
                     const isDragOver = dragOverColumn === status;
                     const isArchive = status === 'ARCHIVE';
                     const displayCount = (statusCounts && statusCounts[status] !== undefined) ? statusCounts[status] : columnJobs.length;
 
                     return (
-                        <div 
+                        <div
                             key={status}
                             className={`
                                 flex flex-col h-full rounded-2xl border transition-all duration-200
-                                ${isDragOver 
-                                    ? 'border-indigo-400 dark:border-indigo-500/50 bg-indigo-50/30 dark:bg-indigo-900/10 scale-[1.01] shadow-lg' 
+                                ${isDragOver
+                                    ? 'border-indigo-400 dark:border-indigo-500/50 bg-indigo-50/30 dark:bg-indigo-900/10 scale-[1.01] shadow-lg'
                                     : isArchive
                                         ? 'border-slate-300 dark:border-slate-700 bg-slate-50/10 dark:bg-slate-900/10 border-dashed'
                                         : 'border-slate-200 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20'
@@ -113,8 +122,8 @@ export default function JobBoard({ jobs, onStatusUpdate, onArchive, onOpenDetail
                                     <div className={`
                                         flex-1 flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed
                                         transition-all duration-300
-                                        ${isDragOver 
-                                            ? 'border-indigo-400 bg-white dark:bg-slate-800 shadow-inner' 
+                                        ${isDragOver
+                                            ? 'border-indigo-400 bg-white dark:bg-slate-800 shadow-inner'
                                             : 'border-slate-200 dark:border-slate-800 bg-white/30 dark:bg-slate-900/30'
                                         }
                                     `}>
@@ -133,13 +142,13 @@ export default function JobBoard({ jobs, onStatusUpdate, onArchive, onOpenDetail
                                 ) : (
                                     <>
                                         {columnJobs.map(job => (
-                                            <BoardJobCard 
-                                                key={job.id} 
-                                                job={job} 
-                                                onClick={() => onOpenDetail && onOpenDetail(job)} 
+                                            <BoardJobCard
+                                                key={job.id}
+                                                job={job}
+                                                onClick={() => onOpenDetail && onOpenDetail(job)}
                                             />
                                         ))}
-                                        
+
                                         {columnJobs.length === 0 && (
                                             <div className="h-full min-h-[120px] flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 dark:text-slate-500 text-xs font-medium bg-white/40 dark:bg-slate-900/40">
                                                 {t('dragDropHere' as any) || 'Drop jobs here'}

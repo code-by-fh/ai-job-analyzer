@@ -103,3 +103,11 @@ OpenRouter API key and model are configured via Admin UI (`/admin/settings`) and
 - `JobPlatform` – crawl targets with schedule, `notification_adapters` (JSON array)
 - Job status pipeline: `OPEN → DRAFTED → APPLIED → INTERVIEW → OFFER → ACCEPTED` (also `REJECTED`, `FAILED`, `GENERATING`)
 - Notification adapters: `NONE`, `PUSHOVER`, `RESEND`, `MAILJET`, `SMTP`
+
+# Important Notes
+- if you made any changes to a backend file, you need to restart the server container
+- if you made any changes to a frontend file, you need to restart the frontend container
+- if you made any changes in the database, you need to restart the database container
+- if you made any changes to the rabbitmq, you need to restart the rabbitmq container
+- if you made any changes to the redis, you need to restart the redis container
+- if you made any changes in the docker-compose.yml file, you need to restart the docker-compose file

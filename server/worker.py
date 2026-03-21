@@ -600,15 +600,19 @@ def filter_urls_task(args):
         total_found_before_dedup = len(filtered_urls)
         if filtered_urls and user_id:
             try:
+                def _normalize(u):
+                    """Strip trailing slash and fragment for reliable comparison."""
+                    return u.rstrip("/").split("#")[0]
+
                 existing_urls = {
-                    url
+                    _normalize(url)
                     for (url,) in db.query(JobEntry.url)
                     .filter(JobEntry.user_id == user_id, JobEntry.url.isnot(None))
                     .all()
                 }
                 before = len(filtered_urls)
                 filtered_urls = [
-                    url for url in filtered_urls if url not in existing_urls
+                    url for url in filtered_urls if _normalize(url) not in existing_urls
                 ]
                 skipped = before - len(filtered_urls)
                 if skipped > 0:
@@ -690,6 +694,17 @@ def analyze_job_task(job_data):
 
     try:
         existing_job = db.query(JobEntry).filter(JobEntry.id == job_data["id"]).first()
+        # Fallback: check by URL in case UUID differs due to URL normalization
+        if not existing_job and job_data.get("url") and user_id:
+            existing_job = (
+                db.query(JobEntry)
+                .filter(JobEntry.user_id == user_id, JobEntry.url == job_data["url"])
+                .first()
+            )
+            if existing_job:
+                logger.info(
+                    f"Job {job_id} matched by URL (ID mismatch). Skipping re-analysis."
+                )
         if existing_job and not force_reanalyze:
             logger.info(f"Job {job_id} already exists in database. Skipping analysis.")
 
@@ -1279,7 +1294,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
             return
 
         job.application_draft = application_text
-        job.status = "COMPLETED"
+        job.status = "DRAFTED"
         db.commit()
         logger.info(f"Application letter for job {job_id} saved to DB.")
         r.publish(
@@ -1288,7 +1303,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
                 {
                     "type": "job_update",
                     "job_id": job.id,
-                    "status": "COMPLETED",
+                    "status": "DRAFTED",
                     "application_draft": job.application_draft,
                     "user_id": job.user_id,
                 }

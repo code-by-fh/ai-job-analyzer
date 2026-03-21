@@ -307,6 +307,7 @@ class PlatformResponse(BaseModel):
     smtp_template: Optional[str] = None
     smtp_recipients: Optional[List[str]] = None
     job_count: int = 0
+    seen_count: int = 0
 
     class Config:
         orm_mode = True

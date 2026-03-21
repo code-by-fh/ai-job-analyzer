@@ -197,13 +197,12 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 body: JSON.stringify({ url: newUrl })
             });
             if (res.ok) {
-                const newPlatform: Platform = await res.json();
+                await res.json();
                 setNewUrl('');
+                setIsAddingPlatform(false);
                 fetchPlatforms();
                 setStatus(t('platformAdded'));
-                setIsAddingPlatform(false);
                 setTimeout(() => setStatus(''), 3000);
-                triggerCrawl(newPlatform);
                 return;
             } else {
                 const err = await res.json();

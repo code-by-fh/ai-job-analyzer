@@ -9,6 +9,7 @@ export interface Platform {
     last_crawl_at: string | null;
     is_active: boolean;
     job_count: number;
+    seen_count: number;
     is_notification_enabled: boolean;
     notification_adapters: string[];
     pushover_template: string | null;

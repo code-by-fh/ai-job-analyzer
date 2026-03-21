@@ -112,6 +112,19 @@ export default function PlatformStats({
                 <span className="text-slate-400 hidden sm:inline">{t('jobsFound')}</span>
             </button>
 
+            {platform.seen_count > 0 && platform.job_count === 0 && (
+                <div
+                    title={t('urlsCached')}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-500/10 border border-amber-200/70 dark:border-amber-700/50 text-amber-600 dark:text-amber-400"
+                >
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                    <span className="font-semibold">{platform.seen_count}</span>
+                    <span className="hidden sm:inline">{t('urlsCached')}</span>
+                </div>
+            )}
+
             {/* Last scan chip */}
             <div
                 title={t('lastScan')}
@@ -194,11 +207,10 @@ export default function PlatformStats({
                                     key={i}
                                     type="button"
                                     onClick={() => toggleDay(i)}
-                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                                        localDays.includes(i)
+                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${localDays.includes(i)
                                             ? 'bg-indigo-600 text-white'
                                             : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                    }`}
+                                        }`}
                                 >
                                     {t(key)}
                                 </button>

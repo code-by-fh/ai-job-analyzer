@@ -76,7 +76,7 @@ export default function AddPlatformInput({ newUrl, onUrlChange, onAdd, isProfile
                             {/* Outer spinning ring */}
                             <div className="w-20 h-20 rounded-full border-4 border-indigo-50 dark:border-indigo-950/30"></div>
                             <div className="absolute inset-0 w-20 h-20 rounded-full border-4 border-t-indigo-600 border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
-                            
+
                             {/* Center Icon */}
                             <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 rounded-2xl">

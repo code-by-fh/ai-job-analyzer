@@ -617,7 +617,7 @@ async def logout(response: Response, current_user: User = Depends(get_current_us
 @app.post("/auth/change-password")
 @limiter.limit("5/minute")
 async def change_password(
-    http_request: Request,
+    request: Request,
     body: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -927,7 +927,7 @@ def trigger_job_analysis(request: Request, job_id: str, current_user: User = Dep
 
 @app.post("/jobs/{job_id}/generate")
 @limiter.limit("5/minute")
-def trigger_generation(http_request: Request, job_id: str, request: Optional[GenerateRequest] = None, current_user: User = Depends(get_current_user)):
+def trigger_generation(request: Request, job_id: str, body: Optional[GenerateRequest] = None, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         job = (
@@ -939,7 +939,7 @@ def trigger_generation(http_request: Request, job_id: str, request: Optional[Gen
             raise HTTPException(status_code=404, detail="Job not found")
         job.status = "GENERATING"
         db.commit()
-        improvement_notes = request.improvement_notes if request else None
+        improvement_notes = body.improvement_notes if body else None
         celery_app.send_task(
             "ai.generate_application",
             args=[job_id, current_user.id, improvement_notes],
@@ -1041,7 +1041,7 @@ def cancel_generation(job_id: str, current_user: User = Depends(get_current_user
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status == "GENERATING":
-            job.status = "COMPLETED" if job.application_draft else "OPEN"
+            job.status = "DRAFTED" if job.application_draft else "OPEN"
             db.commit()
         return {"status": "cancelled"}
     finally:
@@ -1589,17 +1589,28 @@ def get_platforms(current_user: User = Depends(get_current_user)):
             .subquery()
         )
 
+        # Subquery to count SEEN placeholder jobs per platform
+        seen_counts = (
+            db.query(JobEntry.platform_id, func.count(JobEntry.id).label("seen_count"))
+            .filter(JobEntry.user_id == current_user.id, JobEntry.status == "SEEN")
+            .group_by(JobEntry.platform_id)
+            .subquery()
+        )
+
         platforms_query = (
             db.query(
-                JobPlatform, func.coalesce(job_counts.c.job_count, 0).label("job_count")
+                JobPlatform,
+                func.coalesce(job_counts.c.job_count, 0).label("job_count"),
+                func.coalesce(seen_counts.c.seen_count, 0).label("seen_count"),
             )
             .outerjoin(job_counts, JobPlatform.id == job_counts.c.platform_id)
+            .outerjoin(seen_counts, JobPlatform.id == seen_counts.c.platform_id)
             .filter(JobPlatform.user_id == current_user.id)
             .all()
         )
 
         result = []
-        for p, count in platforms_query:
+        for p, count, s_count in platforms_query:
             result.append(
                 {
                     "id": p.id,
@@ -1623,6 +1634,7 @@ def get_platforms(current_user: User = Depends(get_current_user)):
                     "smtp_template": p.smtp_template,
                     "smtp_recipients": p.smtp_recipients,
                     "job_count": count,
+                    "seen_count": s_count,
                 }
             )
         return result
@@ -1666,10 +1678,38 @@ def create_platform(
         db.add(db_platform)
         db.commit()
         db.refresh(db_platform)
+
+        # Trigger immediate initial scan (saves URLs as SEEN placeholders, no AI analysis)
+        try:
+            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper")
+            _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
+            resp = requests.post(
+                f"{SCRAPER_URL}/search",
+                json={
+                    "query": db_platform.url,
+                    "location": "Remote",
+                    "platform_id": db_platform.id,
+                    "is_initial_run": True,
+                },
+                headers={"Cookie": f"access_token={_internal_token}"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            from datetime import datetime, timezone as tz
+            db_platform.last_crawl_at = datetime.now(tz.utc)
+            db.commit()
+            db.refresh(db_platform)
+        except Exception as e:
+            logger.warning(f"Failed to trigger initial crawl for new platform {db_platform.id}: {e}")
+
         return {
             **db_platform.__dict__,
             "job_count": 0,
+            "seen_count": 0,
             "notification_adapters": db_platform.notification_adapters or [],
+            "last_crawl_at": (
+                db_platform.last_crawl_at.isoformat() if db_platform.last_crawl_at else None
+            ),
         }
     finally:
         db.close()
@@ -2406,18 +2446,19 @@ def trigger_platform_crawl(
         # Trigger scraper-service
         from sqlalchemy import func
 
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper")
         logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
+        _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
         try:
             resp = requests.post(
                 f"{SCRAPER_URL}/search",
                 json={
                     "query": db_platform.url,
                     "location": "Remote",
-                    "user_id": current_user.id,
                     "platform_id": db_platform.id,
                     "is_initial_run": is_initial_run,
                 },
+                headers={"Cookie": f"access_token={_internal_token}"},
                 timeout=5,
             )
             resp.raise_for_status()
@@ -2689,10 +2730,12 @@ def get_dashboard_data(
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper"
             )
+            _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(
-                f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
+                f"{SCRAPER_URL}/crawl-status", timeout=2,
+                headers={"Cookie": f"access_token={_tok}"},
             )
             if res.ok:
                 data = res.json()
@@ -2798,10 +2841,12 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper"
             )
+            _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(
-                f"{SCRAPER_URL}/crawl-status?user_id={current_user.id}", timeout=2
+                f"{SCRAPER_URL}/crawl-status", timeout=2,
+                headers={"Cookie": f"access_token={_tok}"},
             )
             if res.ok:
                 data = res.json()
