@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, User
 
 # Security Config
-SECRET_KEY = os.getenv("SECRET_KEY", "super_secret_dev_key_12345")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set. Cannot start server.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7

@@ -78,7 +78,7 @@ from auth import (
 )
 from datetime import timedelta
 
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() == "true"
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 
 limiter = Limiter(key_func=get_remote_address)
@@ -125,22 +125,43 @@ def get_openrouter_client():
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        # Maps user_id -> list of active WebSocket connections
+        self.active_connections: dict[int, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, user_id: int):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections.setdefault(user_id, []).append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, user_id: int):
+        conns = self.active_connections.get(user_id, [])
+        if websocket in conns:
+            conns.remove(websocket)
+        if not conns:
+            self.active_connections.pop(user_id, None)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections[:]:
-            try:
-                await connection.send_text(message)
-            except Exception:
-                self.disconnect(connection)
+        """Send a message to the user identified in the payload, or all users if no user_id."""
+        import json as _json
+        try:
+            payload = _json.loads(message)
+            target_user_id = payload.get("user_id")
+        except Exception:
+            target_user_id = None
+
+        if target_user_id is not None:
+            connections = self.active_connections.get(int(target_user_id), [])
+            for connection in connections[:]:
+                try:
+                    await connection.send_text(message)
+                except Exception:
+                    self.disconnect(connection, int(target_user_id))
+        else:
+            for user_id, connections in list(self.active_connections.items()):
+                for connection in connections[:]:
+                    try:
+                        await connection.send_text(message)
+                    except Exception:
+                        self.disconnect(connection, user_id)
 
 
 manager = ConnectionManager()
@@ -207,7 +228,14 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.username == "admin").first():
-            admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+            import secrets as _secrets
+            admin_password = os.getenv("ADMIN_PASSWORD") or _secrets.token_urlsafe(16)
+            if not os.getenv("ADMIN_PASSWORD"):
+                logger.warning(
+                    "ADMIN_PASSWORD not set — generated random admin password: %s  "
+                    "(set ADMIN_PASSWORD env var to use a fixed password)",
+                    admin_password,
+                )
             logger.info("Create default admin user")
             hashed_pwd = get_password_hash(admin_password)
             admin_user = User(
@@ -267,6 +295,21 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(RequestLoggingMiddleware)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        if COOKIE_SECURE:
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 from scraper_api import app as scraper_app
 
@@ -510,6 +553,7 @@ async def login_for_access_token(
 
 
 @app.post("/auth/refresh")
+@limiter.limit("20/minute")
 async def refresh_access_token(request: Request, response: Response):
     from jose import JWTError, jwt
     from auth import SECRET_KEY, ALGORITHM
@@ -571,16 +615,19 @@ async def logout(response: Response, current_user: User = Depends(get_current_us
 
 
 @app.post("/auth/change-password")
+@limiter.limit("5/minute")
 async def change_password(
-    request: ChangePasswordRequest, current_user: User = Depends(get_current_user)
+    http_request: Request,
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
 ):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == current_user.id).first()
-        if not verify_password(request.current_password, user.hashed_password):
+        if not verify_password(body.current_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Incorrect current password")
 
-        user.hashed_password = get_password_hash(request.new_password)
+        user.hashed_password = get_password_hash(body.new_password)
         db.commit()
         return {"status": "password updated"}
     finally:
@@ -657,12 +704,39 @@ async def delete_user(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    from jose import JWTError, jwt
+    from auth import SECRET_KEY, ALGORITHM
+
+    token = websocket.cookies.get("access_token")
+    if not token:
+        await websocket.close(code=1008)
+        return
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        token_version: int = payload.get("tv", 0)
+        if not username:
+            raise JWTError("no sub")
+    except JWTError:
+        await websocket.close(code=1008)
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user or user.token_version != token_version:
+            await websocket.close(code=1008)
+            return
+        user_id = user.id
+    finally:
+        db.close()
+
+    await manager.connect(websocket, user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, user_id)
 
 
 @app.get("/status")
@@ -824,7 +898,8 @@ def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
 
 
 @app.post("/jobs/{job_id}/analyze")
-def trigger_job_analysis(job_id: str, current_user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+def trigger_job_analysis(request: Request, job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         job = (
@@ -851,7 +926,8 @@ def trigger_job_analysis(job_id: str, current_user: User = Depends(get_current_u
 
 
 @app.post("/jobs/{job_id}/generate")
-def trigger_generation(job_id: str, request: Optional[GenerateRequest] = None, current_user: User = Depends(get_current_user)):
+@limiter.limit("5/minute")
+def trigger_generation(http_request: Request, job_id: str, request: Optional[GenerateRequest] = None, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         job = (
@@ -1221,6 +1297,26 @@ def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user))
         db.close()
 
 
+_SECRET_MASK = "__masked__"
+_SECRET_FIELDS = {
+    "pushover_api_token",
+    "resend_api_key",
+    "mailjet_api_key",
+    "mailjet_secret_key",
+    "smtp_password",
+}
+
+
+def _mask_profile(profile: UserProfile) -> dict:
+    """Return a dict of profile fields with sensitive secrets replaced by the mask sentinel."""
+    from sqlalchemy import inspect as sa_inspect
+    data = {c.key: getattr(profile, c.key) for c in sa_inspect(profile).mapper.column_attrs}
+    for field in _SECRET_FIELDS:
+        if data.get(field):
+            data[field] = _SECRET_MASK
+    return data
+
+
 @app.get("/settings")
 def get_settings(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
@@ -1242,7 +1338,7 @@ def get_settings(current_user: User = Depends(get_current_user)):
             db.add(profile)
             db.commit()
             db.refresh(profile)
-        return profile
+        return _mask_profile(profile)
     finally:
         db.close()
 
@@ -1271,11 +1367,15 @@ def save_settings(
         # Save Notification Settings
         profile.pushover_user_key = settings.pushover_user_key
 
-        profile.pushover_api_token = settings.pushover_api_token
-        profile.resend_api_key = settings.resend_api_key
+        if settings.pushover_api_token != _SECRET_MASK:
+            profile.pushover_api_token = settings.pushover_api_token
+        if settings.resend_api_key != _SECRET_MASK:
+            profile.resend_api_key = settings.resend_api_key
         profile.resend_from_email = settings.resend_from_email
-        profile.mailjet_api_key = settings.mailjet_api_key
-        profile.mailjet_secret_key = settings.mailjet_secret_key
+        if settings.mailjet_api_key != _SECRET_MASK:
+            profile.mailjet_api_key = settings.mailjet_api_key
+        if settings.mailjet_secret_key != _SECRET_MASK:
+            profile.mailjet_secret_key = settings.mailjet_secret_key
         profile.mailjet_from_email = settings.mailjet_from_email
         profile.active_notification_service = settings.active_notification_service
 
@@ -1298,16 +1398,21 @@ def save_notification_settings(
             profile = UserProfile(user_id=current_user.id)
             db.add(profile)
         profile.pushover_user_key = settings.pushover_user_key
-        profile.pushover_api_token = settings.pushover_api_token
-        profile.resend_api_key = settings.resend_api_key
+        if settings.pushover_api_token != _SECRET_MASK:
+            profile.pushover_api_token = settings.pushover_api_token
+        if settings.resend_api_key != _SECRET_MASK:
+            profile.resend_api_key = settings.resend_api_key
         profile.resend_from_email = settings.resend_from_email
-        profile.mailjet_api_key = settings.mailjet_api_key
-        profile.mailjet_secret_key = settings.mailjet_secret_key
+        if settings.mailjet_api_key != _SECRET_MASK:
+            profile.mailjet_api_key = settings.mailjet_api_key
+        if settings.mailjet_secret_key != _SECRET_MASK:
+            profile.mailjet_secret_key = settings.mailjet_secret_key
         profile.mailjet_from_email = settings.mailjet_from_email
         profile.smtp_host = settings.smtp_host
         profile.smtp_port = settings.smtp_port
         profile.smtp_user = settings.smtp_user
-        profile.smtp_password = settings.smtp_password
+        if settings.smtp_password != _SECRET_MASK:
+            profile.smtp_password = settings.smtp_password
         profile.smtp_from_email = settings.smtp_from_email
         db.commit()
         return {"status": "saved"}
@@ -2816,8 +2921,9 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/settings/upload-cv")
+@limiter.limit("10/minute")
 async def upload_cv(
-    file: UploadFile = File(...), current_user: User = Depends(get_current_user)
+    request: Request, file: UploadFile = File(...), current_user: User = Depends(get_current_user)
 ):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Nur PDF Dateien erlaubt.")
@@ -3078,8 +3184,12 @@ def download_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
-        if not os.path.exists(file_path):
+        from pathlib import Path as _Path
+        base_dir = _Path(UPLOAD_DIR).resolve()
+        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+        if not str(file_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
         with open(file_path, "rb") as f:
             data = f.read()
@@ -3113,8 +3223,12 @@ def view_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
-        if not os.path.exists(file_path):
+        from pathlib import Path as _Path
+        base_dir = _Path(UPLOAD_DIR).resolve()
+        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+        if not str(file_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
         with open(file_path, "rb") as f:
             data = f.read()
@@ -3148,7 +3262,11 @@ def delete_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        file_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id, doc.filename)
+        from pathlib import Path as _Path
+        base_dir = _Path(UPLOAD_DIR).resolve()
+        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+        if not str(file_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
         if os.path.exists(file_path):
             os.remove(file_path)
         db.delete(doc)

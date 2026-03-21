@@ -21,10 +21,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 
-COPY . .
+# Create non-root user and set up permissions
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
+RUN mkdir -p /app/uploads /var/log/supervisor && \
+    chown -R appuser:appgroup /app /var/log/supervisor && \
+    chmod -R 755 /var/log/supervisor
 
+COPY . .
+RUN chown -R appuser:appgroup /app
 RUN chmod +x entrypoint.sh
+
+USER appuser
 
 ENTRYPOINT ["./entrypoint.sh"]
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]

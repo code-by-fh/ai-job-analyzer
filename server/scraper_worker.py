@@ -21,7 +21,48 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 
+_PRIVATE_RANGES = [
+    # loopback
+    (0x7F000000, 0x7FFFFFFF),
+    # RFC 1918
+    (0x0A000000, 0x0AFFFFFF),
+    (0xAC100000, 0xAC1FFFFF),
+    (0xC0A80000, 0xC0A8FFFF),
+    # link-local
+    (0xA9FE0000, 0xA9FEFFFF),
+]
+
+
+def _is_safe_url(url: str) -> bool:
+    """Return True only if the URL is http(s) and does not point to a private/loopback address."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname or ""
+        if hostname.lower() in ("localhost",):
+            return False
+        import socket
+        try:
+            ip_str = socket.gethostbyname(hostname)
+        except Exception:
+            return False
+        parts = ip_str.split(".")
+        if len(parts) != 4:
+            return False
+        ip_int = (int(parts[0]) << 24) | (int(parts[1]) << 16) | (int(parts[2]) << 8) | int(parts[3])
+        for lo, hi in _PRIVATE_RANGES:
+            if lo <= ip_int <= hi:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def get_html_with_browser(url):
+    if not _is_safe_url(url):
+        logger.warning(f"Blocked SSRF attempt for URL: {url}")
+        return None
     logger.info(f"Launching browser for URL: {url}")
     start_time = time.time()
     with sync_playwright() as p:

@@ -5,12 +5,14 @@ import logging
 import uuid
 import json
 from celery import chain
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from scraper_celery_config import celery_app
 import redis
 
+from auth import get_current_user
+from database import User
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -139,22 +141,31 @@ cleanup_stale_jobs()
 class JobSearch(BaseModel):
     query: str
     location: str
-    user_id: int = 1  # Default to 1 (Admin) if not provided
     platform_id: Optional[int] = None
     is_initial_run: bool = False
 
 
+def _is_http_url(url: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
 @app.post("/search")
-async def search_jobs(search: JobSearch):
-    if not search.query.startswith("http"):
+async def search_jobs(search: JobSearch, current_user: User = Depends(get_current_user)):
+    if not _is_http_url(search.query):
         return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
 
+    user_id = current_user.id
     job_id = str(uuid.uuid4())
 
     r.hset(
         f"crawl_job:{job_id}",
         mapping={
-            "user_id": search.user_id,
+            "user_id": user_id,
             "platform_url": search.query,
             "total": 0,
             "scraping_completed": 0,
@@ -166,12 +177,12 @@ async def search_jobs(search: JobSearch):
         },
     )
     r.expire(f"crawl_job:{job_id}", 3600)  # TTL: 1 hour
-    r.sadd(f"user:{search.user_id}:active_crawls", job_id)
+    r.sadd(f"user:{user_id}:active_crawls", job_id)
 
     workflow = chain(
         celery_app.signature(
             "scraper.fetch_links",
-            args=[search.query, search.user_id, job_id, search.platform_id],
+            args=[search.query, user_id, job_id, search.platform_id],
             queue="scraper_queue",
         ),
         celery_app.signature("ai.filter_urls", queue="ai_queue"),
@@ -183,20 +194,20 @@ async def search_jobs(search: JobSearch):
 
 class JobImport(BaseModel):
     url: str
-    user_id: int = 1
 
 
 @app.post("/import-job")
-async def import_job(data: JobImport):
-    if not data.url.startswith("http"):
+async def import_job(data: JobImport, current_user: User = Depends(get_current_user)):
+    if not _is_http_url(data.url):
         return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
 
+    user_id = current_user.id
     job_id = str(uuid.uuid4())
 
     r.hset(
         f"crawl_job:{job_id}",
         mapping={
-            "user_id": data.user_id,
+            "user_id": user_id,
             "platform_url": data.url,
             "total": 1,
             "scraping_completed": 0,
@@ -208,18 +219,19 @@ async def import_job(data: JobImport):
         },
     )
     r.expire(f"crawl_job:{job_id}", 3600)
-    r.sadd(f"user:{data.user_id}:active_crawls", job_id)
+    r.sadd(f"user:{user_id}:active_crawls", job_id)
 
     celery_app.send_task(
         "scraper.scrape_detail",
-        args=[data.url, data.user_id, job_id, None],
+        args=[data.url, user_id, job_id, None],
         queue="scraper_queue",
     )
     return {"status": "Started", "job_id": job_id}
 
 
 @app.get("/crawl-status")
-async def get_crawl_status(user_id: int):
+async def get_crawl_status(current_user: User = Depends(get_current_user)):
+    user_id = current_user.id
     job_ids = r.smembers(f"user:{user_id}:active_crawls")
     jobs = []
 
@@ -260,25 +272,25 @@ async def get_crawl_status(user_id: int):
 
 class CancelCrawlRequest(BaseModel):
     job_id: str
-    user_id: int
 
 
 @app.post("/cancel-crawl")
-async def cancel_crawl(request: CancelCrawlRequest):
-    logger.info(f"Cancelling crawl job {request.job_id} for user {request.user_id}")
+async def cancel_crawl(request: CancelCrawlRequest, current_user: User = Depends(get_current_user)):
+    user_id = current_user.id
+    logger.info(f"Cancelling crawl job {request.job_id} for user {user_id}")
 
     job_data = r.hgetall(f"crawl_job:{request.job_id}")
     if not job_data:
         return {"status": "error", "message": "Job not found"}
 
     stored_user_id = int(job_data.get(b"user_id", 0))
-    if stored_user_id != request.user_id:
+    if stored_user_id != user_id:
         return {"status": "error", "message": "Unauthorized"}
 
     try:
         celery_app.control.revoke(request.job_id, terminate=True, signal="SIGKILL")
 
-        cleanup_crawl_job(request.job_id, request.user_id, reason="cancelled")
+        cleanup_crawl_job(request.job_id, user_id, reason="cancelled")
 
         logger.info(f"Successfully cancelled crawl job {request.job_id}")
         return {"status": "success", "message": "Crawl job cancelled"}
@@ -289,14 +301,14 @@ async def cancel_crawl(request: CancelCrawlRequest):
 
 class FailCrawlRequest(BaseModel):
     job_id: str
-    user_id: int
     error_message: str
 
 
 @app.post("/fail-crawl")
-async def fail_crawl(request: FailCrawlRequest):
+async def fail_crawl(request: FailCrawlRequest, current_user: User = Depends(get_current_user)):
+    user_id = current_user.id
     logger.info(
-        f"Failing crawl job {request.job_id} for user {request.user_id}: {request.error_message}"
+        f"Failing crawl job {request.job_id} for user {user_id}: {request.error_message}"
     )
 
     job_data = r.hgetall(f"crawl_job:{request.job_id}")
@@ -304,7 +316,7 @@ async def fail_crawl(request: FailCrawlRequest):
         return {"status": "error", "message": "Job not found"}
 
     stored_user_id = int(job_data.get(b"user_id", 0))
-    if stored_user_id != request.user_id:
+    if stored_user_id != user_id:
         return {"status": "error", "message": "Unauthorized"}
 
     try:
@@ -314,7 +326,7 @@ async def fail_crawl(request: FailCrawlRequest):
         logger.info(f"Job {request.job_id} failed due to: {request.error_message}")
 
         # Broadcast error event, then clean up immediately
-        fail_crawl_job(request.job_id, request.user_id, request.error_message)
+        fail_crawl_job(request.job_id, user_id, request.error_message)
 
         return {"status": "success", "message": "Crawl job failed"}
     except Exception as e:
