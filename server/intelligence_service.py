@@ -448,61 +448,91 @@ def generate_interview_prep(
     Returns dict with: questions, talking_points, company_insights, preparation_tips
     """
     tone_instruction = (
-        "Du musst den Nutzer (Kandidaten) in allen Texten (Deep Dive, Elevator Pitch, Strategien) direkt mit 'du' ansprechen. "
-        "Verwende niemals 'der Kandidat' oder 'er/sie', sondern immer 'du', 'deine Erfahrung', 'dein Hintergrund'."
+        "CRITICAL LANGUAGE RULE:\n"
+        "- You MUST address the user directly as 'du' in EVERY sentence\n"
+        "- NEVER use third person (no 'der Kandidat', 'er/sie', 'man')\n"
+        "- EVERY sentence must include 'du' or 'dein'\n"
+        "- EXCEPTION: The elevator_pitch MUST be written in first person ('Ich') and does NOT need to include 'du'\n"
+    )
+
+    language_instruction = (
+        "Respond ONLY in English and use 'you'."
+        if language == "en"
+        else "Antworte AUSSCHLIESSLICH auf Deutsch und verwende IMMER 'du'."
     )
 
     prompt = f"""
-    
-      Act as an Interview Preparation Coach, Elite-Karrierecoach and Psychologist. 
-      You are an expert in preparing candidates for various types of job interviews. 
-      Your task is to guide users through effective interview preparation strategies.
+    You are an Elite Interview Preparation Coach and Psychologist.
 
-      You will:
-      - Provide personalized advice based on the job role and industry
-      - Help users practice common interview questions
-      - Offer tips on improving communication skills and body language
-      - Suggest strategies for handling difficult questions and scenarios
+    ====================
+    CRITICAL RULES (MUST FOLLOW)
+    ====================
+    - Output MUST be valid JSON only
+    - Do NOT use markdown
+    - Do NOT wrap the JSON in ```json
+    - Do NOT add any text before or after JSON
+    - Output MUST start with {{ and end with }}
+    - Follow the JSON structure EXACTLY
+    - Do not add extra fields
+    - Do not remove fields
 
-      Rules:
-      - Customize advice based on the user's input
-      - Maintain a professional and supportive tone
-      - **WICHTIG:** {tone_instruction}  # Die neue Regel
+    {tone_instruction}
+    {language_instruction}
 
-      **Role:** {job_title}
-      **Company:** {company_name}
-      ...
-      (Rest der Variablen wie Job Description etc.)
-      ...
+    ====================
+    STYLE RULES
+    ====================
+    - Be highly specific and personalized
+    - Avoid generic phrases
+    - Always speak directly to the user
+    - Give actionable, concrete advice
 
-      Generate a JSON object with the following structure:
-      {{
-        ...
-        "report_output": {{
-          "executive_summary": "Executive Summary (max. 3 sentences), addressing the user as 'du'.",
-          "deep_dive_analysis": "Detaillierter Q&A Leitfaden und Verhaltensanalyse. Sprich den Nutzer direkt an (z.B. 'Hier solltest du...').",
-          ...
-        }},
-        "structured_prep": {{
-          "gap_analysis": [
-            {{
-              "requirement": "Job requirement",
-              "cv_status": "Status in deinem CV (z.B. 'Du hast 3 Jahre Erfahrung')",
-              "gap_severity": "Gap severity",
-              "interview_strategy": "Konkrete Strategie, wie DU diesen Punkt adressierst"
-            }}
-          ],
-          "elevator_pitch": "Dein persönlicher Antworttext auf die Frage 'Erzähl uns etwas über dich' – formuliert in der Ich-Form für den Nutzer, damit er ihn direkt so sprechen kann.",
-          ...
+    ====================
+    ELEVATOR PITCH RULES
+    ====================
+    - Write in first person ("Ich")
+    - Make it sound natural and spoken
+    - Avoid generic phrases like "ich bin ein erfahrener..."
+    - Make it specific and impactful
+    - The user should be able to copy & paste and use it directly
+
+    ====================
+    OUTPUT FORMAT
+    ====================
+    Return EXACTLY this structure:
+
+    {{
+    "report_output": {{
+        "executive_summary": "Max. 3 sentences, direct and personalized, using 'du'.",
+        "deep_dive_analysis": "Detailed Q&A guide and behavioral advice. Every sentence must address 'du'."
+    }},
+    "structured_prep": {{
+        "gap_analysis": [
+        {{
+            "requirement": "Job requirement",
+            "cv_status": "Status in deinem CV",
+            "gap_severity": "Low/Medium/High",
+            "interview_strategy": "Concrete strategy how YOU address this in the interview"
         }}
-      }}
+        ],
+        "elevator_pitch": "First-person answer that the user can directly say in the interview"
+    }}
+    }}
 
-      Answer only with valid JSON without Markdown wrapper!
-    """ + (
-        f"WICHTIG: Antworte ausschließlich auf Englisch und verwende 'you'!!!"
-        if language == "en"
-        else f"WICHTIG: Antworte ausschließlich auf Deutsch und verwende IMMER 'du' (Duzen)!"
-    )
+    ====================
+    TASK
+    ====================
+    Role: {job_title}
+    Company: {company_name}
+
+    Provide:
+    - Personalized interview preparation
+    - Tailored Q&A strategies
+    - Communication and body language advice
+    - Strategies for difficult questions
+
+    Ensure ALL responses strictly follow the rules above.
+    """
     client = get_ai_client(api_key=api_key)
     try:
         response = client.chat.completions.create(
@@ -513,6 +543,7 @@ def generate_interview_prep(
         )
         if not response.choices:
             raise ValueError("AI response returned no choices")
+        print(response)
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("AI response content is None")

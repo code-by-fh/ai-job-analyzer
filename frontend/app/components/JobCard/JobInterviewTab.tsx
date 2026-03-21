@@ -40,7 +40,7 @@ function Section({ title, icon, children, color = 'slate' }: {
                 <div className={`p-2 rounded-xl ${bg[color]} border-none shadow-inner`}>
                     <span className={tc[color]}>{icon}</span>
                 </div>
-                <h3 className={`text-sm font-bold uppercase tracking-widest ${tc[color]}`}>{title}</h3>
+                <h3 className={`text-base font-bold uppercase tracking-widest ${tc[color]}`}>{title}</h3>
             </div>
             <div className="text-slate-600 dark:text-slate-300">
                 {children}
@@ -140,15 +140,15 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
     const gaps = p?.context?.potential_gaps || p?.problems_to_solve || [];
     const success = p?.core_research?.success_factors || p?.success_factors || [];
     const summary = p?.report_output?.executive_summary || p?.executive_summary;
-    const compAnalysis = p?.report_output?.comparative_analysis || p?.comparative_analysis || [];
+    const compAnalysis = p?.report_output?.comparative_analysis || p?.comparative_analysis || p?.structured_prep?.gap_analysis || [];
     const psychQs = p?.critical_analysis?.psychological_questions || p?.psychological_questions || [];
     const backQs = p?.report_output?.questions_for_interviewer || p?.questions_for_interviewer || [];
     const fullReport = p?.report_output?.deep_dive_analysis || p?.full_report || p?.full_prep_guide;
-    const pitch = p?.critical_analysis?.solution_selling_pitch;
+    const pitch = p?.critical_analysis?.solution_selling_pitch || p?.structured_prep?.elevator_pitch;
 
     const gapColor = (s: string) =>
-        s === 'no gap' || s === 'kein Gap' || s === 'No Gap' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
-            s === 'slight gap' || s === 'leichter Gap' || s === 'Slight Gap' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
+        s === 'no gap' || s === 'kein Gap' || s === 'No Gap' || s === 'Low' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
+            s === 'slight gap' || s === 'leichter Gap' || s === 'Slight Gap' || s === 'Medium' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
                 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
 
     if (interviewQueued) {
@@ -253,11 +253,11 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                     <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl">
                                         <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                     </div>
-                                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Success Factors</span>
+                                    <span className="text-base font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Success Factors</span>
                                 </div>
                                 <ul className="space-y-4">
                                     {success.map((s: string, i: number) => (
-                                        <li key={i} className="flex gap-3 text-sm text-emerald-800 dark:text-emerald-300 leading-normal">
+                                        <li key={i} className="flex gap-3 text-base text-emerald-800 dark:text-emerald-300 leading-normal">
                                             <span className="text-emerald-500 font-bold">✓</span>{s}
                                         </li>
                                     ))}
@@ -270,11 +270,11 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                     <div className="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
                                         <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                                     </div>
-                                    <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Potential Gaps</span>
+                                    <span className="text-base font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Potential Gaps</span>
                                 </div>
                                 <ul className="space-y-4">
                                     {gaps.map((g: string, i: number) => (
-                                        <li key={i} className="flex gap-3 text-sm text-rose-800 dark:text-rose-300 leading-normal">
+                                        <li key={i} className="flex gap-3 text-base text-rose-800 dark:text-rose-300 leading-normal">
                                             <span className="text-rose-500 font-bold">!</span>{g}
                                         </li>
                                     ))}
@@ -291,20 +291,26 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                             {compAnalysis.map((item: any, i: number) => (
                                 <div key={i} className="p-5 bg-white dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 hover:shadow-md transition-shadow">
                                     <div className="flex items-center justify-between gap-3">
-                                        <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest truncate">{item.category || 'Skillset'}</span>
-                                        <span className={`text-[10px] uppercase font-black px-3 py-1 rounded-lg shadow-sm ${gapColor(item.gap_evaluation || '')}`}>
-                                            {item.gap_evaluation || 'N/A'}
+                                        <span className="text-sm font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest truncate">{item.category || 'Skillset'}</span>
+                                        <span className={`text-xs uppercase font-black px-3 py-1 rounded-lg shadow-sm ${gapColor(item.gap_evaluation || item.gap_severity || '')}`}>
+                                            {item.gap_evaluation || item.gap_severity || 'N/A'}
                                         </span>
                                     </div>
                                     <div className="space-y-3 pt-2">
                                         <div>
-                                            <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Job Requirement</span>
-                                            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{item.job_requirement || item.requirement}</p>
+                                            <span className="block text-xs font-bold text-slate-400 uppercase mb-1">Job Requirement</span>
+                                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{item.job_requirement || item.requirement}</p>
                                         </div>
                                         <div className="pt-2 border-t border-slate-50 dark:border-slate-800">
-                                            <span className="block text-[9px] font-bold text-indigo-400 uppercase mb-1">Your CV Match</span>
-                                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic">{item.cv_qualification || item.my_story}</p>
+                                            <span className="block text-xs font-bold text-indigo-400 uppercase mb-1">Your CV Match</span>
+                                            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed italic">{item.cv_qualification || item.my_story || item.cv_status}</p>
                                         </div>
+                                        {item.interview_strategy && (
+                                            <div className="pt-2 border-t border-slate-50 dark:border-slate-800">
+                                                <span className="block text-xs font-bold text-purple-400 uppercase mb-1">Interview Strategy</span>
+                                                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{item.interview_strategy}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -320,10 +326,10 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                                 <div key={i} className="p-5 bg-white/40 dark:bg-purple-900/20 rounded-2xl border border-purple-100 dark:border-purple-500/10 space-y-3">
                                     <div className="flex gap-4">
                                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center text-xs font-black text-purple-600">Q</div>
-                                        <p className="text-base font-bold text-slate-800 dark:text-slate-100 leading-tight pt-1">{q.question}</p>
+                                        <p className="text-lg font-bold text-slate-800 dark:text-slate-100 leading-tight pt-1">{q.question}</p>
                                     </div>
                                     <div className="ml-12 p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-500/10 border-l-4 border-emerald-400">
-                                        <p className="text-sm text-slate-700 dark:text-slate-300 italic leading-relaxed font-medium">
+                                        <p className="text-base text-slate-700 dark:text-slate-300 italic leading-relaxed font-medium">
                                             <span className="text-emerald-600 font-bold not-italic mr-2">Tactic:</span>
                                             {q.suggested_answer}
                                         </p>
@@ -341,7 +347,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                             {backQs.map((q: string, i: number) => (
                                 <div key={i} className="flex gap-4 p-4 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-sky-100/50 dark:border-sky-500/10">
                                     <span className="text-sky-500 font-black">?</span>
-                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{q}</p>
+                                    <p className="text-base font-semibold text-slate-700 dark:text-slate-200">{q}</p>
                                 </div>
                             ))}
                         </div>
