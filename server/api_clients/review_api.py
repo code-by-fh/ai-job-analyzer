@@ -21,7 +21,7 @@ def get_salary_data(job_title: str, location: str = "Deutschland") -> Dict[str, 
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
-    from intelligence_service import get_ai_client, get_model
+    from intelligence.service import get_ai_client, get_model
 
     client = get_ai_client()
     model = get_model()

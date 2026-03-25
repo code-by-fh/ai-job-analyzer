@@ -71,11 +71,24 @@ export default function Profile() {
     }
   }, [token]);
 
-  const completion = useCallback(() => {
-    const fields = [formData.role, formData.skills, formData.min_salary, formData.location, formData.preferences];
-    const filled = fields.filter(Boolean).length + (formData.cv_data.experience.length > 0 ? 1 : 0);
-    return Math.round((filled / 6) * 100);
-  }, [formData]);
+  const completionData = useCallback(() => {
+    const missing = [];
+    if (!formData.role) missing.push(t('targetRole'));
+    if (!formData.skills) missing.push(t('skillsComma'));
+    if (!formData.min_salary) missing.push(t('minSalary'));
+    if (!formData.location) missing.push(t('location'));
+    if (!formData.preferences) missing.push(t('preferencesNatural'));
+    if (formData.cv_data.experience.length === 0) missing.push(t('experience'));
+    if (formData.cv_data.projects.length === 0) missing.push(t('keyProjects'));
+    if (!formData.cv_data.education) missing.push(t('education'));
+
+    const total = 8;
+    const filled = total - missing.length;
+    return {
+      pct: Math.round((filled / total) * 100),
+      missing
+    };
+  }, [formData, t]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -172,7 +185,7 @@ export default function Profile() {
   );
 
 
-  const pct = completion();
+  const { pct, missing } = completionData();
   const pctColor = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
   const pctTextColor = pct >= 80 ? 'text-emerald-500' : pct >= 50 ? 'text-amber-500' : 'text-rose-500';
 
@@ -191,6 +204,58 @@ export default function Profile() {
             className={`h-full rounded-full transition-all duration-700 ${pctColor}`}
             style={{ width: `${pct}%` }}
           />
+        </div>
+        {missing.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('missingFields')}:</span>
+            {missing.map((field, i) => (
+              <span key={i} className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-700/30">
+                <span className={`w-1 h-1 rounded-full ${pctColor}`} /> {field}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* CV Upload Drop Zone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 mb-8 ${
+          dragOver
+            ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 scale-[1.01]'
+            : uploading
+              ? 'border-purple-300 dark:border-purple-500/40 bg-purple-50/30 dark:bg-purple-500/5'
+              : 'border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20'
+        }`}
+      >
+        <input
+          type="file" accept=".pdf" onChange={handleFileUpload} disabled={uploading}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+        />
+        <div className="flex flex-col items-center justify-center py-10 px-6 text-center pointer-events-none select-none">
+          {uploading ? (
+            <>
+              <div className="w-12 h-12 border-4 border-purple-400/30 border-t-purple-500 rounded-full animate-spin mb-4" />
+              <p className="font-semibold text-purple-600 dark:text-purple-400">{t('analyzing')}</p>
+              <p className="text-xs text-slate-400 mt-1">{uploadMessage}</p>
+            </>
+          ) : uploadMessage ? (
+            <>
+              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3 text-2xl"><CheckCircle2 className="text-emerald-500" /></div>
+              <p className="font-semibold text-emerald-600 dark:text-emerald-400">{uploadMessage}</p>
+            </>
+          ) : (
+            <>
+              <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4"><UploadCloud className="text-indigo-500" /></div>
+              <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{t('uploadCv')}</p>
+              <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{t('dropPdf')}</p>
+              <div className="mt-4 px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl">
+                {t('selectPdf')}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -250,48 +315,6 @@ export default function Profile() {
       {/* TAB: Resume */}
       {activeTab === 'resume' && (
         <div className="space-y-6">
-
-          {/* CV Upload Drop Zone */}
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 ${
-              dragOver
-                ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 scale-[1.01]'
-                : uploading
-                  ? 'border-purple-300 dark:border-purple-500/40 bg-purple-50/30 dark:bg-purple-500/5'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20'
-            }`}
-          >
-            <input
-              type="file" accept=".pdf" onChange={handleFileUpload} disabled={uploading}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
-            />
-            <div className="flex flex-col items-center justify-center py-10 px-6 text-center pointer-events-none select-none">
-              {uploading ? (
-                <>
-                  <div className="w-12 h-12 border-4 border-purple-400/30 border-t-purple-500 rounded-full animate-spin mb-4" />
-                  <p className="font-semibold text-purple-600 dark:text-purple-400">{t('analyzing')}</p>
-                  <p className="text-xs text-slate-400 mt-1">{uploadMessage}</p>
-                </>
-              ) : uploadMessage ? (
-                <>
-                  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3 text-2xl"><CheckCircle2 className="text-emerald-500" /></div>
-                  <p className="font-semibold text-emerald-600 dark:text-emerald-400">{uploadMessage}</p>
-                </>
-              ) : (
-                <>
-                  <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4"><UploadCloud className="text-indigo-500" /></div>
-                  <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{t('uploadCv')}</p>
-                  <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{t('dropPdf')}</p>
-                  <div className="mt-4 px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl">
-                    {t('selectPdf')}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
 
           {/* Experience */}
           <div className="glass-card rounded-2xl p-6 sm:p-8">

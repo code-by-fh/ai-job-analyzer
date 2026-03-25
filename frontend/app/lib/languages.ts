@@ -334,6 +334,7 @@ export const translations = {
         // Profile Page
         profileAndResume: "Profile & Resume",
         profileCompletion: "Profile Completion",
+        missingFields: "Missing Fields",
         targetJob: "Target Job",
         resume: "Resume",
         universityPlaceholder: "University, Degree...",
@@ -838,6 +839,7 @@ export const translations = {
         // Profile Page
         profileAndResume: "Profil & Lebenslauf",
         profileCompletion: "Profil-Vollständigkeit",
+        missingFields: "Fehlende Felder",
         targetJob: "Ziel-Job",
         resume: "Lebenslauf",
         universityPlaceholder: "Universität, Abschluss...",

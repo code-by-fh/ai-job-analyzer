@@ -11,7 +11,7 @@ import os
 import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database import Base, JobEntry, User, UserProfile
+from database.core import Base, JobEntry, User, UserProfile
 from auth import get_password_hash
 
 # Config

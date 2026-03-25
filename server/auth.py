@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from database import SessionLocal, User
+from database.core import SessionLocal, User
 
 # Security Config
 SECRET_KEY = os.getenv("SECRET_KEY")

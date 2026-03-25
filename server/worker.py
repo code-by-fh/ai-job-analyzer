@@ -13,7 +13,7 @@ from celery_config import celery_app
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 
-from database import (
+from database.core import (
     SessionLocal,
     JobEntry,
     UserProfile,
@@ -26,7 +26,7 @@ import requests
 # Logging Setup
 from logger import get_logger
 
-from intelligence_service import (
+from intelligence.service import (
     get_model,
     get_api_key,
     format_cv_for_prompt,
@@ -662,6 +662,12 @@ def analyze_job_task(job_data):
 
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+
+    # Bail out immediately if the crawl job was cancelled
+    crawl_job_id = job_data.get("crawl_job_id")
+    if crawl_job_id and not r.exists(f"crawl_job:{crawl_job_id}"):
+        logger.info(f"[TASK] Crawl job {crawl_job_id} cancelled — skipping analysis for {job_id}")
+        return
 
     # Notify frontend that analysis is starting
     crawl_job_id = job_data.get("crawl_job_id")
@@ -1375,7 +1381,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
 @celery_app.task(name="worker.generate_interview_prep_task", bind=True, max_retries=2)
 def generate_interview_prep_task(self, job_id: str, user_id: int):
     """Generiert Interview-Vorbereitung für einen Job via AI."""
-    from intelligence_service import generate_interview_prep
+    from intelligence.service import generate_interview_prep
 
     db = SessionLocal()
     try:
@@ -1447,9 +1453,9 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
 @celery_app.task(name="worker.generate_company_profile", bind=True, max_retries=2)
 def generate_company_profile(self, domain: str, user_id: int):
     """Generiert ein Firmenprofil inkl. Gehaltsdaten."""
-    from intelligence_service import generate_company_profile_summary
+    from intelligence.service import generate_company_profile_summary
     from api_clients.review_api import get_salary_data
-    from database import CompanyProfile
+    from database.core import CompanyProfile
     from datetime import datetime, timezone as tz
 
     db = SessionLocal()
@@ -1675,7 +1681,7 @@ def check_platforms_for_crawl():
     try:
         from datetime import datetime, timedelta, timezone
         from sqlalchemy import or_
-        from database import JobPlatform
+        from database.core import JobPlatform
         import requests
 
         import zoneinfo

@@ -12,7 +12,7 @@ from scraper_celery_config import celery_app
 import redis
 
 from auth import get_current_user
-from database import User
+from database.core import User
 from logger import get_logger
 
 logger = get_logger(__name__)

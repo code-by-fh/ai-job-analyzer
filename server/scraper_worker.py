@@ -12,8 +12,8 @@ from playwright.sync_api import sync_playwright
 import redis
 
 from scraper_celery_config import celery_app, REDIS_URL
-from intelligence_service import extract_job_details, get_model, get_api_key
-from database import SessionLocal, UserProfile, JobEntry
+from intelligence.service import extract_job_details, get_model, get_api_key
+from database.core import SessionLocal, UserProfile, JobEntry
 
 # Logging Setup
 from logger import get_logger
@@ -418,6 +418,11 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
     db = SessionLocal()
 
     try:
+        # Bail out immediately if the crawl job was cancelled
+        if job_id and not r.exists(f"crawl_job:{job_id}"):
+            logger.info(f"[TASK] Crawl job {job_id} cancelled — skipping {url}")
+            return
+
         html = get_html_with_browser(url)
         if not html:
             logger.warning(f"Skipping {url} due to download failure.")

@@ -90,7 +90,7 @@ export default function PlatformCard({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
                         {/* Favicon */}
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border p-1.5 transition-all duration-200
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 border p-1.5 transition-all duration-200
                             ${platform.is_active
                                 ? 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 shadow-sm'
                                 : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-50'
@@ -138,12 +138,12 @@ export default function PlatformCard({
                                         >
                                             {platform.name}
                                         </span>
-                                        
+
                                         <div className="flex items-center ml-auto gap-0.5 bg-slate-100/80 dark:bg-slate-800/80 p-0.5 rounded-md border border-slate-200/50 dark:border-slate-700/50 shrink-0 shadow-sm transition-opacity">
-                                            <button 
-                                                onClick={() => !isBusy && setIsEditingName(true)} 
-                                                disabled={isBusy} 
-                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400 hover:text-indigo-600 transition-all cursor-pointer disabled:hidden active:scale-90" 
+                                            <button
+                                                onClick={() => !isBusy && setIsEditingName(true)}
+                                                disabled={isBusy}
+                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400 hover:text-indigo-600 transition-all cursor-pointer disabled:hidden active:scale-90"
                                                 title={t('edit') || 'Edit'}
                                             >
                                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,10 +151,10 @@ export default function PlatformCard({
                                                 </svg>
                                             </button>
                                             <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5" />
-                                            <button 
-                                                onClick={() => onGenerateName(platform.id)} 
-                                                disabled={isBusy} 
-                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 transition-all cursor-pointer disabled:hidden active:scale-90" 
+                                            <button
+                                                onClick={() => onGenerateName(platform.id)}
+                                                disabled={isBusy}
+                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 transition-all cursor-pointer disabled:hidden active:scale-90"
                                                 title="AI Generate Name"
                                             >
                                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,10 +210,10 @@ export default function PlatformCard({
                                             {platform.url}
                                         </a>
                                         <div className="flex items-center ml-auto bg-slate-100/80 dark:bg-slate-800/80 p-0.5 rounded-md border border-slate-200/50 dark:border-slate-700/50 shrink-0 shadow-sm transition-opacity">
-                                            <button 
-                                                onClick={() => !isBusy && setIsEditingUrl(true)} 
-                                                disabled={isBusy} 
-                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400 hover:text-indigo-500 transition-all cursor-pointer disabled:hidden active:scale-90" 
+                                            <button
+                                                onClick={() => !isBusy && setIsEditingUrl(true)}
+                                                disabled={isBusy}
+                                                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400 hover:text-indigo-500 transition-all cursor-pointer disabled:hidden active:scale-90"
                                                 title={t('edit') || 'Edit'}
                                             >
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,8 +246,8 @@ export default function PlatformCard({
                 <div className="flex flex-col items-center gap-2 shrink-0 self-stretch pl-2 sm:pl-3 border-l border-slate-100 dark:border-slate-800/60 transition-all duration-300 ml-1">
                     {/* Cancel crawl */}
                     {activeJob && (
-                        <button 
-                            onClick={() => onCancelCrawl(activeJob.job_id)} 
+                        <button
+                            onClick={() => onCancelCrawl(activeJob.job_id)}
                             title={t('cancelCrawl')}
                             className="w-9 h-9 flex items-center justify-center text-rose-500 bg-rose-50/50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-lg transition-all duration-200 shadow-sm hover:shadow-rose-500/10 cursor-pointer active:scale-90"
                         >
@@ -285,7 +285,7 @@ export default function PlatformCard({
                         onClick={() => onRemove(platform.id)}
                         disabled={isBusy}
                         title={isBusy ? t('crawlInProgress') : t('remove')}
-                        className="w-9 h-9 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-200 dark:hover:border-rose-800/50 transition-all duration-200 cursor-pointer disabled:opacity-30 disabled:pointer-events-none active:scale-90"
+                        className="w-9 h-9 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 bg-white dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg border border-slate-200 dark:border-slate-800/50 hover:border-rose-200 dark:hover:border-rose-800/50 transition-all duration-200 cursor-pointer disabled:opacity-30 disabled:pointer-events-none active:scale-90"
                     >
                         <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -299,8 +299,8 @@ export default function PlatformCard({
                             disabled={isBusy}
                             title={isBusy ? t('crawlInProgress') : (platform.is_active ? t('platformActive') : t('platformInactive'))}
                             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-all duration-300 focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-                                ${platform.is_active 
-                                    ? 'bg-emerald-500 shadow-sm shadow-emerald-500/20' 
+                                ${platform.is_active
+                                    ? 'bg-emerald-500 shadow-sm shadow-emerald-500/20'
                                     : 'bg-slate-200 dark:bg-slate-700/50'}`}
                         >
                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-md transition-all duration-300

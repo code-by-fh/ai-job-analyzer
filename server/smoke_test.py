@@ -530,7 +530,6 @@ def test_worker_utilities() -> None:
             "sys.modules",
             {
                 "celery_config": MagicMock(),
-                "database": MagicMock(),
                 "openai": MagicMock(),
                 "pypdf": MagicMock(),
                 "redis": MagicMock(),
@@ -575,7 +574,6 @@ def test_worker_utilities() -> None:
             "sys.modules",
             {
                 "celery_config": MagicMock(),
-                "database": MagicMock(),
                 "openai": MagicMock(),
                 "pypdf": MagicMock(),
                 "redis": MagicMock(),
@@ -602,7 +600,7 @@ def test_notification_gmail() -> None:
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -670,7 +668,7 @@ def test_notification_pushover() -> None:
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -758,7 +756,7 @@ def test_notification_dispatcher() -> None:
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -1046,7 +1044,7 @@ def test_unit_format_cv():
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -1075,7 +1073,7 @@ def test_unit_format_cv_none():
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -1121,7 +1119,7 @@ def test_unit_send_notification_gmail_only():
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
@@ -1158,7 +1156,7 @@ def test_unit_pushover_missing_creds():
         "sys.modules",
         {
             "celery_config": MagicMock(),
-            "database": MagicMock(),
+
             "openai": MagicMock(),
             "pypdf": MagicMock(),
             "redis": MagicMock(),
