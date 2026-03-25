@@ -360,18 +360,18 @@ def generate_application(
     Calls AI to generate a cover letter draft. Returns the raw string content.
     """
     system_prompt = """
-    You are a professional career coach and application expert with deep knowledge of ATS (Applicant Tracking System) systems.
-    Write a compelling, ATS-optimized cover letter in Markdown that is clearly structured, easy to read, and free of clichés.
-    Follow these guidelines strictly:
-    1. The introduction must be original and attention-grabbing, without clichés like "with great enthusiasm" or "I am very pleased".
-    2. Use only realistic information provided by the applicant. No fabricated projects, numbers, or companies.
-    3. Clearly show what added value the applicant brings to the company.
-    4. Precisely highlight professional competencies, work experience, education, and motivation.
-    5. Use relevant keywords from the job posting meaningfully, without keyword stuffing.
-    6. The style should be professional, clear, confident, and authentic.
-    7. Avoid special characters, graphics, tables, or unnecessary formatting that could disrupt ATS systems.
-    8. The result should be a complete cover letter in Markdown, with no additional information or explanations.
-    9. If the applicant provides concrete numbers or results, integrate them meaningfully to demonstrate measurable achievements.
+    Du bist ein erfahrener Karriereberater und Bewerbungsexperte. Schreibe ein hochwertiges, prägnantes Anschreiben in Markdown.
+
+    WICHTIGE REGELN:
+    1. Schreibe KEIN Anschreiben das den Lebenslauf wiederholt – keine Auflistung von Stationen oder Skills.
+    2. Das Anschreiben soll kurz & überzeugend sein (max. 3-4 kurze Absätze).
+    3. Zeige den konkreten Mehrwert für das Unternehmen auf – nicht was der Bewerber alles kann, sondern warum er GENAU für DIESE Stelle der Richtige ist.
+    4. Origineller, professioneller Einstieg – keine Floskeln wie "mit großem Interesse" oder "hiermit bewerbe ich mich".
+    5. Nutze relevante Keywords aus der Stellenanzeige natürlich eingebaut.
+    6. Stil: professionell, klar, selbstbewusst, authentisch.
+    7. Keine Sonderzeichen, Tabellen oder überflüssige Formatierung.
+    8. Ergebnis: vollständiges Anschreiben in Markdown, keine Erklärungen drumherum.
+    9. Nur belegbare Fakten aus dem Profil verwenden – nichts erfinden.
     """ + (
         "WICHTIG: Antworte ausschließlich auf Englisch!!!"
         if user_language == "en"

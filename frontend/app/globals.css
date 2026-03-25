@@ -28,6 +28,7 @@
   /* Dark Mode Override */
   .dark body {
     @apply bg-slate-950 text-slate-100;
+    color-scheme: dark;
   }
 
   /* Typography Defaults */
@@ -56,6 +57,11 @@
 
   .dark ::-webkit-scrollbar-thumb {
     @apply bg-slate-800 hover:bg-slate-700;
+  }
+
+  /* Resizer Color for Dark Mode */
+  .dark textarea::-webkit-resizer {
+    background-color: transparent; /* Makes it use the color-scheme or browser default */
   }
 
   /* Selection Color */

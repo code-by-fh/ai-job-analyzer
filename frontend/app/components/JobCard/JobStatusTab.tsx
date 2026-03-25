@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Check, Clock, ChevronRight } from 'lucide-react';
+import { Loader2, Check, Clock, ChevronRight, ExternalLink } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 
 const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
@@ -44,6 +44,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
     const statusMeta = STATUS_META[currentStatus] || STATUS_META['OPEN'];
     const currentIdx = STATUS_PIPELINE.indexOf(currentStatus as JobStatus);
     const isExitStatus = currentStatus === 'REJECTED' || currentStatus === 'FAILED';
+    const canReject = ['APPLIED', 'INTERVIEW', 'OFFER'].includes(currentStatus) || currentStatus === 'REJECTED';
     const guidance = STATUS_GUIDANCE[currentStatus] ?? STATUS_GUIDANCE['OPEN'];
 
     const dynamicItems = guidance.items.map(item => {
@@ -58,7 +59,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
             {/* Pipeline Stepper */}
             <div>
                 <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-4">{t('applicationPipeline')}</p>
-                <div className="relative flex items-start justify-between">
+                <div className="relative flex items-start justify-between overflow-x-auto pb-2 gap-1">
                     {/* Background connector */}
                     <div className="absolute top-4 left-4 right-4 h-0.5 bg-slate-200 dark:bg-slate-700" />
                     {/* Filled connector */}
@@ -76,7 +77,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                             <button
                                 key={s}
                                 onClick={() => onStatusUpdate(job.id, s)}
-                                className="relative flex flex-col items-center gap-1.5 cursor-pointer group/step z-10 flex-1 min-w-0"
+                                className="relative flex flex-col items-center gap-1.5 cursor-pointer group/step z-10 flex-1 min-w-[50px]"
                                 title={t(meta.labelKey)}
                             >
                                 <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm transition-all duration-300
@@ -89,7 +90,7 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                 >
                                 {isDone ? <Check className="w-4 h-4" /> : <DynamicIcon name={meta.icon} className="w-4 h-4" />}
                                 </div>
-                                <span className={`text-[9px] font-semibold text-center leading-tight hidden sm:block transition-colors
+                                <span className={`text-[8px] sm:text-[9px] font-semibold text-center leading-tight block transition-colors
                                     ${isCurrent ? 'text-slate-800 dark:text-slate-100 font-bold' : isDone ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}
                                 >
                                     {t(meta.labelKey)}
@@ -99,28 +100,36 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                     })}
                 </div>
 
-                {/* Exit states */}
-                <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">{t('otherStatus')}</span>
-                    {(['REJECTED', 'FAILED'] as JobStatus[]).map((s) => {
-                        const meta = STATUS_META[s];
-                        const isActive = job.status === s;
-                        return (
-                            <button
-                                key={s}
-                                onClick={() => onStatusUpdate(job.id, s)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer
-                                    ${isActive
-                                        ? meta.pillCls + ' ring-2 ring-offset-1 ring-rose-300 dark:ring-rose-700'
-                                        : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-rose-500 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800/50'
-                                    }`}
+                {/* Pipeline fork: Rejected as alternative exit branch */}
+                {canReject && <div className="mt-2" style={{ marginLeft: `calc(${(Math.max(currentIdx, 0) / (STATUS_PIPELINE.length - 1)) * 100}% - 1rem)` }}>
+                    {/* Vertical drop from pipeline */}
+                    <div className="w-px h-3 bg-slate-200 dark:bg-slate-700" />
+                    <div className="flex items-center">
+                        {/* Horizontal stub */}
+                        <div className="w-4 h-px bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                        {/* Rejected step node – same style as pipeline steps */}
+                        <button
+                            onClick={() => onStatusUpdate(job.id, 'REJECTED')}
+                            className="relative flex flex-col items-center gap-1.5 cursor-pointer group/rej z-10 flex-shrink-0"
+                            title={t('statusRejected')}
+                        >
+                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm transition-all duration-300
+                                ${job.status === 'REJECTED'
+                                    ? STATUS_META['REJECTED'].stepActive
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 group-hover/rej:border-rose-400 dark:group-hover/rej:border-rose-600 group-hover/rej:text-rose-400'
+                                }`}
                             >
-                                <DynamicIcon name={meta.icon} className="w-3.5 h-3.5" />
-                                <span>{t(meta.labelKey)}</span>
-                            </button>
-                        );
-                    })}
-                </div>
+                                <DynamicIcon name={STATUS_META['REJECTED'].icon} className="w-4 h-4" />
+                            </div>
+                            <span className={`text-[8px] sm:text-[9px] font-semibold text-center leading-tight transition-colors
+                                ${job.status === 'REJECTED' ? 'text-rose-500 dark:text-rose-400 font-bold' : 'text-slate-300 dark:text-slate-600'}`}
+                            >
+                                {t(STATUS_META['REJECTED'].labelKey)}
+                            </span>
+                        </button>
+                        <span className="ml-3 text-[9px] uppercase font-bold text-slate-300 dark:text-slate-600 tracking-widest">{t('alternativePath')}</span>
+                    </div>
+                </div>}
             </div>
 
             {/* Was jetzt? Guidance */}
@@ -146,13 +155,30 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                 </div>
 
                 <div className="space-y-2 mb-5">
-                    {dynamicItems.map((item, i) => (
-                        <div 
-                            key={i} 
+                    {dynamicItems.map((item, i) => {
+                        const handleRowClick = (!item.done && (item.tabHint || item.descHint)) ? () => {
+                            if (item.tabHint) {
+                                setActiveTab(item.tabHint as TabType);
+                                if (item.tabHint === 'overview') {
+                                    setTimeout(() => {
+                                        window.dispatchEvent(new CustomEvent('showJobDetails', { detail: { jobId: job.id } }));
+                                    }, 50);
+                                }
+                            }
+                            if (item.descHint) {
+                                window.dispatchEvent(new CustomEvent('showJobDescription', { detail: { jobId: job.id } }));
+                            }
+                        } : undefined;
+                        return (
+                        <div
+                            key={i}
+                            onClick={handleRowClick}
                             className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all
-                                ${item.done 
-                                    ? 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-100 dark:border-slate-800/50 opacity-60' 
-                                    : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500/30 shadow-sm'
+                                ${item.done
+                                    ? 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-100 dark:border-slate-800/50 opacity-60'
+                                    : handleRowClick
+                                        ? 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500/30 shadow-sm cursor-pointer'
+                                        : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 shadow-sm'
                                 }`}
                         >
                             <div className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300
@@ -170,17 +196,25 @@ export default function JobStatusTab({ job, apiBase, onStatusUpdate, setActiveTa
                                 </p>
                             </div>
 
-                            {item.tabHint && !item.done && (
-                                <button
-                                    onClick={() => setActiveTab(item.tabHint as TabType)}
-                                    className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors cursor-pointer"
-                                    title="Open section"
-                                >
+                            {(item.tabHint || item.descHint) && !item.done && (
+                                <div className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 pointer-events-none">
                                     <ChevronRight size={14} />
-                                </button>
+                                </div>
+                            )}
+                            {item.linkHint === 'url' && job.url && !item.done && (
+                                <a
+                                    href={job.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-800/50 text-slate-400 hover:text-indigo-500 transition-colors"
+                                    title="Open job posting"
+                                >
+                                    <ExternalLink size={14} />
+                                </a>
                             )}
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 <div className="flex items-start gap-2 pt-3 border-t border-slate-200/60 dark:border-slate-700/40">

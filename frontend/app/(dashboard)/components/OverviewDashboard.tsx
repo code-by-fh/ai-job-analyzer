@@ -5,6 +5,7 @@ import { useAuth, fetchWithAuth } from '../../components/AuthProvider';
 import { useLanguage } from '../../components/LanguageProvider';
 import JobPlatformsManager from './JobPlatformsManager';
 import PageWrapper from '../../components/PageWrapper';
+import PageHeader from '../../components/PageHeader';
 import { logger } from '../../lib/logger';
 
 interface Statistics {
@@ -64,11 +65,11 @@ export default function OverviewDashboard() {
 
     const statCards = stats
         ? [
-            { label: 'Total', value: stats.total_jobs, color: 'indigo', icon: '💼' },
-            { label: t('statusApplied'), value: stats.applied_jobs, color: 'blue', icon: '📤' },
-            { label: t('statusInterview'), value: stats.interviews, color: 'amber', icon: '🗓️' },
-            { label: t('statusOffer'), value: stats.offers, color: 'emerald', icon: '🎉' },
-            { label: t('statusRejected'), value: stats.rejected, color: 'rose', icon: '❌' },
+            { label: t('total'), value: stats.total_jobs, color: 'indigo', icon: '💼', link: '/listings' },
+            { label: t('statusApplied'), value: stats.applied_jobs, color: 'blue', icon: '📤', link: '/listings?status=APPLIED' },
+            { label: t('statusInterview'), value: stats.interviews, color: 'amber', icon: '🗓️', link: '/listings?status=INTERVIEW' },
+            { label: t('statusOffer'), value: stats.offers, color: 'emerald', icon: '🎉', link: '/listings?status=OFFER' },
+            { label: t('statusRejected'), value: stats.rejected, color: 'rose', icon: '❌', link: '/listings?status=REJECTED' },
         ]
         : [];
 
@@ -99,6 +100,10 @@ export default function OverviewDashboard() {
 
     return (
         <PageWrapper>
+            <PageHeader
+                title={t('dashboard')}
+                subtitle={t('dashboardDescription')}
+            />
             {/* Action Items / Warnings Section */}
             {hasWarnings && (
                 <div className="mb-8">
@@ -152,16 +157,17 @@ export default function OverviewDashboard() {
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                     {statCards.map((card) => (
-                        <div
+                        <Link
                             key={card.label}
-                            className={`flex flex-col gap-1 p-5 rounded-2xl border ${colorMap[card.color]}`}
+                            href={card.link}
+                            className={`flex flex-col gap-1 p-5 rounded-2xl border transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer ${colorMap[card.color]}`}
                         >
                             <span className="text-2xl">{card.icon}</span>
                             <span className="text-3xl font-bold mt-1">{card.value}</span>
                             <span className="text-[11px] font-semibold uppercase tracking-wider opacity-70">
                                 {card.label}
                             </span>
-                        </div>
+                        </Link>
                     ))}
                 </div>
             </div>

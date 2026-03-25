@@ -128,7 +128,16 @@ export default function NotificationAdaptersModal({
                                             <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Nicht konfiguriert</p>
                                         )}
                                         {needsConfig && (
-                                            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Empfänger fehlen</p>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400">Empfänger fehlen</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openConfigModal(adapter)}
+                                                    className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
+                                                >
+                                                    Konfigurieren
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
 
@@ -159,7 +168,13 @@ export default function NotificationAdaptersModal({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => onToggleAdapter(platform, adapter)}
+                                                    onClick={() => {
+                                                        if (!isActive && !isPlatformReady(platform, adapter)) {
+                                                            openConfigModal(adapter);
+                                                        } else {
+                                                            onToggleAdapter(platform, adapter);
+                                                        }
+                                                    }}
                                                     title={isActive ? `${adapter} deaktivieren` : `${adapter} aktivieren`}
                                                     className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer
                                                         ${isActive ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700'}`}

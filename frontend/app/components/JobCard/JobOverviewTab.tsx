@@ -46,6 +46,17 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Expand details when navigated here from status tab
+    useEffect(() => {
+        const handler = (e: Event) => {
+            if ((e as CustomEvent).detail?.jobId === job.id) {
+                setIsExpanded(true);
+            }
+        };
+        window.addEventListener('showJobDetails', handler);
+        return () => window.removeEventListener('showJobDetails', handler);
+    }, [job.id]);
+
     // Elapsed timer while analyzing
     useEffect(() => {
         if (!isAnalyzing) {

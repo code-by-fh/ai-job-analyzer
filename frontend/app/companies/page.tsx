@@ -310,7 +310,10 @@ export default function CompaniesPage() {
 
     return (
         <PageWrapper>
-            <PageHeader title={t('companiesPageTitle')} subtitle={t('companiesPageSubtitle')} />
+            <PageHeader
+                title={t('companiesPageTitle')}
+                subtitle={t('companiesDescription')}
+            />
 
             {/* Search */}
             <div className="relative">

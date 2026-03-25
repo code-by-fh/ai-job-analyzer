@@ -4,6 +4,7 @@ import { useAuth, fetchWithAuth } from '../components/AuthProvider';
 import DynamicList from './components/DynamicList';
 import PageWrapper from '../components/PageWrapper';
 import PageHeader from '../components/PageHeader';
+import AutoResizeTextarea from '../components/AutoResizeTextarea';
 import { useLanguage } from '../components/LanguageProvider';
 import { useNotification } from '../components/NotificationProvider';
 import { logger } from '../lib/logger';
@@ -177,7 +178,7 @@ export default function Profile() {
 
   return (
     <PageWrapper>
-      <PageHeader title={t('profileAndResume')} subtitle={t('profileSubtitle')} />
+      <PageHeader title={t('profileAndResume')} subtitle={t('profileDescription')} />
 
       {/* Profile Completion */}
       <div className="glass-card rounded-2xl p-4 mb-6">
@@ -229,7 +230,7 @@ export default function Profile() {
               <input name="role" value={formData.role} onChange={handleChange} className={inputCls} placeholder="e.g. Backend Engineer" />
             </Field>
             <Field label={t('skillsComma')} icon={<Zap size={14} />}>
-              <input name="skills" value={formData.skills} onChange={handleChange} className={inputCls} placeholder="Python, AWS, React..." />
+              <AutoResizeTextarea name="skills" value={formData.skills} onChange={handleChange} className={inputCls} placeholder="Python, AWS, React..." rows={1} />
             </Field>
             <Field label={t('minSalary')} icon={<CircleDollarSign size={14} />}>
               <input name="min_salary" value={formData.min_salary} onChange={handleChange} className={inputCls} placeholder="70.000 €" />
@@ -239,7 +240,7 @@ export default function Profile() {
             </Field>
             <div className="sm:col-span-2">
               <Field label={t('preferencesNatural')} icon={<Sparkles size={14} />}>
-                <textarea name="preferences" value={formData.preferences} onChange={handleChange} className={`${inputCls} min-h-[100px] resize-none`} rows={3} />
+                <AutoResizeTextarea name="preferences" value={formData.preferences} onChange={handleChange} className={inputCls} rows={1} />
               </Field>
             </div>
           </div>
@@ -315,25 +316,25 @@ export default function Profile() {
               onAdd={addProj} onRemove={removeProj} onChange={handleProjChange}
               fields={[
                 { name: 'name', placeholder: t('projectName') },
-                { name: 'tech_stack', placeholder: t('techStack') },
+                { name: 'tech_stack', placeholder: t('techStack'), type: 'textarea' },
                 { name: 'description', placeholder: t('description'), type: 'textarea' },
               ]}
             />
           </div>
 
           {/* Education */}
-          <div className="glass-card rounded-2xl p-6 sm:p-8">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-              <GraduationCap size={20} className="text-indigo-500" /> {t('education')}
-            </h2>
-            <textarea
-              value={formData.cv_data.education}
-              onChange={(e) => setFormData({ ...formData, cv_data: { ...formData.cv_data, education: e.target.value } })}
-              className={`${inputCls} min-h-[120px] resize-none`}
-              placeholder={t('universityPlaceholder')}
-              rows={4}
-            />
-          </div>
+            <div className="glass-card rounded-2xl p-6 sm:p-8">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                <GraduationCap size={20} className="text-indigo-500" /> {t('education')}
+              </h2>
+              <AutoResizeTextarea
+                value={formData.cv_data.education}
+                onChange={(e) => setFormData({ ...formData, cv_data: { ...formData.cv_data, education: e.target.value } })}
+                className={inputCls}
+                placeholder={t('universityPlaceholder')}
+                rows={1}
+              />
+            </div>
         </div>
       )}
 

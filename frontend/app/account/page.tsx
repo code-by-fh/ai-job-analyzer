@@ -199,7 +199,7 @@ export default function Account() {
 
       <PageHeader
         title={t('account')}
-        subtitle={t('security') + " & " + t('dangerZone')}
+        subtitle={t('accountDescription')}
       />
 
       {/* Account Status Messages */}

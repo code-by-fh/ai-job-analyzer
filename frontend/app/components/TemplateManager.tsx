@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchWithAuth } from './AuthProvider';
 import { Plus, Pencil, Trash2, Lock, Smartphone, Mail, Check, X } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
@@ -307,6 +307,33 @@ function TemplateEditForm({
     placeholder: string;
     activeTab: TabType;
 }) {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [showPreview, setShowPreview] = useState(false);
+
+    const insertVariable = (variable: string) => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const newContent = editState.content.substring(0, start) + variable + editState.content.substring(end);
+        onChange({ ...editState, content: newContent });
+        // Restore cursor position after React re-render
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start + variable.length, start + variable.length);
+        }, 0);
+    };
+
+    const varBtn = (variable: string) => (
+        <button
+            key={variable}
+            type="button"
+            onClick={() => insertVariable(variable)}
+            className="bg-slate-100 dark:bg-slate-800 px-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+            title="Klicken zum Einfügen"
+        >{variable}</button>
+    );
+
     return (
         <div className="p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50/30 dark:bg-indigo-900/10 space-y-2">
             <input
@@ -316,21 +343,50 @@ function TemplateEditForm({
                 placeholder="Template-Name"
                 className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <p className="text-[10px] text-slate-500">
-                {activeTab !== 'PUSHOVER' ? (
-                    <>Loop: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{'{{#jobs}}'}</code>…<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{'{{/jobs}}'}</code> &nbsp;|&nbsp; im Loop: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code> &nbsp;|&nbsp; außerhalb: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$userName</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$jobCount</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$jobs_html</code></>
+            <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                    {activeTab !== 'PUSHOVER' ? (
+                        <>
+                            Loop: {varBtn('{{#jobs}}')}…{varBtn('{{/jobs}}')}
+                            &nbsp;|&nbsp; im Loop: {varBtn('$title')} {varBtn('$company')} {varBtn('$match_score')} {varBtn('$reasoning')} {varBtn('$url')}
+                            &nbsp;|&nbsp; außerhalb: {varBtn('$userName')} {varBtn('$jobCount')} {varBtn('$jobs_html')}
+                        </>
+                    ) : (
+                        <>
+                            Variablen: {varBtn('$title')} {varBtn('$company')} {varBtn('$match_score')} {varBtn('$reasoning')} {varBtn('$url')}
+                        </>
+                    )}
+                </p>
+                <button
+                    type="button"
+                    onClick={() => setShowPreview(!showPreview)}
+                    className="shrink-0 text-[10px] font-medium text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer"
+                >
+                    {showPreview ? '← Editor' : 'Vorschau →'}
+                </button>
+            </div>
+            {showPreview ? (
+                activeTab === 'EMAIL' ? (
+                    <div
+                        className="w-full min-h-[100px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 text-xs overflow-auto max-h-[300px]"
+                        dangerouslySetInnerHTML={{ __html: editState.content }}
+                    />
                 ) : (
-                    <>Variablen: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$url</code></>
-                )}
-            </p>
-            <textarea
-                value={editState.content}
-                onChange={e => onChange({ ...editState, content: e.target.value })}
-                placeholder={placeholder}
-                rows={4}
-                className="w-full font-mono text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[100px]"
-                spellCheck={false}
-            />
+                    <div className="w-full min-h-[100px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[300px]">
+                        {editState.content || <span className="text-slate-400 italic">Kein Inhalt</span>}
+                    </div>
+                )
+            ) : (
+                <textarea
+                    ref={textareaRef}
+                    value={editState.content}
+                    onChange={e => onChange({ ...editState, content: e.target.value })}
+                    placeholder={placeholder}
+                    rows={4}
+                    className="w-full font-mono text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[100px]"
+                    spellCheck={false}
+                />
+            )}
             <div className="flex justify-end gap-2">
                 <button
                     type="button"

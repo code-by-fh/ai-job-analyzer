@@ -632,7 +632,7 @@ def filter_urls_task(args):
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         if job_id:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
             )
             try:
                 requests.post(
@@ -1010,7 +1010,7 @@ def analyze_job_task(job_data):
                 import requests as _req
 
                 SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
                 )
                 _req.post(
                     f"{SCRAPER_URL}/fail-crawl",
@@ -1033,7 +1033,7 @@ def analyze_job_task(job_data):
                 import requests
 
                 SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper"
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
                 )
                 requests.post(
                     f"{SCRAPER_URL}/fail-crawl",
@@ -1685,7 +1685,7 @@ def check_platforms_for_crawl():
         platforms = db.query(JobPlatform).filter(JobPlatform.is_active == True).all()
 
         triggered_count = 0
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:80/scraper")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
 
         for p in platforms:
             is_due = False
@@ -1742,15 +1742,21 @@ def check_platforms_for_crawl():
                     f"🚀 Platform {p.name} (ID: {p.id}) is due for crawl. Triggering..."
                 )
                 try:
+                    from auth import create_access_token
+                    platform_user = db.query(User).filter(User.id == p.user_id).first()
+                    if not platform_user:
+                        logger.error(f"User {p.user_id} not found for platform {p.name}, skipping")
+                        continue
+                    _internal_token = create_access_token({"sub": platform_user.username, "tv": platform_user.token_version})
                     resp = requests.post(
                         f"{SCRAPER_URL}/search",
                         json={
                             "query": p.url,
                             "location": "Remote",
-                            "user_id": p.user_id,
                             "platform_id": p.id,
                             "is_initial_run": is_initial_run,
                         },
+                        headers={"Cookie": f"access_token={_internal_token}"},
                         timeout=5,
                     )
                     if resp.status_code == 200:

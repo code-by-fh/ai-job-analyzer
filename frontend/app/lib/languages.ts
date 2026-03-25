@@ -61,6 +61,7 @@ export const translations = {
         edit: "Edit",
         match: "match",
         deleteConfirm: "Are you sure you want to delete this job?",
+        total: "Total",
         statusApplied: "Applied",
         statusInterview: "Interview",
         statusOffer: "Offer",
@@ -72,6 +73,7 @@ export const translations = {
         applicationManagement: "Application Management",
         applicationPipeline: "Application Pipeline",
         otherStatus: "Other:",
+        alternativePath: "Alternative",
 
         // Crawl Status
         jobSearch: "Job Search",
@@ -299,10 +301,20 @@ export const translations = {
         found: "found",
         new: "new",
 
+        // Dashboard
+        dashboardSubtitle: "Your job search overview at a glance",
+        dashboardDescription: "Your job search overview and quick actions.",
+
+        // Listings Page
+        listingsPageTitle: "Job Listings",
+        listingsPageSubtitle: "All your discovered job opportunities",
+        listingsDescription: "Browse and manage all job opportunities found by the agent.",
+
         // Companies
         companies: "Companies",
         companiesPageTitle: "Company Profiles",
         companiesPageSubtitle: "Deep intelligence on all companies in your pipeline",
+        companiesDescription: "Insights and intelligence about the companies in your pipeline.",
 
         // Language Preference
         languagePreference: "Language Preference",
@@ -370,6 +382,22 @@ export const translations = {
         resendSave: "Save Resend",
         mailjetSave: "Save Mailjet",
         smtpSave: "Save SMTP",
+        testNotification: "Test",
+        testSending: "Sending...",
+        testSent: "Sent!",
+        testFailed: "Failed",
+        testRecipientTitle: "Send Test Notification",
+        testRecipientLabel: "Recipient Email",
+        testRecipientPlaceholder: "you@example.com",
+        sendTest: "Send Test",
+        globalEmailSettings: "Global Email Settings",
+        globalEmailSettingsSubtitle: "Shared settings for all email adapters",
+        globalEmailRecipient: "Global Recipient",
+        globalEmailRecipientDesc: "This address always receives a notification, regardless of job platform settings",
+        saveGlobalEmail: "Save",
+        testEmailSend: "Send test email",
+        testEmailSending: "Sending...",
+        testEmailSent: "Test email sent!",
         notificationTemplates: "Notification Templates",
         customTemplates: "Custom Templates",
 
@@ -382,6 +410,7 @@ export const translations = {
         archiveEmpty: "No archived jobs.",
         archivePageTitle: "Archive",
         archivePageSubtitle: "Jobs archived from your listings",
+        archiveDescription: "View and restore previously archived job listings.",
         deletePermanent: "Delete permanently",
         deletePermanentConfirm: "Are you sure you want to delete this job permanently? Note: If the job platform remains active, this job will be imported again during the next scan.",
 
@@ -465,15 +494,22 @@ export const translations = {
 
         // Account Page
         passwordAndAccess: "Password & Access",
+        accountDescription: "Manage your security settings and account data.",
         deleteDataAndAccount: "Delete Data & Account",
         actionsFinalWarning: "These actions are final and cannot be undone.",
         jobsDeletedCount: "{count} jobs deleted.",
         failed: "Failed",
+
+        // Admin Pages
+        adminSettingsDescription: "Global system configuration and maintenance tools.",
+        userManagementDescription: "Create and manage system users and their access levels.",
+        profileDescription: "Manage your professional identity and resume for better matching.",
+        settingsDescription: "Configure your notifications, language, and other preferences.",
     },
     de: {
         // Navigation
         dashboard: "Dashboard",
-        listings: "Listings",
+        listings: "Stellen",
         statistics: "Statistiken",
         scheduledPlatforms: "Geplante Plattformen",
         settings: "Einstellungen",
@@ -529,6 +565,7 @@ export const translations = {
         edit: "Bearbeiten",
         match: "match",
         deleteConfirm: "Möchten Sie diesen Job wirklich löschen?",
+        total: "Gesamt",
         statusApplied: "Beworben",
         statusInterview: "Interview",
         statusOffer: "Angebot",
@@ -540,6 +577,7 @@ export const translations = {
         applicationManagement: "Bewerbungs-Management",
         applicationPipeline: "Bewerbungs-Pipeline",
         otherStatus: "Sonstige:",
+        alternativePath: "Alternativer Ausgang",
 
         // Crawl Status
         jobSearch: "Job-Suche",
@@ -767,10 +805,20 @@ export const translations = {
         found: "gefunden",
         new: "neu",
 
+        // Dashboard
+        dashboardSubtitle: "Deine Jobsuche auf einen Blick",
+        dashboardDescription: "Deine Jobsuche im Überblick mit schnellen Aktionen.",
+
+        // Listings Page
+        listingsPageTitle: "Stellenangebote",
+        listingsPageSubtitle: "Alle gefundenen Stellenanzeigen im Überblick",
+        listingsDescription: "Verwalte alle vom Agenten gefundenen Stellenangebote.",
+
         // Companies
         companies: "Firmen",
         companiesPageTitle: "Unternehmensprofile",
         companiesPageSubtitle: "Deep Intelligence zu allen Firmen in deiner Pipeline",
+        companiesDescription: "Einblicke und Informationen zu den Firmen in deiner Pipeline.",
 
         // Language Preference
         languagePreference: "Spracheinstellung",
@@ -838,6 +886,22 @@ export const translations = {
         resendSave: "Resend speichern",
         mailjetSave: "Mailjet speichern",
         smtpSave: "SMTP speichern",
+        testNotification: "Testen",
+        testSending: "Wird gesendet...",
+        testSent: "Gesendet!",
+        testFailed: "Fehlgeschlagen",
+        testRecipientTitle: "Testnachricht senden",
+        testRecipientLabel: "Empfänger-E-Mail",
+        testRecipientPlaceholder: "du@beispiel.de",
+        sendTest: "Test senden",
+        globalEmailSettings: "Globale E-Mail-Einstellungen",
+        globalEmailSettingsSubtitle: "Gemeinsame Einstellungen für alle E-Mail-Adapter",
+        globalEmailRecipient: "Globaler Empfänger",
+        globalEmailRecipientDesc: "Diese Adresse erhält immer eine Benachrichtigung, unabhängig von den Plattform-Einstellungen",
+        saveGlobalEmail: "Speichern",
+        testEmailSend: "Test-E-Mail senden",
+        testEmailSending: "Wird gesendet...",
+        testEmailSent: "Test-E-Mail gesendet!",
         notificationTemplates: "Benachrichtigungs-Vorlagen",
         customTemplates: "Eigene Vorlagen",
 
@@ -849,8 +913,9 @@ export const translations = {
         archiveAllFromCompany: "Alle von {company} archivieren",
         archiveEmpty: "Keine archivierten Jobs.",
         archivePageTitle: "Archiv",
-        archivePageSubtitle: "Archivierte Jobs aus Deiner Liste",
-        deletePermanent: "Dauerhaft löschen",
+        archivePageSubtitle: "Archivierte Stellenanzeigen",
+        archiveDescription: "Sieh dir archivierte Stellenanzeigen an oder stelle sie wieder her.",
+        deletePermanent: "Endgültig löschen",
         deletePermanentConfirm: "Möchten Sie diesen Job wirklich dauerhaft löschen? Hinweis: Falls die Job-Plattform aktiv bleibt, wird dieser Job beim nächsten Scan eventuell erneut importiert.",
 
         // JobDocumentsTab
@@ -933,10 +998,17 @@ export const translations = {
 
         // Account Page
         passwordAndAccess: "Passwort & Zugang",
+        accountDescription: "Verwalte deine Sicherheitseinstellungen und Kontodaten.",
         deleteDataAndAccount: "Daten & Konto löschen",
         actionsFinalWarning: "Diese Aktionen sind endgültig und können nicht rückgängig gemacht werden.",
         jobsDeletedCount: "{count} Jobs gelöscht.",
         failed: "Fehlgeschlagen",
+
+        // Admin Pages
+        adminSettingsDescription: "Globale System-Konfiguration und Wartungswerkzeuge.",
+        userManagementDescription: "System-Benutzer erstellen und Berechtigungen verwalten.",
+        profileDescription: "Verwalte dein berufliches Profil für bessere Ergebnisse.",
+        settingsDescription: "Konfiguriere Benachrichtigungen, Sprache und Präferenzen.",
     }
 };
 

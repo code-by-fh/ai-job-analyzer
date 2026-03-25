@@ -95,6 +95,7 @@ class UserProfile(Base):
     smtp_user = Column(String, nullable=True)
     smtp_password = Column(String, nullable=True)
     smtp_from_email = Column(String, nullable=True)
+    email_global_recipient = Column(String, nullable=True)
     active_notification_service = Column(
         String, default="NONE"
     )  # NONE, PUSHOVER, RESEND, MAILJET
@@ -262,6 +263,7 @@ class NotificationSettingsData(BaseModel):
     smtp_user: Optional[str] = None
     smtp_password: Optional[str] = None
     smtp_from_email: Optional[str] = None
+    email_global_recipient: Optional[str] = None
 
 
 class PlatformCreate(BaseModel):

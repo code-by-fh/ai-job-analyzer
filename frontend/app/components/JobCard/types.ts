@@ -8,6 +8,8 @@ export interface GuidanceItem {
     textKey: TranslationKey;
     done?: boolean;
     tabHint?: 'overview' | 'application' | 'interview' | 'company' | 'status';
+    linkHint?: string;
+    descHint?: boolean;
 }
 
 export interface StatusGuidance {

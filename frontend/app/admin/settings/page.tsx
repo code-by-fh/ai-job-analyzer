@@ -225,7 +225,7 @@ export default function AdminSettingsPage() {
 
     return (
         <PageWrapper>
-            <PageHeader title="Admin Settings" subtitle="Global System Configuration" />
+            <PageHeader title={t('adminControlPanel')} subtitle={t('adminSettingsDescription')} />
 
             <div className="relative z-20 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <form onSubmit={handleSave} className="space-y-6">

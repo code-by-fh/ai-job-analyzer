@@ -1,5 +1,5 @@
 import { Star, Trash2, RotateCcw, ChevronDown, ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLanguage } from '../LanguageProvider';
 
@@ -40,6 +40,21 @@ export default function JobCard({
 }: JobCardProps) {
     const { t } = useLanguage();
     const [activeTab, setActiveTab] = useState<TabType>('overview');
+    const [isDescOpen, setIsDescOpen] = useState(false);
+    const descRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: Event) => {
+            if ((e as CustomEvent).detail?.jobId === job.id) {
+                setIsDescOpen(true);
+                setTimeout(() => {
+                    descRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 50);
+            }
+        };
+        window.addEventListener('showJobDescription', handler);
+        return () => window.removeEventListener('showJobDescription', handler);
+    }, [job.id]);
 
     const timeAgo = (dateString?: string) => {
         if (!dateString) return '';
@@ -182,16 +197,19 @@ export default function JobCard({
 
             {/* ── DESCRIPTION TOGGLE ── */}
             {job.description && (
-                <details className="group/desc border-t border-slate-50 dark:border-slate-800/40">
-                    <summary className="
-                        px-4 sm:px-5 py-3 text-[11px] font-bold text-slate-400 dark:text-slate-500
-                        cursor-pointer select-none list-none
-                        flex items-center gap-2
-                        hover:text-indigo-500 dark:hover:text-indigo-400
-                        hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5
-                        transition-all duration-200
-                    ">
-                        <ChevronDown className="w-3.5 h-3.5 transition-transform duration-300 group-open/desc:rotate-180 flex-shrink-0" />
+                <div ref={descRef} className="border-t border-slate-50 dark:border-slate-800/40">
+                    <button
+                        onClick={() => setIsDescOpen(o => !o)}
+                        className="
+                            w-full px-4 sm:px-5 py-3 text-[11px] font-bold text-slate-400 dark:text-slate-500
+                            cursor-pointer select-none
+                            flex items-center gap-2
+                            hover:text-indigo-500 dark:hover:text-indigo-400
+                            hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5
+                            transition-all duration-200
+                        "
+                    >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 flex-shrink-0 ${isDescOpen ? 'rotate-180' : ''}`} />
                         <span className="uppercase tracking-widest">{t('jobDescription') || 'Job Description'}</span>
                         <span className="flex-1" />
                         {job.url && (
@@ -206,11 +224,13 @@ export default function JobCard({
                                 <span className="hidden sm:inline uppercase tracking-tighter">{t('applySource') || 'Reference'}</span>
                             </a>
                         )}
-                    </summary>
-                    <div className="px-4 sm:px-5 pb-4 pt-3 prose prose-sm dark:prose-invert max-w-none text-sm border-t border-slate-100 dark:border-slate-800/50">
-                        <ReactMarkdown>{job.description}</ReactMarkdown>
-                    </div>
-                </details>
+                    </button>
+                    {isDescOpen && (
+                        <div className="px-4 sm:px-5 pb-4 pt-3 prose prose-sm dark:prose-invert max-w-none text-sm border-t border-slate-100 dark:border-slate-800/50">
+                            <ReactMarkdown>{job.description}</ReactMarkdown>
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );

@@ -101,7 +101,7 @@ export default function UserManagementPage() {
                 isDestructive
             />
 
-            <PageHeader title={t('userManagement') || 'User Management'} subtitle={t('adminControlPanel')} />
+            <PageHeader title={t('userManagement') || 'User Management'} subtitle={t('userManagementDescription')} />
 
             {/* CREATE USER CARD */}
             <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300">

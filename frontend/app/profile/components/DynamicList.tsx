@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../../components/LanguageProvider';
 import ConfirmModal from '../../components/ConfirmModal';
+import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 
 interface DynamicListProps {
   title: string;
@@ -79,12 +80,12 @@ export default function DynamicList({ title, items, onAdd, onRemove, onChange, f
                   {field.placeholder.split('(')[0]}
                 </label>
                 {field.type === 'textarea' ? (
-                  <textarea
+                  <AutoResizeTextarea
                     value={item[field.name] || ''}
                     onChange={(e) => onChange(index, field.name, e.target.value)}
                     placeholder={field.placeholder}
                     className="w-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
-                    rows={3}
+                    rows={1}
                   />
                 ) : (
                   <input

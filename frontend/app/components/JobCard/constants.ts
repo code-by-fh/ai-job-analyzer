@@ -127,7 +127,7 @@ export const STATUS_GUIDANCE: Record<string, StatusGuidance> = {
         nextActionKey: 'guidanceOpenNext',
         items: [
             { text: 'Read AI analysis (Overview tab)', textKey: 'guidanceOpenItem1', tabHint: 'overview' },
-            { text: 'Read job description completely', textKey: 'guidanceOpenItem2' },
+            { text: 'Read job description completely', textKey: 'guidanceOpenItem2', descHint: true },
             { text: 'Short research on the company', textKey: 'guidanceOpenItem3', tabHint: 'company' },
             { text: 'Start application draft', textKey: 'guidanceOpenItem4', tabHint: 'application' },
         ],

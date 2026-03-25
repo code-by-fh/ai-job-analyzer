@@ -446,20 +446,23 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             />
 
             {!isArchived && (
-                <SearchHeader
-                    jobCount={jobs.length}
-                    query={query}
-                    setQuery={setQuery}
-                    onSearch={startSearch}
-                    isCrawling={isCrawling}
-                    isProfileComplete={!!user?.is_profile_complete}
-                    headlineMsgkey="jobIntelligence"
-                />
+                <>
+                    <SearchHeader
+                        jobCount={jobs.length}
+                        query={query}
+                        setQuery={setQuery}
+                        onSearch={startSearch}
+                        isCrawling={isCrawling}
+                        isProfileComplete={!!user?.is_profile_complete}
+                        headlineMsgkey="jobIntelligence"
+                    />
+                    <p className="text-sm text-slate-500 dark:text-slate-400 -mt-2 mb-2 px-1">{t('listingsDescription')}</p>
+                </>
             )}
             {isArchived && (
                 <PageHeader 
                     title={t('archivePageTitle')} 
-                    subtitle={t('archivePageSubtitle')} 
+                    subtitle={t('archiveDescription')} 
                 />
             )}
 

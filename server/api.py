@@ -969,13 +969,14 @@ def download_application_pdf(
         styled_html = f"""
         <html>
         <head>
+        <meta charset="utf-8" />
         <style>
             @page {{
                 size: A4;
                 margin: 2cm;
             }}
             body {{
-                font-family: Helvetica, Arial, sans-serif;
+                font-family: DejaVu Sans, Helvetica, Arial, sans-serif;
                 font-size: 11pt;
                 line-height: 1.5;
                 color: #333333;
@@ -1000,7 +1001,7 @@ def download_application_pdf(
         try:
             # Encoding as utf-8 and using BytesIO is safer for pisa
             pisa_status = pisa.CreatePDF(
-                BytesIO(styled_html.encode("utf-8")), dest=pdf_buffer, encoding="utf-8"
+                styled_html, dest=pdf_buffer, encoding="utf-8"
             )
 
             if pisa_status.err:
@@ -1414,8 +1415,219 @@ def save_notification_settings(
         if settings.smtp_password != _SECRET_MASK:
             profile.smtp_password = settings.smtp_password
         profile.smtp_from_email = settings.smtp_from_email
+        profile.email_global_recipient = settings.email_global_recipient or profile.email_global_recipient
         db.commit()
         return {"status": "saved"}
+    finally:
+        db.close()
+
+
+class TestNotificationBody(BaseModel):
+    recipient: str = ""
+
+
+@app.post("/notification-settings/test-pushover")
+def test_pushover_settings(current_user: User = Depends(get_current_user)):
+    """Test Pushover from settings page using saved credentials."""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.pushover_user_key or not profile.pushover_api_token:
+            raise HTTPException(status_code=400, detail="Pushover credentials not configured")
+        import httpx
+        resp = httpx.post(
+            "https://api.pushover.net/1/messages.json",
+            data={
+                "token": profile.pushover_api_token,
+                "user": profile.pushover_user_key,
+                "title": "Job Agent – Test",
+                "message": "This test message confirms that Pushover is correctly configured.",
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Pushover error: {resp.status_code} {resp.text}")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/notification-settings/test-resend")
+def test_resend_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
+    """Test Resend from settings page using saved credentials."""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.resend_api_key or not profile.resend_from_email:
+            raise HTTPException(status_code=400, detail="Resend credentials not configured")
+        recipient = body.recipient or profile.email_global_recipient
+        if not recipient:
+            raise HTTPException(status_code=400, detail="No recipient provided")
+        import httpx
+        resp = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {profile.resend_api_key}", "Content-Type": "application/json"},
+            json={
+                "from": profile.resend_from_email,
+                "to": [recipient],
+                "subject": "Job Agent – Resend Test",
+                "html": "<h2>Resend Test</h2><p>This test message confirms that Resend is correctly configured.</p>",
+            },
+            timeout=10,
+        )
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=500, detail=f"Resend error: {resp.status_code} {resp.text}")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/notification-settings/test-mailjet")
+def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
+    """Test Mailjet from settings page using saved credentials."""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.mailjet_api_key or not profile.mailjet_secret_key or not profile.mailjet_from_email:
+            raise HTTPException(status_code=400, detail="Mailjet credentials not configured")
+        recipient = body.recipient or profile.email_global_recipient
+        if not recipient:
+            raise HTTPException(status_code=400, detail="No recipient provided")
+        import httpx
+        resp = httpx.post(
+            "https://api.mailjet.com/v3.1/send",
+            auth=(profile.mailjet_api_key, profile.mailjet_secret_key),
+            json={"Messages": [{"From": {"Email": profile.mailjet_from_email}, "To": [{"Email": recipient}], "Subject": "Job Agent – Mailjet Test", "HTMLPart": "<h2>Mailjet Test</h2><p>This test message confirms that Mailjet is correctly configured.</p>"}]},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Mailjet error: {resp.status_code} {resp.text}")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/notification-settings/test-smtp")
+def test_smtp_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
+    """Test SMTP from settings page using saved credentials."""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile or not profile.smtp_host or not profile.smtp_user or not profile.smtp_password:
+            raise HTTPException(status_code=400, detail="SMTP credentials not configured")
+        recipient = body.recipient or profile.email_global_recipient
+        if not recipient:
+            raise HTTPException(status_code=400, detail="No recipient provided")
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Job Agent – SMTP Test"
+        msg["From"] = profile.smtp_from_email or profile.smtp_user
+        msg["To"] = recipient
+        msg.attach(MIMEText("<h2>SMTP Test</h2><p>This test message confirms that SMTP is correctly configured.</p>", "html", "utf-8"))
+        with smtplib.SMTP(profile.smtp_host, profile.smtp_port or 587, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(profile.smtp_user, profile.smtp_password)
+            server.sendmail(msg["From"], [recipient], msg.as_string())
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/notification-settings/test-email")
+def test_email_notification(current_user: User = Depends(get_current_user)):
+    """Send a test email to the configured global recipient."""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        recipient = profile.email_global_recipient
+        if not recipient:
+            raise HTTPException(status_code=400, detail="No global recipient configured")
+
+        subject = "Test E-Mail vom Job Agent"
+        body = "<h2>Test E-Mail</h2><p>Diese Test-Mail bestätigt, dass dein E-Mail-Adapter korrekt konfiguriert ist.</p>"
+
+        # Try each configured adapter
+        sent = False
+        error_msg = None
+
+        if profile.resend_api_key and profile.resend_from_email:
+            try:
+                import httpx
+                resp = httpx.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {profile.resend_api_key}", "Content-Type": "application/json"},
+                    json={"from": profile.resend_from_email, "to": [recipient], "subject": subject, "html": body},
+                    timeout=10
+                )
+                if resp.status_code in (200, 201):
+                    sent = True
+                else:
+                    error_msg = f"Resend error: {resp.status_code} {resp.text}"
+            except Exception as e:
+                error_msg = str(e)
+
+        elif profile.smtp_host and profile.smtp_user and profile.smtp_password:
+            try:
+                import smtplib
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.text import MIMEText
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = profile.smtp_from_email or profile.smtp_user
+                msg["To"] = recipient
+                msg.attach(MIMEText(body, "html", "utf-8"))
+                with smtplib.SMTP(profile.smtp_host, profile.smtp_port or 587, timeout=10) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.login(profile.smtp_user, profile.smtp_password)
+                    server.sendmail(msg["From"], [recipient], msg.as_string())
+                sent = True
+            except Exception as e:
+                error_msg = str(e)
+
+        elif profile.mailjet_api_key and profile.mailjet_secret_key and profile.mailjet_from_email:
+            try:
+                import httpx
+                resp = httpx.post(
+                    "https://api.mailjet.com/v3.1/send",
+                    auth=(profile.mailjet_api_key, profile.mailjet_secret_key),
+                    json={"Messages": [{"From": {"Email": profile.mailjet_from_email}, "To": [{"Email": recipient}], "Subject": subject, "HTMLPart": body}]},
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    sent = True
+                else:
+                    error_msg = f"Mailjet error: {resp.status_code} {resp.text}"
+            except Exception as e:
+                error_msg = str(e)
+
+        if not sent:
+            detail = error_msg or "Kein E-Mail-Adapter konfiguriert (Resend, Mailjet oder SMTP)"
+            raise HTTPException(status_code=500, detail=detail)
+
+        return {"success": True, "message": f"Test-E-Mail an {recipient} gesendet"}
     finally:
         db.close()
 
@@ -1681,7 +1893,7 @@ def create_platform(
 
         # Trigger immediate initial scan (saves URLs as SEEN placeholders, no AI analysis)
         try:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper")
+            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
             _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             resp = requests.post(
                 f"{SCRAPER_URL}/search",
@@ -2446,7 +2658,7 @@ def trigger_platform_crawl(
         # Trigger scraper-service
         from sqlalchemy import func
 
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
         logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
         _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
         try:
@@ -2482,7 +2694,7 @@ def get_statistics(current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
         q = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
-        total_jobs = q.count()
+        total_jobs = q.filter(JobEntry.title.isnot(None), JobEntry.is_archived == False, JobEntry.status != "SEEN").count()
         applied_jobs = q.filter(JobEntry.status == "APPLIED").count()
         interviews = q.filter(JobEntry.status == "INTERVIEW").count()
         offers = q.filter(JobEntry.status == "OFFER").count()
@@ -2730,7 +2942,7 @@ def get_dashboard_data(
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
             )
             _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(
@@ -2841,7 +3053,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8080/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
             )
             _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(

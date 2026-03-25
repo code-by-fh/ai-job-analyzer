@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Platform } from './types';
 import { NotificationTemplate } from '../../../components/TemplateManager';
 import Portal from '../../../components/Portal';
@@ -35,12 +35,36 @@ export default function PushoverTemplateModal({
     onSendTest,
     isAdmin,
 }: PushoverTemplateModalProps) {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const pushoverTemplates = templates.filter(t => t.type === 'PUSHOVER');
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
         if (!templateValue) return '';
         const match = pushoverTemplates.find(t => t.content === templateValue);
         return match ? String(match.id) : '';
     });
+
+    const insertVariable = (variable: string) => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const newContent = templateValue.substring(0, start) + variable + templateValue.substring(end);
+        onTemplateChange(newContent);
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start + variable.length, start + variable.length);
+        }, 0);
+    };
+
+    const varBtn = (variable: string) => (
+        <button
+            key={variable}
+            type="button"
+            onClick={() => insertVariable(variable)}
+            className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+            title="Klicken zum Einfügen"
+        >{variable}</button>
+    );
 
     const handleTemplateSelect = (id: string) => {
         if (!id) { setSelectedTemplateId(''); return; }
@@ -60,8 +84,8 @@ export default function PushoverTemplateModal({
                     <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
                         <div>
                             <h3 className="font-bold text-slate-900 dark:text-white text-sm">Pushover Template — {platform.name}</h3>
-                            <p className="text-xs text-slate-500 mt-1">
-                                Variablen: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$title</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$company</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$match_score</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$reasoning</code> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono">$url</code>
+                            <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                Variablen: {varBtn('$title')} {varBtn('$company')} {varBtn('$match_score')} {varBtn('$reasoning')} {varBtn('$url')}
                             </p>
                         </div>
                         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ml-3">
@@ -90,6 +114,7 @@ export default function PushoverTemplateModal({
                         )}
 
                         <textarea
+                            ref={textareaRef}
                             value={templateValue}
                             onChange={(e) => onTemplateChange(e.target.value)}
                             placeholder={PLACEHOLDER}

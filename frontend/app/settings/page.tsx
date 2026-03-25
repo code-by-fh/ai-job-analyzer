@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader';
 import { useLanguage } from '../components/LanguageProvider';
 import { useNotification } from '../components/NotificationProvider';
 import { logger } from '../lib/logger';
-import { Bell, Globe, Smartphone, Mail, Save, CheckCircle2, ShieldAlert, Clock, Info, ExternalLink } from 'lucide-react';
+import { Bell, Globe, Smartphone, Mail, Save, CheckCircle2, ShieldAlert, Clock, Info, ExternalLink, Send, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import TemplateManager from '../components/TemplateManager';
 
@@ -106,6 +106,12 @@ export default function Settings() {
   const [adapterStatus, setAdapterStatus] = useState<Record<AdapterKey, AdapterStatus>>({
     pushover: 'idle', resend: 'idle', mailjet: 'idle', smtp: 'idle',
   });
+
+  type TestStatus = 'idle' | 'testing' | 'sent' | 'error';
+  const [testStatus, setTestStatus] = useState<Record<AdapterKey, TestStatus>>({
+    pushover: 'idle', resend: 'idle', mailjet: 'idle', smtp: 'idle',
+  });
+  const [testModal, setTestModal] = useState<{ adapter: AdapterKey; recipient: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -162,11 +168,63 @@ export default function Settings() {
     }
   };
 
+  const adapterEndpoints: Record<AdapterKey, string> = {
+    pushover: '/notification-settings/test-pushover',
+    resend: '/notification-settings/test-resend',
+    mailjet: '/notification-settings/test-mailjet',
+    smtp: '/notification-settings/test-smtp',
+  };
+
+  const needsRecipient: Record<AdapterKey, boolean> = {
+    pushover: false,
+    resend: true,
+    mailjet: true,
+    smtp: true,
+  };
+
+  const handleTestAdapter = async (adapter: AdapterKey, recipient?: string) => {
+    setTestStatus(prev => ({ ...prev, [adapter]: 'testing' }));
+    try {
+      const body = needsRecipient[adapter] ? { recipient: recipient || '' } : undefined;
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}${adapterEndpoints[adapter]}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || t('testFailed'));
+      }
+      setTestStatus(prev => ({ ...prev, [adapter]: 'sent' }));
+      setTimeout(() => setTestStatus(prev => ({ ...prev, [adapter]: 'idle' })), 3000);
+    } catch (e: any) {
+      showError(e?.message || t('testFailed'));
+      setTestStatus(prev => ({ ...prev, [adapter]: 'error' }));
+      setTimeout(() => setTestStatus(prev => ({ ...prev, [adapter]: 'idle' })), 3000);
+    }
+  };
+
+  const handleTestClick = (adapter: AdapterKey) => {
+    if (needsRecipient[adapter]) {
+      setTestModal({ adapter, recipient: '' });
+    } else {
+      handleTestAdapter(adapter);
+    }
+  };
+
+  const handleTestModalSubmit = () => {
+    if (!testModal) return;
+    const { adapter, recipient } = testModal;
+    setTestModal(null);
+    handleTestAdapter(adapter, recipient);
+  };
+
   const AdapterFooter = ({ adapter, label }: { adapter: AdapterKey; label: string }) => {
     const s = adapterStatus[adapter];
+    const ts = testStatus[adapter];
     return (
       <div className="flex items-center justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-3">
           {s === 'saved' && (
             <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-sm font-bold">
               <CheckCircle2 className="w-4 h-4" />{t('saved')}
@@ -178,14 +236,34 @@ export default function Settings() {
               <ShieldAlert className="w-4 h-4" />{t('error')}
             </span>
           )}
+          {ts === 'sent' && (
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+              <CheckCircle2 className="w-4 h-4" />{t('testSent')}
+            </span>
+          )}
+          {ts === 'testing' && <span className="text-indigo-500 text-sm font-bold animate-pulse">{t('testSending')}</span>}
+          {ts === 'error' && s === 'idle' && (
+            <span className="flex items-center gap-1.5 text-rose-500 text-sm font-bold">
+              <ShieldAlert className="w-4 h-4" />{t('testFailed')}
+            </span>
+          )}
         </div>
-    <button
-      onClick={() => handleSaveAdapter(adapter)}
-      disabled={s === 'saving'}
-      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
-    >
-      <Save className="w-4 h-4" />{label}
-    </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleTestClick(adapter)}
+            disabled={ts === 'testing' || s === 'saving'}
+            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer active:scale-95"
+          >
+            <Send className="w-4 h-4" />{t('testNotification')}
+          </button>
+          <button
+            onClick={() => handleSaveAdapter(adapter)}
+            disabled={s === 'saving'}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
+          >
+            <Save className="w-4 h-4" />{label}
+          </button>
+        </div>
       </div>
     );
   };
@@ -214,7 +292,7 @@ export default function Settings() {
 
   return (
     <PageWrapper>
-      <PageHeader title={t('settings') || 'Settings'} subtitle={t('notificationsSubtitle')} />
+      <PageHeader title={t('settings') || 'Settings'} subtitle={t('settingsDescription')} />
 
       <SettingsCard
           title={t('languagePreference')}
@@ -511,6 +589,44 @@ export default function Settings() {
       >
         <TemplateManager isAdmin={!!user?.is_admin} adminMode={false} />
       </SettingsCard>
+
+      {/* Test recipient modal */}
+      {testModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">{t('testRecipientTitle')}</h3>
+              <button onClick={() => setTestModal(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-1.5 mb-5">
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">{t('testRecipientLabel')}</label>
+              <input
+                type="email"
+                value={testModal.recipient}
+                onChange={e => setTestModal(prev => prev ? { ...prev, recipient: e.target.value } : null)}
+                onKeyDown={e => e.key === 'Enter' && testModal.recipient && handleTestModalSubmit()}
+                placeholder={t('testRecipientPlaceholder')}
+                autoFocus
+                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setTestModal(null)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer">
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleTestModalSubmit}
+                disabled={!testModal.recipient}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-all cursor-pointer active:scale-95"
+              >
+                <Send className="w-4 h-4" />{t('sendTest')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </PageWrapper>
   );

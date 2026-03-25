@@ -135,7 +135,10 @@ def fail_crawl_job(job_id: str, user_id: int, error_message: str):
         logger.error(f"Error during fail of job {job_id}: {e}")
 
 
-cleanup_stale_jobs()
+try:
+    cleanup_stale_jobs()
+except Exception as e:
+    logger.warning(f"Startup cleanup skipped (Redis not ready): {e}")
 
 
 class JobSearch(BaseModel):
