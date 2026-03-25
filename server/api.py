@@ -1426,27 +1426,40 @@ class TestNotificationBody(BaseModel):
     recipient: str = ""
 
 
+def _make_fake_platform(recipient: str = "") -> object:
+    """Create a minimal fake platform for settings-page adapter tests."""
+    class _FakePlatform:
+        name = "Test"
+        resend_recipients = [recipient] if recipient else []
+        resend_template = None
+        mailjet_recipients = [recipient] if recipient else []
+        mailjet_template = None
+        smtp_recipients = [recipient] if recipient else []
+        smtp_template = None
+        pushover_template = None
+    return _FakePlatform()
+
+
+class _FakeJob:
+    id = 0
+    title = "Senior Software Engineer"
+    company = "Acme Corp"
+    match_score = 87.0
+    reasoning = "Strong match based on your Python and FastAPI experience."
+    url = "https://example.com/job/123"
+    platform_id = None
+
+
 @app.post("/notification-settings/test-pushover")
 def test_pushover_settings(current_user: User = Depends(get_current_user)):
-    """Test Pushover from settings page using saved credentials."""
+    from worker import _send_via_pushover
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         if not profile or not profile.pushover_user_key or not profile.pushover_api_token:
             raise HTTPException(status_code=400, detail="Pushover credentials not configured")
-        import httpx
-        resp = httpx.post(
-            "https://api.pushover.net/1/messages.json",
-            data={
-                "token": profile.pushover_api_token,
-                "user": profile.pushover_user_key,
-                "title": "Job Agent – Test",
-                "message": "This test message confirms that Pushover is correctly configured.",
-            },
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"Pushover error: {resp.status_code} {resp.text}")
+        if not _send_via_pushover(_FakeJob(), profile, platform=_make_fake_platform()):
+            raise HTTPException(status_code=500, detail="Pushover delivery failed")
         return {"ok": True}
     except HTTPException:
         raise
@@ -1458,7 +1471,7 @@ def test_pushover_settings(current_user: User = Depends(get_current_user)):
 
 @app.post("/notification-settings/test-resend")
 def test_resend_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    """Test Resend from settings page using saved credentials."""
+    from worker import _send_via_resend_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -1467,20 +1480,8 @@ def test_resend_settings(body: TestNotificationBody, current_user: User = Depend
         recipient = body.recipient or profile.email_global_recipient
         if not recipient:
             raise HTTPException(status_code=400, detail="No recipient provided")
-        import httpx
-        resp = httpx.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {profile.resend_api_key}", "Content-Type": "application/json"},
-            json={
-                "from": profile.resend_from_email,
-                "to": [recipient],
-                "subject": "Job Agent – Resend Test",
-                "html": "<h2>Resend Test</h2><p>This test message confirms that Resend is correctly configured.</p>",
-            },
-            timeout=10,
-        )
-        if resp.status_code not in (200, 201):
-            raise HTTPException(status_code=500, detail=f"Resend error: {resp.status_code} {resp.text}")
+        if not _send_via_resend_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
+            raise HTTPException(status_code=500, detail="Resend delivery failed")
         return {"ok": True}
     except HTTPException:
         raise
@@ -1492,7 +1493,7 @@ def test_resend_settings(body: TestNotificationBody, current_user: User = Depend
 
 @app.post("/notification-settings/test-mailjet")
 def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    """Test Mailjet from settings page using saved credentials."""
+    from worker import _send_via_mailjet_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -1501,15 +1502,8 @@ def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depen
         recipient = body.recipient or profile.email_global_recipient
         if not recipient:
             raise HTTPException(status_code=400, detail="No recipient provided")
-        import httpx
-        resp = httpx.post(
-            "https://api.mailjet.com/v3.1/send",
-            auth=(profile.mailjet_api_key, profile.mailjet_secret_key),
-            json={"Messages": [{"From": {"Email": profile.mailjet_from_email}, "To": [{"Email": recipient}], "Subject": "Job Agent – Mailjet Test", "HTMLPart": "<h2>Mailjet Test</h2><p>This test message confirms that Mailjet is correctly configured.</p>"}]},
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"Mailjet error: {resp.status_code} {resp.text}")
+        if not _send_via_mailjet_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
+            raise HTTPException(status_code=500, detail="Mailjet delivery failed")
         return {"ok": True}
     except HTTPException:
         raise
@@ -1521,7 +1515,7 @@ def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depen
 
 @app.post("/notification-settings/test-smtp")
 def test_smtp_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    """Test SMTP from settings page using saved credentials."""
+    from worker import _send_via_smtp_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -1530,19 +1524,8 @@ def test_smtp_settings(body: TestNotificationBody, current_user: User = Depends(
         recipient = body.recipient or profile.email_global_recipient
         if not recipient:
             raise HTTPException(status_code=400, detail="No recipient provided")
-        import smtplib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Job Agent – SMTP Test"
-        msg["From"] = profile.smtp_from_email or profile.smtp_user
-        msg["To"] = recipient
-        msg.attach(MIMEText("<h2>SMTP Test</h2><p>This test message confirms that SMTP is correctly configured.</p>", "html", "utf-8"))
-        with smtplib.SMTP(profile.smtp_host, profile.smtp_port or 587, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(profile.smtp_user, profile.smtp_password)
-            server.sendmail(msg["From"], [recipient], msg.as_string())
+        if not _send_via_smtp_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
+            raise HTTPException(status_code=500, detail="SMTP delivery failed")
         return {"ok": True}
     except HTTPException:
         raise
