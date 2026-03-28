@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 
-from database.core import SessionLocal, User, CompanyProfile, CompanyAnalyzeRequest
+from database.core import SessionLocal, User, CompanyProfile, CompanyAnalyzeRequest, DeepDiveRequest
 from auth import get_current_user
 from celery_config import celery_app
+from intelligence.service import generate_deep_dive, get_model, get_api_key
 
 router = APIRouter()
 
@@ -18,22 +19,12 @@ def list_companies(current_user: User = Depends(get_current_user)):
                 "domain": c.domain,
                 "name": c.name,
                 "description": c.description,
-                "culture_summary": c.culture_summary,
-                "review_score": c.review_score,
-                "review_source": c.review_source,
-                "salary_benchmark": c.salary_benchmark,
-                "tech_stack": c.tech_stack,
-                "key_artifacts": (c.raw_data.get("key_artifacts", []) if c.raw_data else []),
-                "swot_analysis": (c.raw_data.get("swot_analysis") if c.raw_data else None),
-                "comprehensive_report": (c.raw_data.get("comprehensive_report") if c.raw_data else None),
-                "key_benefits": (c.raw_data.get("key_benefits", []) if c.raw_data else []),
-                "red_flags": (c.raw_data.get("red_flags", []) if c.raw_data else []),
-                "company_intelligence": (c.raw_data.get("company_intelligence") if c.raw_data else None),
                 "executive_summary": (c.raw_data.get("executive_summary") if c.raw_data else None),
-                "structured_analysis": (c.raw_data.get("structured_analysis") if c.raw_data else None),
-                "key_insights": (c.raw_data.get("key_insights", []) if c.raw_data else []),
-                "market_comparison": (c.raw_data.get("market_comparison") if c.raw_data else None),
+                "social_intelligence": (c.raw_data.get("social_intelligence") if c.raw_data else None),
+                "structured_prep": (c.raw_data.get("structured_prep") if c.raw_data else None),
                 "deep_dive_buttons": (c.raw_data.get("deep_dive_buttons", []) if c.raw_data else []),
+                "deep_dive_analysis": (c.raw_data.get("deep_dive_analysis") if c.raw_data else None),
+                "online_resources": (c.raw_data.get("online_resources", []) if c.raw_data else []),
                 "analyzed_at": (c.analyzed_at.isoformat() if c.analyzed_at else None),
             }
             for c in companies
@@ -56,47 +47,23 @@ def get_company_profile(domain: str, current_user: User = Depends(get_current_us
             "domain": company.domain,
             "name": company.name,
             "description": company.description,
-            "culture_summary": company.culture_summary,
-            "review_score": company.review_score,
-            "review_source": company.review_source,
-            "salary_benchmark": company.salary_benchmark,
-            "tech_stack": company.tech_stack,
-            "key_artifacts": (
-                company.raw_data.get("key_artifacts", []) if company.raw_data else []
-            ),
-            "swot_analysis": (
-                company.raw_data.get("swot_analysis") if company.raw_data else None
-            ),
-            "comprehensive_report": (
-                company.raw_data.get("comprehensive_report")
-                if company.raw_data
-                else None
-            ),
-            "key_benefits": (
-                company.raw_data.get("key_benefits", []) if company.raw_data else []
-            ),
-            "red_flags": (
-                company.raw_data.get("red_flags", []) if company.raw_data else []
-            ),
-            "company_intelligence": (
-                company.raw_data.get("company_intelligence")
-                if company.raw_data
-                else None
-            ),
             "executive_summary": (
                 company.raw_data.get("executive_summary") if company.raw_data else None
             ),
-            "structured_analysis": (
-                company.raw_data.get("structured_analysis") if company.raw_data else None
+            "social_intelligence": (
+                company.raw_data.get("social_intelligence") if company.raw_data else None
             ),
-            "key_insights": (
-                company.raw_data.get("key_insights", []) if company.raw_data else []
-            ),
-            "market_comparison": (
-                company.raw_data.get("market_comparison") if company.raw_data else None
+            "structured_prep": (
+                company.raw_data.get("structured_prep") if company.raw_data else None
             ),
             "deep_dive_buttons": (
                 company.raw_data.get("deep_dive_buttons", []) if company.raw_data else []
+            ),
+            "deep_dive_analysis": (
+                company.raw_data.get("deep_dive_analysis") if company.raw_data else None
+            ),
+            "online_resources": (
+                company.raw_data.get("online_resources", []) if company.raw_data else []
             ),
             "analyzed_at": (
                 company.analyzed_at.isoformat() if company.analyzed_at else None
@@ -133,5 +100,31 @@ def analyze_company(
             "domain": domain,
             "message": "Company profile analysis started",
         }
+    finally:
+        db.close()
+
+
+@router.post("/companies/{domain}/deep-dive")
+def deep_dive(
+    domain: str,
+    request: DeepDiveRequest,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        model = get_model(db)
+        api_key = get_api_key(db)
+        result = generate_deep_dive(
+            domain=domain,
+            company_name=request.company_name,
+            focus=request.focus,
+            how_to_proceed=request.how_to_proceed,
+            model=model,
+            api_key=api_key,
+            language=request.language,
+        )
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()

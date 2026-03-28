@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 
 from database.core import SessionLocal, User, JobEntry, UserProfile, JobPlatform
 from auth import get_current_user, create_access_token
+from routers.deps import _mask_profile
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -227,7 +228,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
             logger.error(f"Scraper service error: {e}")
 
         return {
-            "profile": profile,
+            "profile": _mask_profile(profile),
             "platforms": platforms_data,
             "active_crawls": active_crawls,
         }

@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { StickyNote, Paperclip, Upload, Trash2, Download, FileText, FileImage, File as FileLucide, CheckSquare, Square, Plus, X, Eye, ZoomIn, ZoomOut, RotateCw, Loader2, Check } from 'lucide-react';
+import { StickyNote, Paperclip, Upload, Trash2, Download, FileText, FileImage, File as FileLucide, CheckSquare, Square, Plus, X, Eye, ZoomIn, ZoomOut, RotateCw, Loader2, Check, ShieldAlert } from 'lucide-react';
 import type { Job } from '../../lib/types';
+import { useRouter } from 'next/navigation';
+import ConfirmModal from '../ConfirmModal';
 import { useNotification } from '../NotificationProvider';
 import { fetchWithAuth } from '../AuthProvider';
 import { useLanguage } from '../LanguageProvider';
@@ -170,6 +172,7 @@ function FileViewerModal({
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabProps) {
+    const router = useRouter();
     const { t } = useLanguage();
     const [notes, setNotes] = useState(job.notes || '');
     const [notesSaving, setNotesSaving] = useState(false);
@@ -184,6 +187,7 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [viewerDoc, setViewerDoc] = useState<JobDocument | null>(null);
+    const [uploadErrorModal, setUploadErrorModal] = useState<string | null>(null);
 
     const [todos, setTodos] = useState<TodoItem[]>(() => {
         try {
@@ -256,7 +260,7 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
                 await loadDocuments();
             } else {
                 const err = await res.json().catch(() => ({}));
-                alert(err.detail || 'Upload failed');
+                setUploadErrorModal(err.detail || 'Upload failed');
             }
         } finally {
             setUploading(false);
@@ -515,6 +519,19 @@ export default function JobDocumentsTab({ job, apiBase = '' }: JobDocumentsTabPr
                     </div>
                 )}
             </section>
+            
+            <ConfirmModal
+                isOpen={!!uploadErrorModal}
+                title={t('storageRequired')}
+                message={t('storageRequiredMessage')}
+                onClose={() => setUploadErrorModal(null)}
+                onConfirm={() => {
+                    setUploadErrorModal(null);
+                    router.push('/settings?tab=storage');
+                }}
+                confirmText={t('goToSettings')}
+                cancelText={t('close')}
+            />
         </div>
     );
 }

@@ -23,6 +23,7 @@ _SECRET_FIELDS = {
     "mailjet_api_key",
     "mailjet_secret_key",
     "smtp_password",
+    "google_drive_refresh_token",
 }
 
 

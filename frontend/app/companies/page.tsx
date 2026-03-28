@@ -34,7 +34,7 @@ function CompanyCard({ company }: { company: any }) {
     };
 
     const d = data;
-    const hasProfile = Boolean(d.description || d.swot_analysis || d.culture_summary || d.company_intelligence);
+    const hasProfile = Boolean(d.executive_summary || d.structured_prep || d.deep_dive_analysis);
 
     return (
         <div className="glass-card rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-lg">
@@ -84,7 +84,7 @@ function CompanyCard({ company }: { company: any }) {
                             </div>
                             <div className="text-center space-y-1">
                                 <p className="text-base font-bold text-slate-800 dark:text-slate-200">Deep Company Intelligence</p>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">SWOT, Culture, Salary Benchmarks, and Market Positioning</p>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Gap Analysis, Elevator Pitch, Tactics &amp; Interview Deep-Dives</p>
                             </div>
                             <button
                                 onClick={handleUpdate}
@@ -106,7 +106,7 @@ function CompanyCard({ company }: { company: any }) {
                                     Update Data
                                 </button>
                             </div>
-                            <CompanyProfileView data={d} />
+                            <CompanyProfileView data={d} domain={d.domain} fetchWithAuth={fetchWithAuth} />
                         </div>
                     )}
                 </div>

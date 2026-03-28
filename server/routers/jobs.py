@@ -14,6 +14,7 @@ from database.core import (
     JobEntry,
     JobStatusHistory,
     JobDocument,
+    UserProfile,
     JobPatchRequest,
 )
 from auth import get_current_user
@@ -728,23 +729,31 @@ async def upload_job_document(
                 status_code=415, detail=f"File type not allowed: {mime}"
             )
 
-        import uuid
+        from services.storage import get_storage_service
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        storage = get_storage_service(profile) if profile else None
 
-        ext = os.path.splitext(file.filename or "file")[1]
-        stored_filename = f"{uuid.uuid4().hex}{ext}"
-        upload_path = os.path.join(UPLOAD_DIR, str(current_user.id), job_id)
-        os.makedirs(upload_path, exist_ok=True)
-        file_path = os.path.join(upload_path, stored_filename)
-        with open(file_path, "wb") as f:
-            f.write(content)
+        if storage:
+            # Upload to Google Drive via Storage Service
+            success = await storage.upload_file(content, file.filename or "unnamed_file", mime_type=mime)
+            if not success:
+                raise HTTPException(status_code=500, detail="Upload to Google Drive failed")
+            stored_filename = f"gdrive://{file.filename}"
+            db_content = None
+        else:
+            # Fallback: Save in local database
+            stored_filename = f"db://{file.filename}"
+            db_content = content
 
+        # Save record to DB
         doc = JobDocument(
             job_id=job_id,
             user_id=current_user.id,
             filename=stored_filename,
-            original_filename=file.filename or stored_filename,
+            original_filename=file.filename or "unnamed_file",
             file_size=len(content),
             mime_type=mime,
+            content=db_content
         )
         db.add(doc)
         db.commit()
@@ -755,13 +764,14 @@ async def upload_job_document(
             "file_size": doc.file_size,
             "mime_type": doc.mime_type,
             "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            "storage": "google_drive" if storage else "database"
         }
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
         logger.error(f"Document upload error: {e}")
-        raise HTTPException(status_code=500, detail="Upload failed")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
@@ -814,15 +824,27 @@ def download_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        from pathlib import Path as _Path
-        base_dir = _Path(UPLOAD_DIR).resolve()
-        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
-        if not str(file_path).startswith(str(base_dir)):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found on disk")
-        with open(file_path, "rb") as f:
-            data = f.read()
+
+        if doc.filename.startswith("db://"):
+            data = doc.content
+        elif doc.filename.startswith("gdrive://"):
+            # Requires Google Drive API download logic
+            raise HTTPException(status_code=400, detail="Download for Google Drive files is not yet implemented. Please view in Google Drive directly.")
+        else:
+            # Fallback for old local filesystem files
+            from pathlib import Path as _Path
+            base_dir = _Path(UPLOAD_DIR).resolve()
+            file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+            if not str(file_path).startswith(str(base_dir)):
+                raise HTTPException(status_code=400, detail="Invalid file path")
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="File not found on disk")
+            with open(file_path, "rb") as f:
+                data = f.read()
+
+        if data is None:
+             raise HTTPException(status_code=404, detail="File content is empty")
+
         return Response(
             content=data,
             media_type=doc.mime_type or "application/octet-stream",
@@ -851,15 +873,27 @@ def view_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        from pathlib import Path as _Path
-        base_dir = _Path(UPLOAD_DIR).resolve()
-        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
-        if not str(file_path).startswith(str(base_dir)):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found on disk")
-        with open(file_path, "rb") as f:
-            data = f.read()
+
+        if doc.filename.startswith("db://"):
+            data = doc.content
+        elif doc.filename.startswith("gdrive://"):
+            # Requires Google Drive API view logic
+            raise HTTPException(status_code=400, detail="Viewing Google Drive files in app is not yet implemented.")
+        else:
+            # Fallback for old local filesystem files
+            from pathlib import Path as _Path
+            base_dir = _Path(UPLOAD_DIR).resolve()
+            file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+            if not str(file_path).startswith(str(base_dir)):
+                raise HTTPException(status_code=400, detail="Invalid file path")
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="File not found on disk")
+            with open(file_path, "rb") as f:
+                data = f.read()
+
+        if data is None:
+             raise HTTPException(status_code=404, detail="File content is empty")
+
         return Response(
             content=data,
             media_type=doc.mime_type or "application/octet-stream",
@@ -888,13 +922,15 @@ def delete_job_document(
         )
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        from pathlib import Path as _Path
-        base_dir = _Path(UPLOAD_DIR).resolve()
-        file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
-        if not str(file_path).startswith(str(base_dir)):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-        if os.path.exists(file_path):
-            os.remove(file_path)
+
+        # Cleanup files on disk if it was a legacy local file
+        if not doc.filename.startswith("db://") and not doc.filename.startswith("gdrive://"):
+            from pathlib import Path as _Path
+            base_dir = _Path(UPLOAD_DIR).resolve()
+            file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
+            if str(file_path).startswith(str(base_dir)) and os.path.exists(file_path):
+                os.remove(file_path)
+
         db.delete(doc)
         db.commit()
         return {"status": "deleted"}

@@ -1,8 +1,10 @@
 import json
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-def get_detect_url_pattern_messages(base_url: str, sample: list) -> List[Dict[str, str]]:
+
+def get_detect_url_pattern_messages(
+    base_url: str, sample: list
+) -> List[Dict[str, str]]:
     system_prompt = """You are a URL analysis expert for job platforms.
     Analyze the URL list and identify the URL path prefix that exclusively identifies job detail pages (individual job postings), not listing, category, or overview pages.
 
@@ -17,7 +19,10 @@ def get_detect_url_pattern_messages(base_url: str, sample: list) -> List[Dict[st
     """
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Base URL: {base_url}\nURL list:\n{json.dumps(sample)}"},
+        {
+            "role": "user",
+            "content": f"Base URL: {base_url}\nURL list:\n{json.dumps(sample)}",
+        },
     ]
 
 
@@ -40,7 +45,9 @@ def get_generate_platform_name_messages(url: str) -> List[Dict[str, str]]:
     ]
 
 
-def get_analyze_job_messages(job_title: str, job_description: str, profile_str: str, user_language: str = "de") -> List[Dict[str, str]]:
+def get_analyze_job_messages(
+    job_title: str, job_description: str, profile_str: str, user_language: str = "de"
+) -> List[Dict[str, str]]:
     if user_language == "de":
         lang_name = "Deutsch"
         h_summary = "Zusammenfassung"
@@ -82,36 +89,75 @@ def get_analyze_job_messages(job_title: str, job_description: str, profile_str: 
     ]
 
 
-def get_generate_application_messages(job_title: str, job_company: str, job_description: str, profile_role: str, cv_text: str, user_language: str = "de", improvement_notes: Optional[str] = None) -> List[Dict[str, str]]:
-    system_prompt = """
-    Du bist ein erfahrener Karriereberater und Bewerbungsexperte. Schreibe ein hochwertiges, prägnantes Anschreiben in Markdown.
+def get_generate_application_messages(
+    job_title: str,
+    job_company: str,
+    job_description: str,
+    profile_role: str,
+    cv_text: str,
+    user_language: str = "de",
+    improvement_notes: Optional[str] = None,
+    existing_draft: Optional[str] = None,
+) -> List[Dict[str, str]]:
 
-    WICHTIGE REGELN:
-    1. Schreibe KEIN Anschreiben das den Lebenslauf wiederholt – keine Auflistung von Stationen oder Skills.
-    2. Das Anschreiben soll kurz & überzeugend sein (max. 3-4 kurze Absätze).
-    3. Zeige den konkreten Mehrwert für das Unternehmen auf – nicht was der Bewerber alles kann, sondern warum er GENAU für DIESE Stelle der Richtige ist.
-    4. Origineller, professioneller Einstieg – keine Floskeln wie "mit großem Interesse" oder "hiermit bewerbe ich mich".
-    5. Nutze relevante Keywords aus der Stellenanzeige natürlich eingebaut.
-    6. Stil: professionell, klar, selbstbewusst, authentisch.
-    7. Keine Sonderzeichen, Tabellen oder überflüssige Formatierung.
-    8. Ergebnis: vollständiges Anschreiben in Markdown, keine Erklärungen drumherum.
-    9. Nur belegbare Fakten aus dem Profil verwenden – nichts erfinden.
-    """ + (
-        "WICHTIG: Antworte ausschließlich auf Englisch!!!"
-        if user_language == "en"
-        else "WICHTIG: Antworte ausschließlich auf Deutsch!!!"
-    )
+    lang = "English" if user_language == "en" else "German"
 
-    user_prompt = f"""
-        STELLENANZEIGE: {job_title} bei {job_company}
-        {job_description}
+    # --- IMPROVE MODE: only apply specific changes to the existing draft ---
+    if improvement_notes and existing_draft:
+        system_prompt = f"""You are a professional cover letter editor. Your task is to apply targeted improvements to an existing cover letter.
 
-        BEWERBER: {profile_role}
-        {cv_text}
-        """
+RULES:
+- Apply ONLY the requested changes. Do not rewrite or restructure sections that are not mentioned.
+- Keep the overall tone, style, and structure of the original.
+- Preserve all facts, names, and specific examples already present unless directly contradicted by the feedback.
+- Do not add new sections or change the length significantly.
+- FORMATTING: Pure Markdown. No meta-commentary before or after the letter.
 
-    if improvement_notes:
-        user_prompt += f"\n\nVERBESSERUNGSHINWEIS (Bitte überarbeite das Bewerbungsschreiben basierend auf folgendem Feedback): {improvement_notes}"
+IMPORTANT: Respond EXCLUSIVELY in {lang}!!!""".strip()
+
+        user_prompt = f"""### EXISTING COVER LETTER
+{existing_draft}
+
+### REQUESTED IMPROVEMENTS
+{improvement_notes}
+
+### CONTEXT (for reference only — do not rewrite unless relevant to the improvements)
+Position: {job_title} at {job_company}"""
+
+    # --- FRESH GENERATION MODE ---
+    else:
+        system_prompt = f"""You are a professional cover letter writing expert with extensive experience in crafting compelling, high-conversion cover letters.
+
+Your role is to create a personalized cover letter that effectively showcases the applicant's qualifications and the potential value they bring to the employer.
+
+STRUCTURE:
+1. OPENING PARAGRAPH: Show genuine enthusiasm and demonstrate knowledge of the company. NO clichés like "I am writing to apply..." or "With great interest...".
+2. EXPERIENCE ALIGNMENT: Clear and concise paragraphs that connect the applicant's experience directly to the job requirements.
+3. PROOF OF VALUE: Highlight achievements and skills using specific examples and metrics where available. Position the applicant as the SOLUTION to the company's problems.
+4. VALUE PROPOSITION: Always focus on the value the applicant can offer to the company — not just what they want from the role.
+5. CLOSING: A confident call-to-action requesting an interview, with a professional sign-off.
+
+STRICT RULES:
+- LENGTH: Approximately 300–500 words. Must fit on a single A4 page.
+- TONE: Professional, engaging, confident — yet balanced with humility. Avoid AI-sounding buzzwords and flowery adjectives.
+- KEYWORDS: Incorporate industry-specific and job-description keywords naturally.
+- FACTUAL INTEGRITY: Use ONLY facts from the provided profile. Do not invent degrees, certifications, or employers.
+- NO CV REPETITION: Do not list career stations. Focus on Skill → Benefit for the employer.
+- TAILORING: The letter must be specifically tailored to this role and this company — no generic phrases.
+- FORMATTING: Pure Markdown. No tables, no meta-commentary before or after the letter.
+
+IMPORTANT: Respond EXCLUSIVELY in {lang}!!!""".strip()
+
+        user_prompt = f"""### JOB POSTING
+Position: {job_title}
+Company: {job_company}
+Description:
+{job_description}
+
+### APPLICANT PROFILE
+Current Role: {profile_role}
+CV Data:
+{cv_text}"""
 
     return [
         {"role": "system", "content": system_prompt},
@@ -119,268 +165,211 @@ def get_generate_application_messages(job_title: str, job_company: str, job_desc
     ]
 
 
-def get_interview_prep_messages(job_title: str, company_name: str, language: str = "de") -> List[Dict[str, str]]:
-    tone_instruction = (
-        "CRITICAL LANGUAGE RULE:\n"
-        "- You MUST address the user directly as 'du' in EVERY sentence\n"
-        "- NEVER use third person (no 'der Kandidat', 'er/sie', 'man')\n"
-        "- EVERY sentence must include 'du' or 'dein'\n"
-        "- EXCEPTION: The elevator_pitch MUST be written in first person ('Ich') and does NOT need to include 'du'\n"
-    )
+def get_interview_prep_messages(
+    job_title: str,
+    company_name: str,
+    job_description: str = "",
+    cv_summary: str = "",
+) -> List[Dict[str, str]]:
+    prompt = f"""Agiere als Elite Interview Preparation Coach und Psychologe. Deine Aufgabe ist es, eine hochgradig personalisierte Vorbereitung für mein nächstes Interview zu erstellen.
 
-    language_instruction = (
-        "Respond ONLY in English and use 'you'."
-        if language == "en"
-        else "Antworte AUSSCHLIESSLICH auf Deutsch und verwende IMMER 'du'."
-    )
+        ====================
+        KONTEXT & DATEN
+        ====================
+        - Rolle: {job_title}
+        - Unternehmen: {company_name}
+        - Kernanforderungen: {job_description}
+        - Mein Profil: {cv_summary}
 
-    prompt = f"""
-    You are an Elite Interview Preparation Coach and Psychologist.
+        ====================
+        KRITISCHE REGELN (STRENG BEFOLGEN)
+        ====================
+        1. OUTPUT: Gib AUSSCHLIESSLICH valides JSON zurück. Kein Markdown, kein einleitender Text.
+        2. ANSPRACHE: Du MUSST mich in JEDEM Satz direkt mit "du" oder "dein" ansprechen. Vermeide die dritte Person komplett.
+        3. SPRACHE: Antworte AUSSCHLIESSLICH auf Deutsch.
+        4. PITCH: Der "elevator_pitch" muss in der Ich-Form verfasst sein (authentisch und direkt sprechbar).
+        5. QUELLE: Die "online_resources" MÜSSEN echte, klickbare URLs zu Artikeln, Tools oder Firmenprofilen sein, die für {company_name} oder die Rolle relevant sind.
 
-    ====================
-    CRITICAL RULES (MUST FOLLOW)
-    ====================
-    - Output MUST be valid JSON only
-    - Do NOT use markdown
-    - Do NOT wrap the JSON in ```json
-    - Do NOT add any text before or after JSON
-    - Output MUST start with {{ and end with }}
-    - Follow the JSON structure EXACTLY
-    - Do not add extra fields
-    - Do not remove fields
-
-    {tone_instruction}
-    {language_instruction}
-
-    ====================
-    STYLE RULES
-    ====================
-    - Be highly specific and personalized
-    - Avoid generic phrases
-    - Always speak directly to the user
-    - Give actionable, concrete advice
-
-    ====================
-    ELEVATOR PITCH RULES
-    ====================
-    - Write in first person ("Ich")
-    - Make it sound natural and spoken
-    - Avoid generic phrases like "ich bin ein erfahrener..."
-    - Make it specific and impactful
-    - The user should be able to copy & paste and use it directly
-
-    ====================
-    OUTPUT FORMAT
-    ====================
-    Return EXACTLY this structure:
-
-    {{
-    "report_output": {{
-        "executive_summary": "Max. 3 sentences, direct and personalized, using 'du'.",
-        "deep_dive_analysis": "Detailed Q&A guide and behavioral advice. Every sentence must address 'du'."
-    }},
-    "structured_prep": {{
-        "gap_analysis": [
+        ====================
+        JSON STRUKTUR
+        ====================
         {{
-            "requirement": "Job requirement",
-            "cv_status": "Status in deinem CV",
-            "gap_severity": "Low/Medium/High",
-            "interview_strategy": "Concrete strategy how YOU address this in the interview"
+          "executive_summary": "Max. 3 Sätze. Direkt, motivierend und auf deine Situation zugeschnitten (nutze 'du').",
+          "social_intelligence": {{
+            "ansprechpartner_recherche": "Ergebnisse deiner Websuche zu Personen bei {company_name} (z.B. LinkedIn Profile, aktuelle Themen des Managements).",
+            "networking_hacks": "Wie du dieses Wissen im Gespräch dezent für dich nutzt."
+          }},
+          "structured_prep": {{
+            "gap_analysis": [
+              {{
+                "anforderung": "Job-Anforderung",
+                "dein_status": "Dein Match/Status laut CV",
+                "gap_severity": "Low/Medium/High",
+                "interview_strategie": "Konkrete Strategie, wie DU das im Gespräch adressierst."
+              }}
+            ],
+            "elevator_pitch": "Dein 60-Sekunden-Auftritt in der Ich-Perspektive."
+          }},
+          "deep_dive_buttons": [
+            {{
+              "title": "Titel des Buttons",
+              "focus": "Worauf konzentriert sich dieser Deep-Dive?",
+              "why_it_matters": "Warum ist dieser Punkt für deinen Erfolg entscheidend?",
+              "how_to_proceed": "Schritt-für-Schritt Anleitung für dich.",
+              "linked_findings": "Welche Erkenntnis aus der Analyse wird hier vertieft?"
+            }}
+          ],
+          "deep_dive_analysis": {{
+            "qa_guide": "5 spezifische Fachfragen und wie du sie meisterst.",
+            "behavioral_advice": "3 Fragen nach der STAR-Methode inklusive deiner empfohlenen Story.",
+            "difficult_scenarios": "Strategien für deine individuellen Schwachstellen oder schwierige Fragen."
+          }},
+          "online_resources": [
+            "Link zu aktuellen Nachrichten über {company_name}",
+            "Link zu einem relevanten Fachartikel oder Branchen-Report",
+            "Link zu Kununu/Glassdoor oder LinkedIn-Insights von {company_name}"
+          ]
         }}
-        ],
-        "elevator_pitch": "First-person answer that the user can directly say in the interview"
-    }}
-    }}
 
-    ====================
-    TASK
-    ====================
-    Role: {job_title}
-    Company: {company_name}
+        ====================
+        ANFORDERUNG: DEEP-DIVE BUTTONS
+        ====================
+        Erstelle MINDESTENS 10 dieser Buttons. Jeder Button muss eine spezifische Taktik oder ein psychologisches Manöver darstellen, das auf deine Situation zugeschnitten ist (z.B. 'Die Gehaltsverhandlung-Matrix', 'Umgang mit kritischen Stakeholdern', 'Die Culture-Fit Falle' etc.). Jedes Feld innerhalb der Buttons muss dich direkt mit 'du' ansprechen.
 
-    Provide:
-    - Personalized interview preparation
-    - Tailored Q&A strategies
-    - Communication and body language advice
-    - Strategies for difficult questions
+        ====================
+        STIL & INHALT
+        ====================
+        - Sei hochspezifisch. Analysiere die 'Schmerzpunkte' des Arbeitgebers.
+        - Gib konkrete Tipps zu Kommunikation und Psychologie.
+        - WICHTIG: Die online_resources dürfen KEINE Platzhalter wie 'URL 1' sein. Führe eine Websuche durch und gib echte Links zu {company_name} (z.B. Newsroom, LinkedIn-Karriereseite, Branchennews).
+      """
 
-    Ensure ALL responses strictly follow the rules above.
-    """
     return [{"role": "user", "content": prompt}]
 
 
-def get_company_profile_summary_messages(domain: str, company_name: str, raw_info: str, language: str = "de") -> List[Dict[str, str]]:
-    current_year = datetime.now().year
-    year_range = f"{current_year - 2}-{current_year}"
+def get_company_profile_summary_messages(
+    company_name: str,
+    job_title: str = "",
+    industry: str = "",
+    key_requirements: str = "",
+    user_profile: str = "",
+) -> List[Dict[str, str]]:
+    prompt = f"""Agiere als Elite Interview Preparation Coach und Psychologe. Deine Aufgabe ist es, eine hochgradig personalisierte Vorbereitung für mein nächstes Interview zu erstellen.
 
-    prompt = f"""Du bist ein Senior Research Methodology Expert, spezialisiert auf systematische Untersuchungen, Multi-Hop-Reasoning, Quellenauswertung, Evidenzsynthese, Bias-Erkennung und Konfidenzabschätzung. Du arbeitest als Team aus: erfahrenen Wirtschaftsjournalisten (Handelsblatt, WiWo), McKinsey-Berater, Organisationspsychologe und Employer-Branding-Spezialist mit Fokus auf Kununu/Glassdoor.
+====================
+KONTEXT & DATEN
+====================
+- Rolle: {job_title}
+- Unternehmen: {company_name}
+- Branche: {industry}
+- Kernanforderungen: {key_requirements}
+- Mein Profil: {user_profile}
 
-Erstelle eine umfassende Arbeitgeberanalyse für {company_name} aus der Perspektive eines potenziellen Arbeitnehmers in Deutschland/Europa.
+====================
+KRITISCHE REGELN (STRENG BEFOLGEN)
+====================
+1. OUTPUT: Gib AUSSCHLIESSLICH valides JSON zurück. Kein Markdown, kein einleitender Text.
+2. ANSPRACHE: Du MUSST mich in JEDEM Satz direkt mit "du" oder "dein" ansprechen. Vermeide die dritte Person komplett.
+3. SPRACHE: Antworte AUSSCHLIESSLICH auf Deutsch.
+4. PITCH: Der "elevator_pitch" muss in der Ich-Form verfasst sein (authentisch und direkt sprechbar).
+5. RECHERCHE-PFLICHT: Nutze deine Browsing-Funktion, um spezifische Informationen über {company_name} zu finden.
+6. LINKS: Das Feld "online_resources" darf KEINE Platzhalter (wie 'URL 1') enthalten. Führe eine Websuche durch und gib echte, klickbare und aktuelle URLs zu Presseportalen, LinkedIn-Firmenprofilen, Kununu-Bewertungen oder relevanten Branchennews an.
 
-**Unternehmen:** {company_name}
-**Domain:** {domain}
-**Zeitraum:** Aktuelle Daten {year_range}
-
-**ROHDATEN (aus Online-Recherche):**
-{raw_info[:30000]}
-
-Anforderungen:
-1. Vollständige, evidenzbasierte Analyse (min. 800-1000 Wörter im comprehensive_report)
-2. Confidence Levels für alle Aussagen: High / Moderate / Low / Insufficient
-3. Marktvergleich mit mindestens 2-3 Wettbewerbern
-4. Mindestens 7 Deep-Dive Aktions-Buttons
-5. 5-7 Key Insights klar als fact/interpretation/speculation kategorisiert
-6. Kein Bezug auf konkrete Stellen oder Jobtitel
-
-Erstelle EXAKT dieses JSON-Objekt:
+====================
+JSON STRUKTUR
+====================
 {{
-  "description": "Prägnante Zusammenfassung des Unternehmens (2-3 Sätze)",
-  "culture_summary": "Authentische Kulturzusammenfassung basierend auf Mitarbeiterstimmen vs. Marketing-Aussagen",
-  "tech_stack": ["Tech1", "Tech2"],
-  "company_size": "startup|mittelstand|konzern",
-
-  "executive_summary": {{
-    "gesamtbewertung": "Gesamtbewertung als Arbeitgeber in 3-4 Sätzen mit konkreter Einschätzung",
-    "gesamt_confidence": "High|Moderate|Low",
-    "geeignet_fuer": ["Kandidatentyp der hier gut aufgehoben ist", "Weiterer Typ"],
-    "weniger_geeignet": ["Kandidatentyp für den das weniger passt"]
+  "executive_summary": "Max. 3 Sätze. Direkt, motivierend und auf deine Situation zugeschnitten (nutze 'du').",
+  "social_intelligence": {{
+    "ansprechpartner_recherche": "Ergebnisse deiner Websuche zu Personen bei {company_name} (z.B. LinkedIn Profile, Themen).",
+    "networking_hacks": "Wie du dieses Wissen im Gespräch dezent für dich nutzt."
   }},
-
-  "structured_analysis": {{
-    "geschaeftsmodell_marktposition": {{
-      "assessment": "Faktische, evidenzbasierte Aussagen zum Geschäftsmodell und der Marktposition",
-      "evidence_basis": "Quellentyp und Zuverlässigkeit (z.B. Unternehmenswebsite, Pressemitteilungen, Analysten)",
-      "confidence_level": "High|Moderate|Low|Insufficient",
-      "key_uncertainty": "Was ist unbekannt, fehlt oder ist widersprüchlich"
-    }},
-    "arbeitsbedingungen_kultur": {{
-      "assessment": "Fakten zu Arbeitsbedingungen, Remote-Policy, Bürokultur, Teamstruktur",
-      "evidence_basis": "Quellentyp (z.B. Kununu, Glassdoor, LinkedIn-Posts)",
-      "confidence_level": "High|Moderate|Low|Insufficient",
-      "key_uncertainty": "Was ist unklar oder widersprüchlich"
-    }},
-    "gehaelter_benefits": {{
-      "assessment": "Einschätzung der Gehaltsstruktur und Benefits im Marktvergleich",
-      "evidence_basis": "Quellentyp (z.B. Gehaltsreports, kununu, glassdoor)",
-      "confidence_level": "High|Moderate|Low|Insufficient",
-      "key_uncertainty": "Fehlende oder unklare Daten"
-    }},
-    "karriere_entwicklung": {{
-      "assessment": "Karrieremöglichkeiten, interne Mobilität, Weiterbildungsangebote",
-      "evidence_basis": "Quellentyp",
-      "confidence_level": "High|Moderate|Low|Insufficient",
-      "key_uncertainty": "Unbekannte Aspekte"
-    }},
-    "stabilitaet_zukunft": {{
-      "assessment": "Wirtschaftliche Stabilität, Wachstumsperspektiven, strategische Zukunftsausrichtung",
-      "evidence_basis": "Quellentyp (z.B. Geschäftsberichte, Pressemitteilungen, Analystenmeinungen)",
-      "confidence_level": "High|Moderate|Low|Insufficient",
-      "key_uncertainty": "Unsicherheitsfaktoren"
-    }}
-  }},
-
-  "key_insights": [
-    {{"insight": "Konkreter Insight 1", "type": "fact"}},
-    {{"insight": "Interpretation oder Schlussfolgerung", "type": "interpretation"}},
-    {{"insight": "Spekulative Einschätzung mit Begründung", "type": "speculation"}}
-  ],
-
-  "key_benefits": ["Konkreter Arbeitgebervorteil 1", "Vorteil 2"],
-
-  "red_flags": [
-    {{"flag": "Konkretes Warnsignal", "probability": "High|Moderate|Low", "impact": "High|Moderate|Low"}}
-  ],
-
-  "market_comparison": {{
-    "competitors": [
+  "structured_prep": {{
+    "gap_analysis": [
       {{
-        "name": "Wettbewerber 1",
-        "salary_comparison": "Gehaltsvergleich: besser/schlechter/ähnlich und warum",
-        "career_paths": "Karrieremöglichkeiten im Vergleich",
-        "stability": "Stabilität und Zukunftsperspektive im Vergleich"
+        "anforderung": "Job-Anforderung",
+        "dein_status": "Dein Match/Status laut CV",
+        "gap_severity": "Low/Medium/High",
+        "interview_strategie": "Konkrete Strategie, wie DU das im Gespräch adressierst."
       }}
     ],
-    "relative_strengths": ["Stärke von {company_name} vs. Markt 1", "Stärke 2"],
-    "relative_weaknesses": ["Schwäche von {company_name} vs. Markt 1"]
+    "elevator_pitch": "Dein 60-Sekunden-Auftritt in der Ich-Perspektive."
   }},
-
   "deep_dive_buttons": [
     {{
-      "title": "Kurzer beschreibender Aktionsname",
-      "focus": "Spezifischer Aspekt der zu recherchieren ist",
-      "why_it_matters": "Warum das für die Entscheidung eines Bewerbers wichtig ist",
-      "how_to_proceed": "Konkrete nächste Rechercheschritte (z.B. welche Seiten, Fragen, Quellen)",
-      "linked_findings": "Verweis auf relevante Analyseteile (z.B. 'Siehe Structured Analysis: Gehälter')"
+      "title": "Titel des Buttons",
+      "focus": "Worauf konzentriert sich dieser Deep-Dive?",
+      "why_it_matters": "Warum ist dieser Punkt für deinen Erfolg entscheidend?",
+      "how_to_proceed": "Schritt-für-Schritt Anleitung für dich.",
+      "linked_findings": "Welche Erkenntnis aus der Analyse wird hier vertieft?"
     }}
   ],
-
-  "key_artifacts": [
-    {{
-      "title": "Meilenstein/Produkt/Initiative",
-      "description": "Strategische Bedeutung, Zeitraum und wirtschaftlicher Impact"
-    }}
-  ],
-
-  "swot_analysis": {{
-    "strengths": ["Unternehmensstärke 1", "Unternehmensstärke 2"],
-    "weaknesses": ["Strukturelle Schwäche 1"],
-    "opportunities": ["Marktchance 1"],
-    "threats": ["Externer Risikofaktor 1"]
+  "deep_dive_analysis": {{
+    "qa_guide": "5 spezifische Fachfragen und wie du sie meisterst.",
+    "behavioral_advice": "3 Fragen nach der STAR-Methode inklusive deiner empfohlenen Story.",
+    "difficult_scenarios": "Strategien für deine individuellen Schwachstellen oder schwierige Fragen."
   }},
-
-  "comprehensive_report": "Vollständiger RESEARCH REPORT (min. 800 Wörter) im Markdown-Format. Enthält: Executive Summary, Wirtschaftliche Verfassung & Kennzahlen, Strategische Ausrichtung & Zukunftspläne, Unternehmenskultur & Mitarbeiterzufriedenheit, Marktvergleich, SWOT-Fazit. KEIN Bezug auf konkrete Stellen.",
-
-  "company_intelligence": {{
-    "wirtschaftliche_lage": "Detaillierte Analyse: Strategie, Gewinnwarnungen oder Rekordgewinne, Umstrukturierungen, M&A-Aktivitäten, aktuelle Kennzahlen",
-    "marktposition": {{
-      "hauptwettbewerber": ["Wettbewerber 1", "Wettbewerber 2", "Wettbewerber 3"],
-      "usp": "Was unterscheidet {company_name} wirklich von der Konkurrenz?"
-    }},
-    "kultur_vibe": {{
-      "kununu_glassdoor_summary": "Was sagen Mitarbeiter auf Kununu/Glassdoor? Work-Life-Balance, Management, Fluktuation. Konkrete Zitate wenn möglich.",
-      "work_life_balance": "positiv",
-      "management_bewertung": "gemischt",
-      "fluktuation": "normal"
-    }},
-    "kritische_themen": ["Strategisches Risiko oder negative Entwicklung die Bewerber kennen sollten"],
-    "insider_fragen": [
-      {{
-        "question": "Substanzielle Interviewfrage die zeigt, dass man Hausaufgaben gemacht hat",
-        "rationale": "Warum diese Frage strategisch klug ist und was sie dem Interviewer signalisiert"
-      }}
-    ],
-    "online_referenzen": [
-      {{
-        "title": "Titel des Artikels oder der Quelle",
-        "url": "https://...",
-        "source_type": "news|review|ir|social"
-      }}
-    ]
-  }}
+  "online_resources": [
+    "ECHTE_URL_1_ZU_NEWS_ODER_PROFIL",
+    "ECHTE_URL_2_ZU_KUNUNU_ODER_GLASSDOOR",
+    "ECHTE_URL_3_ZU_RELEVANTER_FACHSEITE"
+  ]
 }}
 
-PFLICHTREGELN:
-- kultur_vibe.work_life_balance: exakt "positiv", "gemischt" oder "negativ"
-- kultur_vibe.management_bewertung: exakt "positiv", "gemischt" oder "negativ"
-- kultur_vibe.fluktuation: exakt "niedrig", "normal" oder "hoch"
-- insider_fragen: genau 3 substanzielle, nicht-generische Fragen
-- online_referenzen.source_type: exakt "news", "review", "ir" oder "social"
-- deep_dive_buttons: mindestens 7, maximal 10 Buttons
-- key_insights: genau 5-7 Insights mit korrekter type-Kategorisierung (fact/interpretation/speculation)
-- market_comparison.competitors: mindestens 2-3 Wettbewerber mit konkreten Vergleichen
-- red_flags: Array von Objekten mit flag/probability/impact (NICHT einfache Strings)
-- Antworte NUR mit dem JSON-Objekt ohne Markdown-Wrapper!
-"""
+====================
+ANFORDERUNG: DEEP-DIVE BUTTONS
+====================
+Erstelle MINDESTENS 10 dieser Buttons. Jeder Button muss eine spezifische Taktik oder ein psychologisches Manöver darstellen, das auf deine Situation zugeschnitten ist (z.B. 'Die Gehaltsverhandlung-Matrix', 'Umgang mit kritischen Stakeholdern', 'Die Culture-Fit Falle' etc.). Jedes Feld innerhalb der Buttons muss dich direkt mit 'du' ansprechen.
 
-    if language == "en":
-        prompt += "\nWrite ALL text content in English (keys remain as-is)."
-    else:
-        prompt += "\nSchreibe ALLE Textinhalte auf Deutsch (Keys bleiben unverändert)."
+====================
+STIL & INHALT
+====================
+- Sei hochspezifisch. Analysiere die 'Schmerzpunkte' des Arbeitgebers.
+- Gib konkrete Tipps zu Kommunikation und Psychologie.
+- Validität: Stelle sicher, dass die URLs in 'online_resources' zum aktuellen Zeitpunkt erreichbar sind.
+"""
 
     return [{"role": "user", "content": prompt}]
 
 
-def get_extract_job_details_messages(text: str, language: str = "de") -> List[Dict[str, str]]:
+def get_deep_dive_messages(
+    domain: str,
+    company_name: str,
+    focus: str,
+    how_to_proceed: str,
+    language: str = "de",
+) -> List[Dict[str, str]]:
+    output_language = "German" if language != "en" else "English"
+    system_message = f"""You are a senior corporate intelligence analyst specializing in employer research for job candidates.
+Your task is to write a focused, evidence-based research report about a specific aspect of a company.
+
+Guidelines:
+- Write 300-500 words in Markdown format
+- Use concrete facts, data points, and examples wherever possible
+- Clearly distinguish between confirmed facts, reasonable inferences, and speculation
+- Structure your report with ## subheadings
+- Be direct and actionable — the reader is a job candidate making an employment decision
+- All output MUST be in {output_language}
+- Do NOT wrap in code blocks — output raw Markdown only"""
+
+    user_message = f"""Company: {company_name} ({domain})
+
+Deep Dive Focus: {focus}
+
+Research Approach:
+{how_to_proceed}
+
+Write a focused research report on this specific topic for {company_name}. Use your knowledge of this company and the research approach above. Be concrete and specific."""
+
+    return [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def get_extract_job_details_messages(
+    text: str, language: str = "de"
+) -> List[Dict[str, str]]:
     system_instruction = (
         "You are an expert at extracting job descriptions from noisy web content. "
         "Extract the full job description, including requirements, responsibilities, and benefits. "
@@ -391,9 +380,14 @@ def get_extract_job_details_messages(text: str, language: str = "de") -> List[Di
     if language == "en":
         system_instruction += "Output ONLY the extracted job description in English."
     else:
-        system_instruction += "Gib NUR die extrahierte Stellenbeschreibung auf Deutsch aus."
+        system_instruction += (
+            "Gib NUR die extrahierte Stellenbeschreibung auf Deutsch aus."
+        )
 
     return [
         {"role": "system", "content": system_instruction},
-        {"role": "user", "content": f"Extract the job description from this text:\n\n{text[:12000]}"},
+        {
+            "role": "user",
+            "content": f"Extract the job description from this text:\n\n{text[:12000]}",
+        },
     ]

@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     ForeignKey,
+    LargeBinary,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.pool import NullPool
@@ -102,6 +103,11 @@ class UserProfile(Base):
     language = Column(String, default="de")
     timezone = Column(String, default="Europe/Berlin")
 
+    # Storage Settings
+    active_storage_service = Column(String, default="NONE")  # NONE, GOOGLE_DRIVE
+    google_drive_refresh_token = Column(String, nullable=True)
+    google_drive_email = Column(String, nullable=True)
+
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -187,6 +193,7 @@ class JobDocument(Base):
     original_filename = Column(String, nullable=False)
     file_size = Column(Integer, nullable=True)
     mime_type = Column(String, nullable=True)
+    content = Column(LargeBinary, nullable=True) # For local database storage
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
 
     job = relationship("JobEntry", back_populates="documents")
@@ -248,6 +255,8 @@ class SettingsData(BaseModel):
     active_notification_service: str = "NONE"
     language: str = "de"
     timezone: str = "Europe/Berlin"
+    active_storage_service: str = "NONE"
+    google_drive_email: Optional[str] = None
 
 
 class NotificationSettingsData(BaseModel):
@@ -382,3 +391,11 @@ class JobPatchRequest(BaseModel):
 
 class CompanyAnalyzeRequest(BaseModel):
     force_refresh: bool = False
+
+
+class DeepDiveRequest(BaseModel):
+    focus: str
+    how_to_proceed: str
+    company_name: str
+    title: str
+    language: str = "de"

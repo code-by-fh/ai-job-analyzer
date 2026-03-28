@@ -19,6 +19,15 @@ interface JobApplicationTabProps {
 
 const formatElapsed = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+const GENERATION_PHASES = [
+    { label: 'Stellenanzeige analysieren…', icon: '🔍' },
+    { label: 'Profil abgleichen…', icon: '📋' },
+    { label: 'Stärken herausarbeiten…', icon: '💡' },
+    { label: 'Einleitung formulieren…', icon: '✍️' },
+    { label: 'Mehrwert herausarbeiten…', icon: '🎯' },
+    { label: 'Abschluss verfassen…', icon: '✅' },
+];
+
 export default function JobApplicationTab({
     job,
     isGenerating,
@@ -38,13 +47,17 @@ export default function JobApplicationTab({
     const [regenNote, setRegenNote] = useState('');
     const [isSubmittingRegen, setIsSubmittingRegen] = useState(false);
     const [elapsed, setElapsed] = useState(0);
+    const [phaseIndex, setPhaseIndex] = useState(0);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const phaseRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Elapsed timer while generating
+    // Elapsed timer + phase rotation while generating
     useEffect(() => {
         if (!isGenerating) {
             if (timerRef.current) clearInterval(timerRef.current);
+            if (phaseRef.current) clearInterval(phaseRef.current);
             setElapsed(0);
+            setPhaseIndex(0);
             return;
         }
         const stored = localStorage.getItem(`gen_app_${job.id}`);
@@ -54,7 +67,13 @@ export default function JobApplicationTab({
         timerRef.current = setInterval(() => {
             setElapsed(Math.floor((Date.now() - startTime) / 1000));
         }, 1000);
-        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+        phaseRef.current = setInterval(() => {
+            setPhaseIndex(i => (i + 1) % GENERATION_PHASES.length);
+        }, 3500);
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (phaseRef.current) clearInterval(phaseRef.current);
+        };
     }, [isGenerating, job.id]);
 
     // Clear localStorage when done
@@ -158,16 +177,40 @@ export default function JobApplicationTab({
 
     // Generating state
     if (isGenerating) {
+        const phase = GENERATION_PHASES[phaseIndex];
         return (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-                <div className="relative">
-                    <div className="absolute inset-0 bg-indigo-500 blur-xl opacity-20 animate-pulse"></div>
-                    <Loader2 className="w-10 h-10 text-indigo-500 animate-spin relative z-10" />
+            <div className="flex flex-col items-center justify-center py-14 gap-6">
+                {/* Animated spinner ring */}
+                <div className="relative w-20 h-20 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full border-4 border-indigo-100 dark:border-indigo-500/20" />
+                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-500 animate-spin" />
+                    <span className="text-2xl">{phase.icon}</span>
                 </div>
-                <div className="text-center animate-in fade-in slide-in-from-bottom-2 duration-500">
-                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Bewerbung wird generiert…</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">{formatElapsed(elapsed)}</p>
+
+                {/* Phase label */}
+                <div className="text-center space-y-1">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 transition-all duration-500">
+                        {phase.label}
+                    </p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">{formatElapsed(elapsed)}</p>
                 </div>
+
+                {/* Phase step indicators */}
+                <div className="flex gap-1.5">
+                    {GENERATION_PHASES.map((p, i) => (
+                        <div
+                            key={i}
+                            className={`h-1.5 rounded-full transition-all duration-500 ${
+                                i === phaseIndex
+                                    ? 'w-6 bg-indigo-500'
+                                    : i < phaseIndex
+                                    ? 'w-1.5 bg-indigo-300 dark:bg-indigo-600'
+                                    : 'w-1.5 bg-slate-200 dark:bg-slate-700'
+                            }`}
+                        />
+                    ))}
+                </div>
+
                 <button
                     onClick={handleCancel}
                     className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-xl transition-all cursor-pointer"
@@ -275,8 +318,10 @@ export default function JobApplicationTab({
                                     disabled={isSubmittingRegen}
                                     className="px-4 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-all shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                                 >
-                                    {isSubmittingRegen ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                    Neu generieren
+                                    {isSubmittingRegen
+                                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Wird gestartet…</>
+                                        : <><RefreshCw className="w-3 h-3" /> Neu generieren</>
+                                    }
                                 </button>
                             </div>
                         </div>

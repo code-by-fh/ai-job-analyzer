@@ -9,8 +9,10 @@ The **AI Job Agent** is an intelligent application for automating the job search
 *   **Automated Job Search (Scraping)**: Periodic, automated crawling of registered job platforms in the background via a built-in scheduler, or manual scraping based on specific criteria.
 *   **AI Analysis & Matching**: Analyzes job descriptions using LLMs (Large Language Models), compares them with the user profile, and calculates a matching score.
 *   **Application Generation**: Automatically creates personalized cover letters and CV adaptations for specific positions.
-*   **Application Process Management**: Track the status of your applications, save notes, and organize your job search in one place.
-*   **Modern UI**: An appealing, user-friendly interface in Dark Mode with Glassmorphism effects for a pleasant user experience.
+*   **Application Process Management**: Track the status of your applications, save notes, and organize your job search in one place. Includes full unarchive support.
+*   **Flexible Storage**: Configurable dual-storage support for resumes and documents, allowing users to choose between local database storage and Google Drive integration.
+*   **User Guides**: Integrated tutorial system using `driver.js` to help new users navigate the dashboard and features.
+*   **Modern UI**: An appealing, user-friendly interface in Dark Mode with Glassmorphism effects, page descriptions, and dynamic interactions.
 
 ### 📸 Screenshots
 
@@ -34,6 +36,7 @@ The application is based on a modern microservices architecture, ensuring scalab
 *   **PostgreSQL**: Relational database for storing jobs, applications, and user data.
 *   **Redis**: In-memory data store, used as a message broker and result backend for Celery.
 *   **RabbitMQ**: Message broker for robust communication between microservices.
+*   **Storage Providers**: Support for both local DB storage and Google Drive API for document persistence.
 *   **Docker & Docker Compose**: Containerization of all services for easy deployment and development.
 
 ```mermaid

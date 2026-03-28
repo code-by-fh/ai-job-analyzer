@@ -34,6 +34,7 @@ from intelligence.service import (
     analyze_job,
     generate_application,
 )
+from services.storage import get_storage_service
 
 logger = get_logger(__name__)
 
@@ -1278,6 +1279,10 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
         logger.info(" Sende Anfrage an OpenAI für Anschreiben...")
         model = get_model(db)
         api_key = get_api_key(db)
+        # When improvement notes are given, pass the existing draft so the AI
+        # only applies the requested changes instead of rewriting from scratch.
+        existing_draft = job.application_draft if improvement_notes else None
+
         application_text = generate_application(
             job_title=job.title,
             job_company=job.company,
@@ -1288,6 +1293,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
             model=model,
             api_key=api_key,
             improvement_notes=improvement_notes,
+            existing_draft=existing_draft,
         )
         logger.info("Received AI response for application letter.")
 
@@ -1316,6 +1322,26 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
             ),
         )
         logger.info(f" WebSocket Event 'job_update' für {job.id} gesendet.")
+
+        # --- AUTO-UPLOAD (External Storage) ---
+        if profile and profile.active_storage_service != "NONE":
+            storage = get_storage_service(profile)
+            if storage:
+                try:
+                    import asyncio
+                    filename = f"Anschreiben_{job.company.replace(' ', '_')}_{job.title.replace(' ', '_')}.txt"
+                    # Using run_until_complete is tricky in worker threads, 
+                    # but for MVP we wrap the call if we are not in an loop
+                    success = asyncio.run(storage.upload_file(
+                        content=application_text, 
+                        filename=filename
+                    ))
+                    if success:
+                        logger.info(f"Auto-Upload to {profile.active_storage_service} successful: {filename}")
+                    else:
+                        logger.warning(f"Auto-Upload to {profile.active_storage_service} failed")
+                except Exception as upload_err:
+                    logger.error(f"External storage upload error: {upload_err}")
 
     except (
         AuthenticationError,
@@ -1452,145 +1478,66 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
 
 @celery_app.task(name="worker.generate_company_profile", bind=True, max_retries=2)
 def generate_company_profile(self, domain: str, user_id: int):
-    """Generiert ein Firmenprofil inkl. Gehaltsdaten."""
+    """Generiert ein vollständiges Firmenprofil via generate_company_profile_summary."""
     from intelligence.service import generate_company_profile_summary
-    from api_clients.review_api import get_salary_data
     from database.core import CompanyProfile
     from datetime import datetime, timezone as tz
 
     db = SessionLocal()
     try:
-        # Gather job info for this company domain
-        jobs = (
-            db.query(JobEntry).filter(JobEntry.company_domain == domain).limit(3).all()
-        )
-
-        raw_info = f"Domain: {domain}\n"
-        company_name = domain
-        if jobs:
-            company_name = jobs[0].company or domain
-            raw_info += f"Company name: {company_name}\n"
-
-        # Web research phase: fetch real online content about the company
-        try:
-            from scraper_worker import get_html_with_browser, get_clean_content
-            from urllib.parse import quote_plus
-            from bs4 import BeautifulSoup as _BS
-
-            # 1. Search DuckDuckGo for company info pages
-            search_q = quote_plus(
-                f"{company_name} Unternehmen Über uns Investor Relations Geschichte"
-            )
-            search_html = get_html_with_browser(
-                f"https://html.duckduckgo.com/html/?q={search_q}"
-            )
-
-            candidate_urls: list[str] = []
-            if search_html:
-                soup = _BS(search_html, "html.parser")
-                for link in soup.select("a.result__a"):
-                    href = link.get("href", "")
-                    if href.startswith("http") and any(
-                        kw in href.lower()
-                        for kw in [
-                            "about",
-                            "investor",
-                            "history",
-                            "ueber",
-                            "unternehmen",
-                            "company",
-                            "konzern",
-                        ]
-                    ):
-                        candidate_urls.append(href)
-
-            # 2. Always try common company pages directly
-            for path in [
-                "/about",
-                "/about-us",
-                "/ueber-uns",
-                "/investor-relations",
-                "/company",
-                "/unternehmen",
-            ]:
-                candidate_urls.insert(0, f"https://{domain}{path}")
-
-            # 3. Fetch and clean up to 3 pages
-            pages_fetched = 0
-            seen: set[str] = set()
-            for url in candidate_urls[:8]:
-                if pages_fetched >= 3 or url in seen:
-                    continue
-                seen.add(url)
-                try:
-                    html = get_html_with_browser(url)
-                    if html:
-                        clean = get_clean_content(html)
-                        if clean and len(clean) > 300:
-                            raw_info += (
-                                f"\n\n--- Webinhalt: {url} ---\n{clean[:6000]}\n"
-                            )
-                            pages_fetched += 1
-                except Exception as _fe:
-                    logger.warning(f"Web fetch failed for {url}: {_fe}")
-
-            logger.info(
-                f"Web research: fetched {pages_fetched} page(s) for {company_name}"
-            )
-        except Exception as web_err:
-            logger.warning(f"Web research skipped for {domain}: {web_err}")
+        jobs = db.query(JobEntry).filter(JobEntry.company_domain == domain).limit(3).all()
+        company_name = jobs[0].company or domain if jobs else domain
+        job_title = jobs[0].title or "" if jobs else ""
+        key_requirements = (jobs[0].description or "")[:3000] if jobs else ""
 
         model = get_model(db)
         api_key = get_api_key(db)
+        user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        user_language = getattr(user_profile, "language", "de") if user_profile else "de"
 
-        user_profile = (
-            db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        )
-        user_language = (
-            getattr(user_profile, "language", "de") if user_profile else "de"
-        )
+        user_profile_str = ""
+        if user_profile:
+            parts = []
+            if user_profile.role:
+                parts.append(f"Aktuelle Rolle: {user_profile.role}")
+            if user_profile.skills:
+                parts.append(f"Skills: {user_profile.skills}")
+            if user_profile.cv_data:
+                from intelligence.service import format_cv_for_prompt
+                parts.append(format_cv_for_prompt(user_profile.cv_data))
+            user_profile_str = "\n".join(parts)
 
         profile_data = generate_company_profile_summary(
-            domain=domain,
             company_name=company_name,
-            raw_info=raw_info,
+            job_title=job_title,
+            industry="",
+            key_requirements=key_requirements,
+            user_profile=user_profile_str,
             model=model,
             api_key=api_key,
-            language=user_language,
         )
 
-        # Get salary data
-        job_title = jobs[0].title if jobs else "Software Engineer"
-        salary_data = get_salary_data(job_title)
-
-        # Upsert company profile
-        company = (
-            db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
-        )
+        company = db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
         if not company:
             company = CompanyProfile(domain=domain)
             db.add(company)
 
         company.name = company_name
-        company.description = profile_data.get("description")
-        company.culture_summary = profile_data.get("culture_summary")
-        company.tech_stack = profile_data.get("tech_stack", [])
-        company.salary_benchmark = salary_data
+        company.description = profile_data.get("executive_summary", "")[:500] if isinstance(profile_data.get("executive_summary"), str) else ""
+        company.culture_summary = ""
+        company.tech_stack = []
         company.raw_data = profile_data
         company.analyzed_at = datetime.now(tz.utc)
-
         db.commit()
 
-        # Notify
         redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-        r = redis.from_url(redis_url)
-        r.publish(
+        redis.from_url(redis_url).publish(
             "job_updates",
             json.dumps({"type": "company_profile_ready", "domain": domain}),
         )
 
         logger.info(f"Company profile generated for {domain}")
-        return {"status": "success", "domain": domain}
+        return profile_data
 
     except (
         AuthenticationError,
@@ -1599,10 +1546,7 @@ def generate_company_profile(self, domain: str, user_id: int):
         APIConnectionError,
         APIStatusError,
     ):
-        # store_ai_404_error already called inside intelligence_service
-        logger.error(
-            f"OpenRouter API error in generate_company_profile for {domain}, not retrying."
-        )
+        logger.error(f"OpenRouter API error in generate_company_profile for {domain}, not retrying.")
         db.rollback()
         return {"status": "failed", "reason": "api_error"}
     except Exception as e:

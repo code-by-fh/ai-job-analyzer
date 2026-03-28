@@ -165,18 +165,21 @@ export default function PlatformCard({
                                     </div>
 
                                     {!platform.is_active && (
-                                        <span className="px-1 py-px text-[8px] uppercase font-bold tracking-widest text-slate-400 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shrink-0">
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider shrink-0 shadow-sm transition-all duration-300 group-hover:bg-slate-200/50 dark:group-hover:bg-slate-700/50">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                                            </svg>
                                             {t('deactivated')}
-                                        </span>
+                                        </div>
                                     )}
                                     {isBusy && (
-                                        <span className="flex items-center gap-0.5 px-1 py-px text-[8px] uppercase font-bold tracking-widest text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 rounded border border-indigo-200 dark:border-indigo-800/50 shrink-0">
-                                            <svg className="w-2 h-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 rounded-md border border-indigo-200 dark:border-indigo-800/60 shadow-sm shrink-0 transition-all duration-300">
+                                            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                             </svg>
-                                            Scanning
-                                        </span>
+                                            {t('crawlInProgress')}
+                                        </div>
                                     )}
                                 </div>
                             )}

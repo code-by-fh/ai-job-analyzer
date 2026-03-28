@@ -181,7 +181,7 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
                 </button>
             </div>
 
-            <CompanyProfileView data={d} />
+            <CompanyProfileView data={d} domain={d.domain} fetchWithAuth={fetchWithAuth} />
         </div>
     );
 }

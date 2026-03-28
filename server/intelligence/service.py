@@ -23,6 +23,7 @@ from intelligence.prompts import (
     get_interview_prep_messages,
     get_company_profile_summary_messages,
     get_extract_job_details_messages,
+    get_deep_dive_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -302,12 +303,15 @@ def generate_application(
     model: str = None,
     api_key: str = None,
     improvement_notes: str = None,
+    existing_draft: str = None,
 ) -> str:
     """
     Calls AI to generate a cover letter draft. Returns the raw string content.
+    If improvement_notes and existing_draft are provided, only the requested
+    changes are applied to the existing draft instead of regenerating from scratch.
     """
     client = get_ai_client(api_key)
-    
+
     messages = get_generate_application_messages(
         job_title=job_title,
         job_company=job_company,
@@ -316,6 +320,7 @@ def generate_application(
         cv_text=cv_text,
         user_language=user_language,
         improvement_notes=improvement_notes,
+        existing_draft=existing_draft,
     )
     
     response = _call_openrouter(
@@ -346,7 +351,8 @@ def generate_interview_prep(
     messages = get_interview_prep_messages(
         job_title=job_title,
         company_name=company_name,
-        language=language,
+        job_description=job_description,
+        cv_summary=cv_summary,
     )
     
     try:
@@ -376,25 +382,27 @@ def generate_interview_prep(
 
 
 def generate_company_profile_summary(
-    domain: str,
     company_name: str,
-    raw_info: str,
+    job_title: str = "",
+    industry: str = "",
+    key_requirements: str = "",
+    user_profile: str = "",
     model: str = None,
     api_key: str = None,
-    language: str = "de",
 ) -> Dict[str, Any]:
     """
-    Generate a structured company profile summary from raw web data.
+    Generate a structured interview preparation guide for a company.
     """
     if not model:
         model = get_model()
 
     client = get_ai_client(api_key=api_key)
     messages = get_company_profile_summary_messages(
-        domain=domain,
         company_name=company_name,
-        raw_info=raw_info,
-        language=language,
+        job_title=job_title,
+        industry=industry,
+        key_requirements=key_requirements,
+        user_profile=user_profile,
     )
     
     response = _call_openrouter(
@@ -408,6 +416,39 @@ def generate_company_profile_summary(
     content = response.choices[0].message.content.strip()
     result = extract_json(content)
     return result
+
+
+def generate_deep_dive(
+    domain: str,
+    company_name: str,
+    focus: str,
+    how_to_proceed: str,
+    model: str = None,
+    api_key: str = None,
+    language: str = "de",
+) -> str:
+    """Returns a focused Markdown research report for the given deep dive focus."""
+    if not model:
+        model = get_model()
+
+    client = get_ai_client(api_key=api_key)
+    messages = get_deep_dive_messages(
+        domain=domain,
+        company_name=company_name,
+        focus=focus,
+        how_to_proceed=how_to_proceed,
+        language=language,
+    )
+
+    response = _call_openrouter(
+        client=client,
+        model=model,
+        messages=messages,
+        temperature=0.7,
+        max_tokens=2000,
+        func_name="generate_deep_dive",
+    )
+    return response.choices[0].message.content.strip()
 
 
 def extract_job_details(

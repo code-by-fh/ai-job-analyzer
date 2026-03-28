@@ -9,6 +9,7 @@ import { useAuth, fetchWithAuth } from './AuthProvider';
 import { useLanguage } from './LanguageProvider';
 import { useNotification } from './NotificationProvider';
 import AIErrorBanner from './AIErrorBanner';
+import SuccessBanner from './SuccessBanner';
 import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS, NavItemConfig } from '../lib/navigation';
 import * as LucideIcons from 'lucide-react';
 
@@ -27,7 +28,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const { t } = useLanguage();
-    const { errorDetail, clearError, showError } = useNotification();
+    const { errorDetail, clearError, showError, successDetail, clearSuccess } = useNotification();
 
     // Restore persisted AI error banner on any page reload
     React.useEffect(() => {
@@ -377,6 +378,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                 detail={errorDetail}
                                 isAdmin={Boolean(user?.is_admin)}
                                 onDismiss={clearError}
+                            />
+                        </div>
+                    )}
+                    {successDetail && (
+                        <div className="mb-6">
+                            <SuccessBanner
+                                detail={successDetail}
+                                onDismiss={clearSuccess}
                             />
                         </div>
                     )}
