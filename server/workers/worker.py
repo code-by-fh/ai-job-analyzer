@@ -1439,7 +1439,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             language=user_language,
         )
 
-        logger.info(f"Interview prep data generated: {len(str(prep_data))} chars")
+        logger.debug(f"Interview prep data generated: {len(str(prep_data))} chars")
 
         job.interview_prep_material = json.dumps(prep_data, ensure_ascii=False)
         db.commit()

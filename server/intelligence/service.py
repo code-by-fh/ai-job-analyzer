@@ -352,7 +352,8 @@ def generate_interview_prep(
         job_title=job_title,
         company_name=company_name,
         job_description=job_description,
-        cv_summary=cv_summary,
+        user_profile=cv_summary,
+        language=language,
     )
     
     try:

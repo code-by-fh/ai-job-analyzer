@@ -166,85 +166,168 @@ CV Data:
 
 
 def get_interview_prep_messages(
-    job_title: str,
     company_name: str,
+    job_title: str = "",
+    industry: str = "",
     job_description: str = "",
-    cv_summary: str = "",
-) -> List[Dict[str, str]]:
-    prompt = f"""Agiere als Elite Interview Preparation Coach und Psychologe. Deine Aufgabe ist es, eine hochgradig personalisierte Vorbereitung für mein nächstes Interview zu erstellen.
+    key_requirements: str = "",
+    user_profile: str = "",
+    language: str = "de",
+    region: str = "Germany / Europe",
+) -> list[dict]:
+    prompt = """
+# Deep Interview Preparation Agent – Structured Candidate Analysis (STRICT JSON OUTPUT)
 
-        ====================
-        KONTEXT & DATEN
-        ====================
-        - Rolle: {job_title}
-        - Unternehmen: {company_name}
-        - Kernanforderungen: {job_description}
-        - Mein Profil: {cv_summary}
+You are an Elite Interview Preparation Coach, Career Strategist, Psychologist, and Social Intelligence expert.
+Your task is to generate a fully personalized interview preparation plan for the candidate.
+All output must be produced in the language specified by {language}.
 
-        ====================
-        KRITISCHE REGELN (STRENG BEFOLGEN)
-        ====================
-        1. OUTPUT: Gib AUSSCHLIESSLICH valides JSON zurück. Kein Markdown, kein einleitender Text.
-        2. ANSPRACHE: Du MUSST mich in JEDEM Satz direkt mit "du" oder "dein" ansprechen. Vermeide die dritte Person komplett.
-        3. SPRACHE: Antworte AUSSCHLIESSLICH auf Deutsch.
-        4. PITCH: Der "elevator_pitch" muss in der Ich-Form verfasst sein (authentisch und direkt sprechbar).
-        5. QUELLE: Die "online_resources" MÜSSEN echte, klickbare URLs zu Artikeln, Tools oder Firmenprofilen sein, die für {company_name} oder die Rolle relevant sind.
+---
 
-        ====================
-        JSON STRUKTUR
-        ====================
-        {{
-          "executive_summary": "Max. 3 Sätze. Direkt, motivierend und auf deine Situation zugeschnitten (nutze 'du').",
-          "social_intelligence": {{
-            "ansprechpartner_recherche": "Ergebnisse deiner Websuche zu Personen bei {company_name} (z.B. LinkedIn Profile, aktuelle Themen des Managements).",
-            "networking_hacks": "Wie du dieses Wissen im Gespräch dezent für dich nutzt."
-          }},
-          "structured_prep": {{
-            "gap_analysis": [
-              {{
-                "anforderung": "Job-Anforderung",
-                "dein_status": "Dein Match/Status laut CV",
-                "gap_severity": "Low/Medium/High",
-                "interview_strategie": "Konkrete Strategie, wie DU das im Gespräch adressierst."
-              }}
-            ],
-            "elevator_pitch": "Dein 60-Sekunden-Auftritt in der Ich-Perspektive."
-          }},
-          "deep_dive_buttons": [
-            {{
-              "title": "Titel des Buttons",
-              "focus": "Worauf konzentriert sich dieser Deep-Dive?",
-              "why_it_matters": "Warum ist dieser Punkt für deinen Erfolg entscheidend?",
-              "how_to_proceed": "Schritt-für-Schritt Anleitung für dich.",
-              "linked_findings": "Welche Erkenntnis aus der Analyse wird hier vertieft?"
-            }}
-          ],
-          "deep_dive_analysis": {{
-            "qa_guide": "5 spezifische Fachfragen und wie du sie meisterst.",
-            "behavioral_advice": "3 Fragen nach der STAR-Methode inklusive deiner empfohlenen Story.",
-            "difficult_scenarios": "Strategien für deine individuellen Schwachstellen oder schwierige Fragen."
-          }},
-          "online_resources": [
-            "Link zu aktuellen Nachrichten über {company_name}",
-            "Link zu einem relevanten Fachartikel oder Branchen-Report",
-            "Link zu Kununu/Glassdoor oder LinkedIn-Insights von {company_name}"
-          ]
-        }}
+## CRITICAL OUTPUT REQUIREMENT (HIGHEST PRIORITY)
 
-        ====================
-        ANFORDERUNG: DEEP-DIVE BUTTONS
-        ====================
-        Erstelle MINDESTENS 10 dieser Buttons. Jeder Button muss eine spezifische Taktik oder ein psychologisches Manöver darstellen, das auf deine Situation zugeschnitten ist (z.B. 'Die Gehaltsverhandlung-Matrix', 'Umgang mit kritischen Stakeholdern', 'Die Culture-Fit Falle' etc.). Jedes Feld innerhalb der Buttons muss dich direkt mit 'du' ansprechen.
+You MUST return strictly valid JSON.
 
-        ====================
-        STIL & INHALT
-        ====================
-        - Sei hochspezifisch. Analysiere die 'Schmerzpunkte' des Arbeitgebers.
-        - Gib konkrete Tipps zu Kommunikation und Psychologie.
-        - WICHTIG: Die online_resources dürfen KEINE Platzhalter wie 'URL 1' sein. Führe eine Websuche durch und gib echte Links zu {company_name} (z.B. Newsroom, LinkedIn-Karriereseite, Branchennews).
-      """
+STRICT RULES:
+- Output ONLY JSON (no markdown, no text before or after)
+- Use ONLY double quotes (")
+- No trailing commas
+- No comments
+- No explanations outside JSON
+- Ensure the response can be parsed with json.loads() without errors
+- If uncertain, simplify but NEVER break JSON validity
 
-    return [{"role": "user", "content": prompt}]
+---
+
+## LANGUAGE & TONE RULES
+
+CRITICAL LANGUAGE RULE:
+- You MUST address the user directly as "du" in EVERY sentence
+- NEVER use third person (no "der Kandidat", "er/sie", "man")
+- EVERY sentence must include at least one of: "du", "dein", "deine", "dich", "dir"
+- EXCEPTION: elevator_pitch MUST be written in first person ("Ich") and does NOT need "du"
+- Respond ONLY in {language}
+
+---
+
+## INPUT VARIABLES
+
+- company: {company}
+- region: {region}
+- job_title: {job_title}
+- industry: {industry}
+- job_description: {job_description}
+- key_requirements: {key_requirements}
+- user_profile: {user_profile}
+
+You MUST tailor all analysis to this candidate context.
+
+---
+
+## TASK
+
+Generate a comprehensive, structured interview preparation plan, including:
+
+1. Executive summary (3 sentences max, personalized, using "du")
+2. Deep-dive analysis with behavioral, technical, and social intelligence guidance, including body language, communication strategies, and psychological advice
+3. Gap analysis comparing job requirements with user profile
+4. Elevator pitch in first-person ("Ich")
+5. 8–10 actionable Deep-Dive buttons with clear labels and instructions
+6. Confidence levels for your recommendations (High / Medium / Low)
+7. Clear identification of uncertainties or information gaps
+8. Conduct online research to find the latest company info
+9. Search LinkedIn and other public sources for relevant employees or contacts to gather additional insights
+10. Provide a list of online resources used for the preparation, all in {language}.
+
+---
+
+## REQUIRED JSON STRUCTURE
+
+Return EXACTLY this structure:
+
+{
+  "meta": {
+    "company": "{company}",
+    "role": "{job_title}",
+    "region": "{region}",
+    "language": "{language}"
+  },
+  "report_output": {
+    "executive_summary": "",
+    "deep_dive_analysis": ""
+  },
+  "structured_prep": {
+    "gap_analysis": [
+      {
+        "requirement": "Job requirement",
+        "cv_status": "Concrete evaluation of your profile (e.g., 'du hast 3 Jahre Erfahrung…')",
+        "gap_severity": "Low / Medium / High",
+        "interview_strategy": "Concrete strategy how YOU position this in the interview"
+      }
+    ],
+    "elevator_pitch": "First-person answer that the user can directly say in the interview"
+  },
+  "deep_dive_buttons": [
+    {
+      "title": "<short descriptive label>",
+      "focus": "<specific skill, competency or scenario>",
+      "why_it_matters": "<impact on interview performance>",
+      "how_to_proceed": "<preparation steps or exercises>",
+      "linked_findings": "<references to analysis>"
+    }
+  ],
+  "confidence_assessment": {
+    "overall_confidence": "High / Medium / Low",
+    "uncertainties": []
+  },
+  "social_intelligence_research": {
+    "potential_contacts": [],
+    "insights_from_contacts": [],
+    "research_sources": []
+  },
+  "online_resources": {
+    "speaking_url": "<URL>"
+  }
+}
+
+---
+
+## BUTTON REQUIREMENTS
+
+- Generate 8–10 buttons
+- MUST be personalized to role, profile, and job description
+- MUST be actionable and specific (no generic advice)
+
+---
+
+## REASONING RULES
+
+- Use multi-hop reasoning
+- Identify uncertainty explicitly
+- Consider potential biases in information or assumptions
+- Prioritize accuracy over speculation
+- Base recommendations on candidate context
+- Apply social intelligence insights to suggest networking opportunities and soft skills preparation
+
+---
+
+## FINAL INSTRUCTION
+
+Return ONLY valid JSON.
+"""
+
+    filled_prompt = (prompt
+        .replace("{company}", company_name)
+        .replace("{region}", region)
+        .replace("{job_title}", job_title)
+        .replace("{industry}", industry)
+        .replace("{job_description}", job_description)
+        .replace("{key_requirements}", key_requirements)
+        .replace("{user_profile}", user_profile)
+        .replace("{language}", language)
+    )
+
+    return [{"role": "user", "content": filled_prompt}]
 
 
 def get_company_profile_summary_messages(
@@ -253,83 +336,211 @@ def get_company_profile_summary_messages(
     industry: str = "",
     key_requirements: str = "",
     user_profile: str = "",
+    language: str = "de",
+    region: str = "Germany / Europe",
+    perspective: str = "potential employee",
 ) -> List[Dict[str, str]]:
-    prompt = f"""Agiere als Elite Interview Preparation Coach und Psychologe. Deine Aufgabe ist es, eine hochgradig personalisierte Vorbereitung für mein nächstes Interview zu erstellen.
+    prompt = """
+# Deep Research Agent – Employer Analysis (STRICT JSON OUTPUT)
 
-====================
-KONTEXT & DATEN
-====================
-- Rolle: {job_title}
-- Unternehmen: {company_name}
-- Branche: {industry}
-- Kernanforderungen: {key_requirements}
-- Mein Profil: {user_profile}
+You are a senior research methodology expert specializing in structured investigation, multi-hop reasoning, source evaluation, evidence synthesis, bias detection, and confidence assessment.
+Do a online research to get the latest information about the company.
+All output must be produced in the language specified by {language}.
 
-====================
-KRITISCHE REGELN (STRENG BEFOLGEN)
-====================
-1. OUTPUT: Gib AUSSCHLIESSLICH valides JSON zurück. Kein Markdown, kein einleitender Text.
-2. ANSPRACHE: Du MUSST mich in JEDEM Satz direkt mit "du" oder "dein" ansprechen. Vermeide die dritte Person komplett.
-3. SPRACHE: Antworte AUSSCHLIESSLICH auf Deutsch.
-4. PITCH: Der "elevator_pitch" muss in der Ich-Form verfasst sein (authentisch und direkt sprechbar).
-5. RECHERCHE-PFLICHT: Nutze deine Browsing-Funktion, um spezifische Informationen über {company_name} zu finden.
-6. LINKS: Das Feld "online_resources" darf KEINE Platzhalter (wie 'URL 1') enthalten. Führe eine Websuche durch und gib echte, klickbare und aktuelle URLs zu Presseportalen, LinkedIn-Firmenprofilen, Kununu-Bewertungen oder relevanten Branchennews an.
+---
 
-====================
-JSON STRUKTUR
-====================
+## CRITICAL OUTPUT REQUIREMENT (HIGHEST PRIORITY)
+
+You MUST return strictly valid JSON.
+
+STRICT RULES:
+- Output ONLY JSON (no markdown, no text before or after)
+- Use ONLY double quotes (")
+- No trailing commas
+- No comments
+- No explanations outside JSON
+- Ensure the response can be parsed with json.loads() without errors
+- If uncertain, simplify but NEVER break JSON validity
+
+## LANGUAGE & TONE RULES
+
+CRITICAL LANGUAGE RULE:
+- You MUST address the user directly as "du" in EVERY sentence
+- NEVER use third person (no "der Kandidat", "er/sie", "man")
+- EVERY sentence must include at least one of: "du", "dein", "deine", "dich", "dir"
+- EXCEPTION: elevator_pitch MUST be written in first person ("Ich") and does NOT need "du"
+- Respond ONLY in {language}
+---
+
+## Input Variables
+
+- company: {company}
+- region: {region}
+- perspective: {perspective}
+- language: {language}
+
+### Candidate Context (MANDATORY USE)
+
+- target_role: {job_title}
+- industry: {industry}
+- key_requirements: {key_requirements}
+- user_profile: {user_profile}
+
+You MUST tailor all analysis to this context.
+
+---
+
+## Research Task
+
+Conduct a comprehensive employer analysis of {company} tailored to the candidate context.
+
+Requirements:
+
+1. Produce a full-length, evidence-based analysis, minimum 800–1000 words.
+2. If data is missing or uncertain, perform online research using credible sources (company website, Glassdoor, Kununu, news, industry reports).
+3. Assess the following dimensions:
+   - Geschäftsmodell & Marktposition
+   - Arbeitsbedingungen & Unternehmenskultur
+   - Gehälter & Benefits
+   - Karriere & Entwicklungsmöglichkeiten
+   - Unternehmensstabilität & Zukunft
+4. Include Confidence Levels for all claims (High / Moderate / Low / Insufficient).
+5. Clearly identify uncertainties, data gaps, or contradictory evidence.
+6. Provide a Market Comparison with at least 2–3 competitors.
+7. Generate at least 8–10 actionable deep-dive steps as UI buttons with clear labels, all in {language}.
+8. Provide a list of online resources used for the research, all in {language}.
+
+
+---
+
+## REQUIRED JSON STRUCTURE
+
+Return EXACTLY this structure:
+
 {{
-  "executive_summary": "Max. 3 Sätze. Direkt, motivierend und auf deine Situation zugeschnitten (nutze 'du').",
-  "social_intelligence": {{
-    "ansprechpartner_recherche": "Ergebnisse deiner Websuche zu Personen bei {company_name} (z.B. LinkedIn Profile, Themen).",
-    "networking_hacks": "Wie du dieses Wissen im Gespräch dezent für dich nutzt."
+  "meta": {{
+    "company": "{company}",
+    "role": "{job_title}",
+    "region": "{region}",
+    "language": "{language}"
   }},
-  "structured_prep": {{
-    "gap_analysis": [
+  "executive_summary": {{
+    "assessment": "",
+    "confidence": "High | Moderate | Low | Insufficient",
+    "suitable_for": "",
+    "not_suitable_for": ""
+  }},
+  "analysis": [
+    {{
+      "area": "Geschäftsmodell & Marktposition",
+      "assessment": "",
+      "evidence_basis": "",
+      "confidence": "",
+      "key_uncertainty": ""
+    }},
+    {{
+      "area": "Arbeitsbedingungen & Unternehmenskultur",
+      "assessment": "",
+      "evidence_basis": "",
+      "confidence": "",
+      "key_uncertainty": ""
+    }},
+    {{
+      "area": "Gehälter & Benefits",
+      "assessment": "",
+      "evidence_basis": "",
+      "confidence": "",
+      "key_uncertainty": ""
+    }},
+    {{
+      "area": "Karriere & Entwicklungsmöglichkeiten",
+      "assessment": "",
+      "evidence_basis": "",
+      "confidence": "",
+      "key_uncertainty": ""
+    }},
+    {{
+      "area": "Unternehmensstabilität & Zukunft",
+      "assessment": "",
+      "evidence_basis": "",
+      "confidence": "",
+      "key_uncertainty": ""
+    }}
+  ],
+  "key_insights": {{
+    "facts": [],
+    "interpretations": [],
+    "uncertainties": []
+  }},
+  "risks": [
+    {{
+      "title": "",
+      "probability": "Low | Medium | High",
+      "impact": "Low | Medium | High",
+      "description": ""
+    }}
+  ],
+  "market_comparison": {{
+    "summary": "",
+    "comparison_points": [
       {{
-        "anforderung": "Job-Anforderung",
-        "dein_status": "Dein Match/Status laut CV",
-        "gap_severity": "Low/Medium/High",
-        "interview_strategie": "Konkrete Strategie, wie DU das im Gespräch adressierst."
+        "dimension": "salary | career | stability",
+        "relative_position": "",
+        "comment": ""
       }}
-    ],
-    "elevator_pitch": "Dein 60-Sekunden-Auftritt in der Ich-Perspektive."
+    ]
   }},
   "deep_dive_buttons": [
     {{
-      "title": "Titel des Buttons",
-      "focus": "Worauf konzentriert sich dieser Deep-Dive?",
-      "why_it_matters": "Warum ist dieser Punkt für deinen Erfolg entscheidend?",
-      "how_to_proceed": "Schritt-für-Schritt Anleitung für dich.",
-      "linked_findings": "Welche Erkenntnis aus der Analyse wird hier vertieft?"
+      "title": "<short descriptive label>",
+      "focus": "<specific aspect to research>",
+      "why_it_matters": "<impact on employee decision>",
+      "how_to_proceed": "<research steps>",
+      "linked_findings": "<references to analysis>"
     }}
   ],
-  "deep_dive_analysis": {{
-    "qa_guide": "5 spezifische Fachfragen und wie du sie meisterst.",
-    "behavioral_advice": "3 Fragen nach der STAR-Methode inklusive deiner empfohlenen Story.",
-    "difficult_scenarios": "Strategien für deine individuellen Schwachstellen oder schwierige Fragen."
-  }},
-  "online_resources": [
-    "ECHTE_URL_1_ZU_NEWS_ODER_PROFIL",
-    "ECHTE_URL_2_ZU_KUNUNU_ODER_GLASSDOOR",
-    "ECHTE_URL_3_ZU_RELEVANTER_FACHSEITE"
-  ]
+  "online_resources": {
+    "speaking_url": "<URL>"
+  }
 }}
 
-====================
-ANFORDERUNG: DEEP-DIVE BUTTONS
-====================
-Erstelle MINDESTENS 10 dieser Buttons. Jeder Button muss eine spezifische Taktik oder ein psychologisches Manöver darstellen, das auf deine Situation zugeschnitten ist (z.B. 'Die Gehaltsverhandlung-Matrix', 'Umgang mit kritischen Stakeholdern', 'Die Culture-Fit Falle' etc.). Jedes Feld innerhalb der Buttons muss dich direkt mit 'du' ansprechen.
+---
 
-====================
-STIL & INHALT
-====================
-- Sei hochspezifisch. Analysiere die 'Schmerzpunkte' des Arbeitgebers.
-- Gib konkrete Tipps zu Kommunikation und Psychologie.
-- Validität: Stelle sicher, dass die URLs in 'online_resources' zum aktuellen Zeitpunkt erreichbar sind.
+## BUTTON REQUIREMENTS
+
+- Generate 8–10 buttons
+- MUST be personalized to role and profile
+- MUST be actionable
+- MUST be specific (no generic advice)
+
+---
+
+## REASONING RULES
+
+- Use multi-hop reasoning
+- Identify uncertainty explicitly
+- Consider bias (Kununu, Glassdoor, etc.)
+- Prioritize accuracy over speculation
+
+---
+
+## FINAL INSTRUCTION
+
+Return ONLY valid JSON.
 """
 
-    return [{"role": "user", "content": prompt}]
+    filled_prompt = (prompt
+        .replace("{company}", company_name)
+        .replace("{region}", region)
+        .replace("{perspective}", perspective)
+        .replace("{language}", language)
+        .replace("{job_title}", job_title)
+        .replace("{industry}", industry)
+        .replace("{key_requirements}", key_requirements)
+        .replace("{user_profile}", user_profile)
+    )
+
+    return [{"role": "user", "content": filled_prompt}]
 
 
 def get_deep_dive_messages(

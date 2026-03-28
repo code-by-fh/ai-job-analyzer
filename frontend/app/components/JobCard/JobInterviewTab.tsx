@@ -60,10 +60,49 @@ function GapSeverityBadge({ level }: { level: string }) {
     );
 }
 
-function DeepDiveItem({ btn, index }: { btn: any; index: number }) {
+function DeepDiveItem({ btn, index, job, apiBase, language }: {
+    btn: any;
+    index: number;
+    job: Job;
+    apiBase: string;
+    language: string;
+}) {
     const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const domain = job.company_domain || '';
+    const companyName = job.company || domain;
+
+    const handleResearch = async () => {
+        if (!domain) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${apiBase}/companies/${domain}/deep-dive`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    focus: btn.focus,
+                    how_to_proceed: btn.how_to_proceed,
+                    company_name: companyName,
+                    title: btn.title,
+                    language,
+                }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            setResult(data.result);
+        } catch (e: any) {
+            setError(e.message || 'Fehler bei der Recherche');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
-        <div className={`rounded-xl border overflow-hidden transition-all duration-200 ${open ? 'border-indigo-400 dark:border-indigo-500/50 shadow-md' : 'border-indigo-200/70 dark:border-indigo-500/20 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:shadow-sm'}`}>
+        <div className={`rounded-xl border overflow-hidden transition-all duration-200 ${open ? 'border-indigo-400 dark:border-indigo-500/50 shadow-md' : 'border-indigo-200/70 dark:border-indigo-500/20 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:shadow-sm cursor-pointer'}`}>
             <button
                 onClick={() => setOpen(v => !v)}
                 className="w-full flex items-center justify-between px-4 py-3.5 bg-indigo-50/60 dark:bg-indigo-500/5 hover:bg-indigo-100/60 dark:hover:bg-indigo-500/10 transition-colors cursor-pointer text-left gap-3"
@@ -111,6 +150,31 @@ function DeepDiveItem({ btn, index }: { btn: any; index: number }) {
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Verknüpfte Erkenntnisse</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 italic leading-relaxed">{btn.linked_findings}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {domain && !result && (
+                        <button
+                            onClick={handleResearch}
+                            disabled={loading}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                        >
+                            <Zap className={`w-3.5 h-3.5 ${loading ? 'animate-pulse' : ''}`} />
+                            {loading ? 'Recherchiere…' : 'Jetzt recherchieren'}
+                        </button>
+                    )}
+
+                    {error && <p className="text-xs text-rose-500 dark:text-rose-400">{error}</p>}
+
+                    {result && (
+                        <div className="mt-2 rounded-xl border border-indigo-200/60 dark:border-indigo-500/20 bg-indigo-50/40 dark:bg-indigo-500/5 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Recherche-Ergebnis</p>
+                                <button onClick={() => setResult(null)} className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline">Neu starten</button>
+                            </div>
+                            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-slate-800 dark:prose-headings:text-slate-200 prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300">
+                                <ReactMarkdown>{result}</ReactMarkdown>
                             </div>
                         </div>
                     )}
@@ -275,7 +339,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
 
             <div className="space-y-5">
                 {/* Executive Summary */}
-                {p.executive_summary && (
+                {p.report_output?.executive_summary && (
                     <div className="rounded-2xl border border-indigo-200 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-50/80 to-purple-50/50 dark:from-indigo-500/5 dark:to-purple-500/5 p-5 shadow-sm">
                         <div className="flex items-center gap-2 mb-3">
                             <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 rounded-xl">
@@ -283,7 +347,7 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                             </div>
                             <span className="text-sm font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Deine Ausgangslage</span>
                         </div>
-                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{p.executive_summary}</p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{p.report_output.executive_summary}</p>
                     </div>
                 )}
 
@@ -307,26 +371,6 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                     </div>
                 )}
 
-                {/* Social Intelligence */}
-                {p.social_intelligence && (
-                    <Section title="Social Intelligence" icon={<Users className="w-4 h-4" />} color="sky">
-                        <div className="space-y-4">
-                            {p.social_intelligence.ansprechpartner_recherche && (
-                                <div>
-                                    <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest mb-2">Ansprechpartner-Recherche</p>
-                                    <p className="text-sm leading-relaxed">{p.social_intelligence.ansprechpartner_recherche}</p>
-                                </div>
-                            )}
-                            {p.social_intelligence.networking_hacks && (
-                                <div className="p-3 bg-sky-100/50 dark:bg-sky-500/10 rounded-xl border border-sky-200/60 dark:border-sky-500/20">
-                                    <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest mb-2">Networking Hacks</p>
-                                    <p className="text-sm leading-relaxed">{p.social_intelligence.networking_hacks}</p>
-                                </div>
-                            )}
-                        </div>
-                    </Section>
-                )}
-
                 {/* Gap Analysis */}
                 {p.structured_prep?.gap_analysis?.length > 0 && (
                     <Section title="Gap Analysis" icon={<Target className="w-4 h-4" />} color="amber">
@@ -334,16 +378,16 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                             {p.structured_prep.gap_analysis.map((gap: any, i: number) => (
                                 <div key={i} className="p-4 bg-white/60 dark:bg-slate-900/40 rounded-xl border border-amber-200/50 dark:border-amber-500/15">
                                     <div className="flex items-start justify-between gap-3 mb-2">
-                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-snug">{gap.anforderung}</p>
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-snug">{gap.requirement}</p>
                                         {gap.gap_severity && <GapSeverityBadge level={gap.gap_severity} />}
                                     </div>
-                                    {gap.dein_status && (
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 italic">{gap.dein_status}</p>
+                                    {gap.cv_status && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 italic">{gap.cv_status}</p>
                                     )}
-                                    {gap.interview_strategie && (
+                                    {gap.interview_strategy && (
                                         <div className="flex gap-2 pt-2 border-t border-amber-100/60 dark:border-amber-500/10">
                                             <span className="text-amber-500 flex-shrink-0 mt-0.5">→</span>
-                                            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{gap.interview_strategie}</p>
+                                            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{gap.interview_strategy}</p>
                                         </div>
                                     )}
                                 </div>
@@ -353,32 +397,96 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                 )}
 
                 {/* Deep Dive Analysis */}
-                {p.deep_dive_analysis && (
+                {p.report_output?.deep_dive_analysis && (
                     <Section title="Interview Deep-Dive" icon={<TrendingUp className="w-4 h-4" />} color="purple">
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-slate-300">
+                            <ReactMarkdown>{p.report_output.deep_dive_analysis}</ReactMarkdown>
+                        </div>
+                    </Section>
+                )}
+
+                {/* Social Intelligence Research */}
+                {p.social_intelligence_research && (
+                    <Section title="Social Intelligence" icon={<Users className="w-4 h-4" />} color="sky">
                         <div className="space-y-4">
-                            {p.deep_dive_analysis.qa_guide && (
+                            {p.social_intelligence_research.potential_contacts?.length > 0 && (
                                 <div>
-                                    <p className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-2">Fachfragen & Antwortstrategien</p>
-                                    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-slate-300">
-                                        <ReactMarkdown>{p.deep_dive_analysis.qa_guide}</ReactMarkdown>
-                                    </div>
+                                    <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest mb-2">Potenzielle Kontakte</p>
+                                    <ul className="space-y-1">
+                                        {p.social_intelligence_research.potential_contacts.map((c: any, i: number) => (
+                                            <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0 mt-1.5" />
+                                                <span>{typeof c === 'string' ? c : JSON.stringify(c)}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 </div>
                             )}
-                            {p.deep_dive_analysis.behavioral_advice && (
-                                <div className="p-3 bg-purple-100/40 dark:bg-purple-500/10 rounded-xl border border-purple-200/50 dark:border-purple-500/15">
-                                    <p className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-2">STAR-Methode</p>
-                                    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-slate-300">
-                                        <ReactMarkdown>{p.deep_dive_analysis.behavioral_advice}</ReactMarkdown>
-                                    </div>
+                            {p.social_intelligence_research.insights_from_contacts?.length > 0 && (
+                                <div className="p-3 bg-sky-100/50 dark:bg-sky-500/10 rounded-xl border border-sky-200/60 dark:border-sky-500/20">
+                                    <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest mb-2">Insights aus Kontakten</p>
+                                    <ul className="space-y-1">
+                                        {p.social_intelligence_research.insights_from_contacts.map((c: any, i: number) => (
+                                            <li key={i} className="text-sm leading-relaxed">{typeof c === 'string' ? c : JSON.stringify(c)}</li>
+                                        ))}
+                                    </ul>
                                 </div>
                             )}
-                            {p.deep_dive_analysis.difficult_scenarios && (
-                                <div className="p-3 bg-rose-50/50 dark:bg-rose-500/5 rounded-xl border border-rose-200/50 dark:border-rose-500/15">
-                                    <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-2">Schwierige Szenarien</p>
-                                    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-slate-300">
-                                        <ReactMarkdown>{p.deep_dive_analysis.difficult_scenarios}</ReactMarkdown>
-                                    </div>
+                            {p.social_intelligence_research.research_sources?.length > 0 && (
+                                <div>
+                                    <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest mb-2">Quellen</p>
+                                    <ul className="space-y-1">
+                                        {p.social_intelligence_research.research_sources.map((src: any, i: number) => (
+                                            <li key={i} className="flex items-center gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
+                                                {typeof src === 'string' && src.startsWith('http') ? (
+                                                    <a href={src} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline break-all">{src}</a>
+                                                ) : (
+                                                    <span className="text-sm text-slate-600 dark:text-slate-300">{typeof src === 'string' ? src : JSON.stringify(src)}</span>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
                                 </div>
+                            )}
+                        </div>
+                    </Section>
+                )}
+
+                {/* Online Resources */}
+                {p.online_resources?.speaking_url && (
+                    <Section title="Online-Ressourcen" icon={<Globe className="w-4 h-4" />} color="emerald">
+                        <a
+                            href={p.online_resources.speaking_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 hover:underline break-all"
+                        >
+                            <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                            {p.online_resources.speaking_url}
+                        </a>
+                    </Section>
+                )}
+
+                {/* Confidence Assessment */}
+                {p.confidence_assessment && (
+                    <Section title="Konfidenz-Bewertung" icon={<Globe className="w-4 h-4" />} color="slate">
+                        <div className="space-y-3">
+                            {p.confidence_assessment.overall_confidence && (
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">Gesamt</span>
+                                    <GapSeverityBadge level={p.confidence_assessment.overall_confidence} />
+                                </div>
+                            )}
+                            {p.confidence_assessment.uncertainties?.length > 0 && (
+                                <ul className="space-y-1 mt-2">
+                                    {p.confidence_assessment.uncertainties.map((u: any, i: number) => (
+                                        <li key={i} className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                            <span className="w-1 h-1 rounded-full bg-slate-400 flex-shrink-0 mt-1.5" />
+                                            <span>{typeof u === 'string' ? u : JSON.stringify(u)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
                             )}
                         </div>
                     </Section>
@@ -403,24 +511,10 @@ export default function JobInterviewTab({ job, apiBase }: JobInterviewTabProps) 
                         </div>
                         <div className="p-4 space-y-2">
                             {p.deep_dive_buttons.map((btn: any, i: number) => (
-                                <DeepDiveItem key={i} btn={btn} index={i} />
+                                <DeepDiveItem key={i} btn={btn} index={i} job={job} apiBase={apiBase} language={p.meta?.language || 'de'} />
                             ))}
                         </div>
                     </div>
-                )}
-
-                {/* Online Resources */}
-                {p.online_resources?.length > 0 && (
-                    <Section title="Online Ressourcen" icon={<Globe className="w-4 h-4" />} color="slate">
-                        <ul className="space-y-2">
-                            {p.online_resources.map((url: string, i: number) => (
-                                <li key={i} className="flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
-                                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline break-all">{url}</a>
-                                </li>
-                            ))}
-                        </ul>
-                    </Section>
                 )}
             </div>
         </div>

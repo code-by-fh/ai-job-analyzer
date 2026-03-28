@@ -19,12 +19,14 @@ def list_companies(current_user: User = Depends(get_current_user)):
                 "domain": c.domain,
                 "name": c.name,
                 "description": c.description,
+                "meta": (c.raw_data.get("meta") if c.raw_data else None),
                 "executive_summary": (c.raw_data.get("executive_summary") if c.raw_data else None),
-                "social_intelligence": (c.raw_data.get("social_intelligence") if c.raw_data else None),
-                "structured_prep": (c.raw_data.get("structured_prep") if c.raw_data else None),
+                "analysis": (c.raw_data.get("analysis", []) if c.raw_data else []),
+                "key_insights": (c.raw_data.get("key_insights") if c.raw_data else None),
+                "risks": (c.raw_data.get("risks", []) if c.raw_data else []),
+                "market_comparison": (c.raw_data.get("market_comparison") if c.raw_data else None),
                 "deep_dive_buttons": (c.raw_data.get("deep_dive_buttons", []) if c.raw_data else []),
-                "deep_dive_analysis": (c.raw_data.get("deep_dive_analysis") if c.raw_data else None),
-                "online_resources": (c.raw_data.get("online_resources", []) if c.raw_data else []),
+                "online_resources": (c.raw_data.get("online_resources") if c.raw_data else None),
                 "analyzed_at": (c.analyzed_at.isoformat() if c.analyzed_at else None),
             }
             for c in companies
@@ -47,23 +49,27 @@ def get_company_profile(domain: str, current_user: User = Depends(get_current_us
             "domain": company.domain,
             "name": company.name,
             "description": company.description,
+            "meta": (company.raw_data.get("meta") if company.raw_data else None),
             "executive_summary": (
                 company.raw_data.get("executive_summary") if company.raw_data else None
             ),
-            "social_intelligence": (
-                company.raw_data.get("social_intelligence") if company.raw_data else None
+            "analysis": (
+                company.raw_data.get("analysis", []) if company.raw_data else []
             ),
-            "structured_prep": (
-                company.raw_data.get("structured_prep") if company.raw_data else None
+            "key_insights": (
+                company.raw_data.get("key_insights") if company.raw_data else None
+            ),
+            "risks": (
+                company.raw_data.get("risks", []) if company.raw_data else []
+            ),
+            "market_comparison": (
+                company.raw_data.get("market_comparison") if company.raw_data else None
             ),
             "deep_dive_buttons": (
                 company.raw_data.get("deep_dive_buttons", []) if company.raw_data else []
             ),
-            "deep_dive_analysis": (
-                company.raw_data.get("deep_dive_analysis") if company.raw_data else None
-            ),
             "online_resources": (
-                company.raw_data.get("online_resources", []) if company.raw_data else []
+                company.raw_data.get("online_resources") if company.raw_data else None
             ),
             "analyzed_at": (
                 company.analyzed_at.isoformat() if company.analyzed_at else None
