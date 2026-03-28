@@ -731,6 +731,16 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                 {status && <span className="text-[10px] font-bold text-indigo-500 animate-pulse">{status}</span>}
             </div>
 
+            <div className="mb-8">
+                <AddPlatformInput
+                    newUrl={newUrl}
+                    onUrlChange={setNewUrl}
+                    onAdd={addPlatform}
+                    isProfileComplete={!!user?.is_profile_complete}
+                    isLoading={isAddingPlatform}
+                />
+            </div>
+
             <div className="space-y-4">
                 {platforms.map((p) => {
                     const activeJob = Array.from(activeCrawls.values()).find(j => j.platform === p.url);
@@ -757,14 +767,6 @@ export default function JobPlatformsManager({ token, user, initialPlatforms, con
                         />
                     );
                 })}
-
-                <AddPlatformInput
-                    newUrl={newUrl}
-                    onUrlChange={setNewUrl}
-                    onAdd={addPlatform}
-                    isProfileComplete={!!user?.is_profile_complete}
-                    isLoading={isAddingPlatform}
-                />
             </div>
         </section>
     );
