@@ -1,5 +1,4 @@
-
-import OverviewDashboard from './components/OverviewDashboard';
+import OverviewDashboard from "./components/OverviewDashboard";
 
 export default function Page() {
   return <OverviewDashboard />;

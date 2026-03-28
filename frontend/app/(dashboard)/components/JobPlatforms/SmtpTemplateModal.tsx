@@ -1,8 +1,15 @@
 "use client";
-import EmailTemplateModal, { EmailTemplateModalProps } from './EmailTemplateModal';
+import EmailTemplateModal, {
+  EmailTemplateModalProps,
+} from "./EmailTemplateModal";
 
-type SmtpTemplateModalProps = Omit<EmailTemplateModalProps, 'adapterName' | 'templateType'>;
+type SmtpTemplateModalProps = Omit<
+  EmailTemplateModalProps,
+  "adapterName" | "templateType"
+>;
 
 export default function SmtpTemplateModal(props: SmtpTemplateModalProps) {
-    return <EmailTemplateModal {...props} adapterName="SMTP" templateType="SMTP" />;
+  return (
+    <EmailTemplateModal {...props} adapterName="SMTP" templateType="SMTP" />
+  );
 }

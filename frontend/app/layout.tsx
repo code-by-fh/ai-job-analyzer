@@ -37,9 +37,7 @@ export default function RootLayout({
           <AuthProvider>
             <NotificationProvider>
               <Suspense>
-                <DashboardShell>
-                  {children}
-                </DashboardShell>
+                <DashboardShell>{children}</DashboardShell>
               </Suspense>
             </NotificationProvider>
           </AuthProvider>

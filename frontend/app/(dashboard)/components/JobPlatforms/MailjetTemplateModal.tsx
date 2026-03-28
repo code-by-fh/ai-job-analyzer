@@ -1,8 +1,19 @@
 "use client";
-import EmailTemplateModal, { EmailTemplateModalProps } from './EmailTemplateModal';
+import EmailTemplateModal, {
+  EmailTemplateModalProps,
+} from "./EmailTemplateModal";
 
-type MailjetTemplateModalProps = Omit<EmailTemplateModalProps, 'adapterName' | 'templateType'>;
+type MailjetTemplateModalProps = Omit<
+  EmailTemplateModalProps,
+  "adapterName" | "templateType"
+>;
 
 export default function MailjetTemplateModal(props: MailjetTemplateModalProps) {
-    return <EmailTemplateModal {...props} adapterName="Mailjet" templateType="MAILJET" />;
+  return (
+    <EmailTemplateModal
+      {...props}
+      adapterName="Mailjet"
+      templateType="MAILJET"
+    />
+  );
 }
