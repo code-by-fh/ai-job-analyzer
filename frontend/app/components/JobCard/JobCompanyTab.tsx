@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Building2, Loader2, RefreshCw, TrendingUp, X } from 'lucide-react';
+import RegenBanner from './RegenBanner';
 import type { Job } from '../../lib/types';
 import { useNotification } from '../NotificationProvider';
 import { fetchWithAuth } from '../AuthProvider';
@@ -76,7 +77,7 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
     }, [companyQueued, job.id, job.company_domain, apiBase]);
 
     const handleUpdate = () => {
-        setCompanyData(null);
+        // Keep existing data visible while regenerating; clear only when new data arrives
         setCompanyQueued(true);
         localStorage.setItem(`gen_company_${job.id}`, Date.now().toString());
         fetchWithAuth(`${apiBase}/companies/${job.company_domain}/analyze`, {
@@ -114,7 +115,8 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
     };
 
 
-    if (companyQueued) {
+    // First-time analysis (no existing data) → full spinner
+    if (companyQueued && !companyData) {
         return (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
                 <div className="relative">
@@ -159,10 +161,16 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
 
     const d = companyData;
 
+    // Regeneration banner (shown inline above existing content)
+    const regenBanner = companyQueued
+        ? <RegenBanner label="Company Research läuft…" icon={<Building2 className="w-3 h-3 text-indigo-500" />} elapsed={elapsed} onCancel={handleCancel} />
+        : null;
+
     return (
         <div className="space-y-6">
+            {regenBanner}
             {/* Toolbar */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/50">
+            <div className={`flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/50 transition-opacity duration-300 ${companyQueued ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
                         <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -181,7 +189,9 @@ export default function JobCompanyTab({ job, apiBase }: JobCompanyTabProps) {
                 </button>
             </div>
 
-            <CompanyProfileView data={d} domain={d.domain} fetchWithAuth={fetchWithAuth} />
+            <div className={`transition-opacity duration-300 ${companyQueued ? 'opacity-40 pointer-events-none select-none' : ''}`}>
+                <CompanyProfileView data={d} domain={d.domain} fetchWithAuth={fetchWithAuth} />
+            </div>
         </div>
     );
 }

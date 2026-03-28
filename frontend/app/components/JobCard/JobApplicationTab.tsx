@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Check, Copy, Download, FileText, Loader2, Edit2, X, Save, RefreshCw, Zap } from 'lucide-react';
+import RegenBanner from './RegenBanner';
 import { useLanguage } from '../LanguageProvider';
 import type { Job } from '../../lib/types';
 import type { JobStatus } from '../JobStatusBadge';
@@ -175,8 +176,8 @@ export default function JobApplicationTab({
         localStorage.removeItem(`gen_app_${job.id}`);
     };
 
-    // Generating state
-    if (isGenerating) {
+    // First-time generation (no existing draft) → full spinner
+    if (isGenerating && !job.application_draft) {
         const phase = GENERATION_PHASES[phaseIndex];
         return (
             <div className="flex flex-col items-center justify-center py-14 gap-6">
@@ -222,17 +223,24 @@ export default function JobApplicationTab({
         );
     }
 
+    // Regeneration banner (shown inline above the existing draft)
+    const regenPhase = GENERATION_PHASES[phaseIndex];
+    const regenBanner = isGenerating
+        ? <RegenBanner label={regenPhase.label} icon={regenPhase.icon} elapsed={elapsed} onCancel={handleCancel} phaseCount={GENERATION_PHASES.length} phaseIndex={phaseIndex} />
+        : null;
+
     return (
         <div className="space-y-6">
             {job.application_draft ? (
                 <div className="space-y-4">
+                    {regenBanner}
                     <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                             <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">Bewerbungsschreiben</span>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                            {!isEditing && (
+                            {!isEditing && !isGenerating && (
                                 <button
                                     onClick={() => setShowRegenInput(v => !v)}
                                     className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap ${
@@ -246,7 +254,7 @@ export default function JobApplicationTab({
                                     <span className="hidden sm:inline">Neu generieren</span>
                                 </button>
                             )}
-                            {!isEditing && (
+                            {!isEditing && !isGenerating && (
                                 <button
                                     onClick={handleEditStart}
                                     className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
@@ -275,7 +283,7 @@ export default function JobApplicationTab({
                                     </button>
                                 </>
                             )}
-                            {!isEditing && (
+                            {!isEditing && !isGenerating && (
                                 <>
                                     <button
                                         onClick={handleCopy}
@@ -337,7 +345,7 @@ export default function JobApplicationTab({
                             />
                         </div>
                     ) : (
-                        <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif relative">
+                        <div className={`bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif relative transition-opacity duration-300 ${isGenerating ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                             <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
                                 <ReactMarkdown>{job.application_draft}</ReactMarkdown>
                             </div>

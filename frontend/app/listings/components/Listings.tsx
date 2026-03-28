@@ -158,6 +158,7 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
     const onJobUpdate = useCallback((data: any) => {
         setJobs(prev => prev.map(job => (job.id === data.job_id ? { ...job, ...data } : job)));
         setPendingIds(prev => prev.filter(id => id !== data.job_id));
+        if (data.job_id) localStorage.removeItem(`gen_app_${data.job_id}`);
     }, [setJobs]);
 
     const onNewJob = useCallback((job: Job, crawlJobId?: string) => {
@@ -336,6 +337,30 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
         }
     };
 
+    const handleRegenerate = async (job: Job, notes: string) => {
+        setPendingIds(prev => [...prev, job.id]);
+        try {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${job.id}/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ improvement_notes: notes || null }),
+            });
+        } catch (e) {
+            setPendingIds(prev => prev.filter(id => id !== job.id));
+        }
+    };
+
+    const handleCancelGenerate = async (jobId: string) => {
+        setPendingIds(prev => prev.filter(id => id !== jobId));
+        try {
+            await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/${jobId}/cancel-generation`, {
+                method: 'POST',
+            });
+        } catch (e) {
+            // Silently handle - user is already canceling
+        }
+    };
+
     useEffect(() => {
         if (!token) return;
         fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/jobs/counts${isArchived ? '?is_archived=true' : ''}`)
@@ -348,6 +373,15 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
             })
             .catch(() => {});
     }, [token, jobs]);
+
+    // Keep the detail modal in sync when the underlying job is updated (e.g. after generation)
+    useEffect(() => {
+        if (!selectedJobForDetail) return;
+        const updated = jobs.find(j => j.id === selectedJobForDetail.id);
+        if (updated && updated !== selectedJobForDetail) {
+            setSelectedJobForDetail(updated);
+        }
+    }, [jobs]);
 
     const visibleJobs = useMemo(() => {
         return jobs.filter(job => {
@@ -379,6 +413,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                 job={selectedJobForDetail!}
                 isGenerating={selectedJobForDetail ? (pendingIds.includes(selectedJobForDetail.id) || selectedJobForDetail.status === 'GENERATING') : false}
                 onGenerate={handleGenerate}
+                onRegenerate={handleRegenerate}
+                onCancelGenerate={handleCancelGenerate}
                 onStatusUpdate={handleUpdateStatus}
                 onToggleFavorite={handleToggleFavorite}
                 onUpdateJob={updateJob}
@@ -558,6 +594,8 @@ export default function Listings({ initialFilter, initialPlatformId, initialPlat
                             job={job}
                             isGenerating={pendingIds.includes(job.id) || job.status === 'GENERATING'}
                             onGenerate={handleGenerate}
+                            onRegenerate={handleRegenerate}
+                            onCancelGenerate={handleCancelGenerate}
                             onStatusUpdate={handleUpdateStatus}
                             onToggleFavorite={handleToggleFavorite}
                             isSelected={selectedJobIds.includes(job.id)}
