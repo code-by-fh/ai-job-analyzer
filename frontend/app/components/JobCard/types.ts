@@ -35,6 +35,7 @@ export interface JobCardProps {
     onUpdateJob?: (jobId: string, payload: Partial<Job>) => Promise<void>;
     onArchive?: (jobId: string) => void;
     apiBase?: string;
+    isModal?: boolean;
 }
 
 export type TabType = 'overview' | 'application' | 'interview' | 'company' | 'status' | 'documents' | null;

@@ -37,6 +37,7 @@ export default function JobCard({
     onUpdateJob,
     onArchive,
     apiBase = process.env.NEXT_PUBLIC_API_URL || '',
+    isModal = false,
 }: JobCardProps) {
     const { t } = useLanguage();
     const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -70,8 +71,9 @@ export default function JobCard({
 
     return (
         <div className={`
-            group relative rounded-2xl border overflow-hidden
+            group relative flex flex-col min-h-full
             transition-all duration-300 hover:shadow-lg dark:hover:shadow-none hover:z-10
+            ${isModal ? 'rounded-none border-none' : 'rounded-2xl border overflow-hidden'}
             ${isSelected
                 ? 'bg-indigo-50/60 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 shadow-md'
                 : `bg-white dark:bg-slate-900 ${isGenerating ? 'border-indigo-300 dark:border-indigo-600' : statusMeta.cardBorder || 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'}`
@@ -194,7 +196,7 @@ export default function JobCard({
             </div>
 
             {/* ── TAB CONTENT ── */}
-            <div className="px-4 sm:px-5 py-4 border-b border-slate-100 dark:border-slate-800/50">
+            <div className={`px-4 sm:px-5 py-4 flex-1 flex flex-col ${job.description ? 'border-b border-slate-100 dark:border-slate-800/50' : 'pb-8'}`}>
                 {activeTab === 'overview' && <JobOverviewTab job={job} onTabChange={setActiveTab} onArchive={onArchive} onStatusUpdate={onStatusUpdate} />}
                 {activeTab === 'application' && (
                     <JobApplicationTab job={job} isGenerating={isGenerating} onGenerate={onGenerate} onRegenerate={onRegenerate} onCancelGenerate={onCancelGenerate} onStatusUpdate={onStatusUpdate} onUpdateJob={onUpdateJob} apiBase={apiBase} />
@@ -236,7 +238,7 @@ export default function JobCard({
                         )}
                     </button>
                     {isDescOpen && (
-                        <div className="px-4 sm:px-5 pb-4 pt-3 prose prose-sm dark:prose-invert max-w-none text-sm border-t border-slate-100 dark:border-slate-800/50">
+                        <div className="px-4 sm:px-5 pb-10 pt-3 prose prose-sm dark:prose-invert max-w-none text-sm border-t border-slate-100 dark:border-slate-800/50">
                             <ReactMarkdown>{job.description}</ReactMarkdown>
                         </div>
                     )}

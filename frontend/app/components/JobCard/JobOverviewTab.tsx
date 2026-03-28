@@ -146,7 +146,7 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
     // ── EMPTY STATE (consistent with JobApplicationTab) ──
     if (!job.reasoning) {
         return (
-            <div className="group relative flex flex-col items-center justify-center py-16 gap-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl transition-all hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50/50 dark:bg-slate-900/20 w-full">
+            <div className="group relative flex-1 flex flex-col items-center justify-center py-16 gap-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl transition-all hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50/50 dark:bg-slate-900/20 w-full">
                 <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
                     <Brain className="w-8 h-8 text-indigo-500" />
                 </div>
@@ -208,7 +208,7 @@ export default function JobOverviewTab({ job, onTabChange, onStatusUpdate, onArc
     }
 
     return (
-        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
+        <div className="space-y-4 flex-1 flex flex-col animate-in fade-in zoom-in-95 duration-300">
             <div className="flex flex-col sm:flex-row gap-4">
 
                 {/* ── KI-ANALYSE (CONTENT) ── */}
