@@ -50,6 +50,7 @@ export default function Listings({
 
   // --- STATE ---
   const [query, setQuery] = useState("");
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"score" | "date">(
     (searchParams.get("sort") as any) || "date",
   );
@@ -258,7 +259,7 @@ export default function Listings({
     [jobs, refreshJob],
   );
 
-  const { isCrawling, setIsCrawling } = useCrawl({
+  const { isCrawling, setIsCrawling, activeCrawls } = useCrawl({
     user,
     token,
     onJobUpdate,
@@ -374,6 +375,15 @@ export default function Listings({
     };
   }, [hasMore, isLoadingMore, jobs]);
 
+  useEffect(() => {
+    activeCrawls.forEach((crawl) => {
+      if (crawl.status === "failed" && !searchError) {
+        setSearchError(crawl.error_message || "Fehler beim Analysieren der URL");
+        setTimeout(() => setSearchError(null), 5000);
+      }
+    });
+  }, [activeCrawls, searchError]);
+
   const startSearch = async () => {
     if (!user?.is_profile_complete) {
       setGlobalError(t("completeProfileFirst"));
@@ -396,14 +406,29 @@ export default function Listings({
     }
 
     setIsCrawling(true);
+    setSearchError(null);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/import-job`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scraper/import-job`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ url: query, user_id: user?.id }),
       });
+
+      if (!response.ok) {
+        const errorMsg = response.status === 401
+          ? "Authentifizierung erforderlich. Bitte neu anmelden."
+          : `Fehler beim Analysieren der URL (${response.status})`;
+        setSearchError(errorMsg);
+        setTimeout(() => setSearchError(null), 5000);
+        setIsCrawling(false);
+        return;
+      }
+
       setQuery("");
     } catch (e) {
+      setSearchError("Fehler beim Analysieren der URL. Bitte versuchen Sie es später erneut.");
+      setTimeout(() => setSearchError(null), 5000);
       setIsCrawling(false);
     }
   };
@@ -624,6 +649,7 @@ export default function Listings({
             isCrawling={isCrawling}
             isProfileComplete={!!user?.is_profile_complete}
             headlineMsgkey="jobIntelligence"
+            searchError={searchError}
           />
           <p className="text-sm text-slate-500 dark:text-slate-400 -mt-2 mb-2 px-1">
             {t("listingsDescription")}

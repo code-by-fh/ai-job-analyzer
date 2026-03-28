@@ -11,6 +11,7 @@ interface SearchHeaderProps {
   isCrawling: boolean;
   isProfileComplete?: boolean;
   headlineMsgkey: TranslationKey;
+  searchError?: string | null;
 }
 
 export default function SearchHeader({
@@ -21,11 +22,20 @@ export default function SearchHeader({
   isCrawling,
   isProfileComplete,
   headlineMsgkey,
+  searchError,
 }: SearchHeaderProps) {
   const { t } = useLanguage();
 
   return (
-    <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800/50">
+    <div className="flex flex-col gap-6 pb-6 border-b border-slate-200 dark:border-slate-800/50">
+      {searchError && (
+        <div className="flex items-center gap-3 p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg">
+          <AlertTriangle size={18} className="text-rose-600 dark:text-rose-400 flex-shrink-0" />
+          <p className="text-sm text-rose-700 dark:text-rose-300">{searchError}</p>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
       <div>
         <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
           {t(headlineMsgkey)}
@@ -93,6 +103,7 @@ export default function SearchHeader({
             t("scan")
           )}
         </button>
+      </div>
       </div>
     </div>
   );

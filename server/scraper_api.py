@@ -27,6 +27,7 @@ logger.info(f"Allowed origins: {allowed_origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -223,6 +224,15 @@ async def import_job(data: JobImport, current_user: User = Depends(get_current_u
     )
     r.expire(f"crawl_job:{job_id}", 3600)
     r.sadd(f"user:{user_id}:active_crawls", job_id)
+
+    # Notify frontend that crawl job started
+    r.publish("job_updates", json.dumps({
+        "type": "crawl_job_started",
+        "job_id": job_id,
+        "user_id": user_id,
+        "platform": data.url,
+        "started_at": str(int(time.time() * 1000)),
+    }))
 
     celery_app.send_task(
         "scraper.scrape_detail",

@@ -426,7 +426,18 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
         html = get_html_with_browser(url)
         if not html:
             logger.warning(f"Skipping {url} due to download failure.")
-            _mark_scrape_failed(r, job_id, user_id)
+            if job_id:
+                r.hset(f"crawl_job:{job_id}", "status", "failed")
+                r.hset(f"crawl_job:{job_id}", "error_message", "URL konnte nicht erreicht werden")
+                r.srem(f"user:{user_id}:active_crawls", job_id)
+                r.delete("system:crawling")
+                r.publish("job_updates", json.dumps({
+                    "type": "crawl_job_failed",
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "reason": "error",
+                    "error_message": "URL konnte nicht erreicht werden",
+                }))
             return
 
         content = get_clean_content(html)
