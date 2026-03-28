@@ -126,7 +126,7 @@ export default function FilterBar({
       {/* Row 1: Tabs + Search + Sort */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         {/* Segmented Control */}
-        <div className="flex bg-slate-100/80 dark:bg-slate-800/50 backdrop-blur-md p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm shrink-0">
+        <div className="flex bg-slate-100/80 dark:bg-slate-800/50 backdrop-blur-md p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm w-full sm:w-auto">
           {[
             { id: "all", label: t("all") },
             { id: "favorite", label: t("favorites") },
@@ -137,7 +137,7 @@ export default function FilterBar({
               onClick={() =>
                 setFilterType(tab.id as "all" | "favorite" | "no_favorite")
               }
-              className={`flex-1 sm:flex-none px-5 py-2 text-sm font-bold rounded-xl transition-all duration-300 whitespace-nowrap cursor-pointer ${
+              className={`flex-1 sm:flex-none px-4 sm:px-5 py-2 text-sm font-bold rounded-xl transition-all duration-300 whitespace-nowrap cursor-pointer ${
                 filterType === tab.id
                   ? "bg-white dark:bg-slate-700 shadow-lg shadow-indigo-500/10 text-indigo-600 dark:text-indigo-400 scale-[1.02]"
                   : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -168,39 +168,40 @@ export default function FilterBar({
           )}
         </div>
 
-        {/* View Mode Toggle */}
         {setViewMode && (
-          <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm shrink-0">
+          <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm w-full sm:w-auto">
             <button
               onClick={() => setViewMode("list")}
-              className={`flex items-center justify-center p-2 rounded-xl transition-all duration-300 cursor-pointer ${
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
                 viewMode === "list"
                   ? "bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]"
                   : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
               }`}
-              title={t("listView" as any) || "List View"}
+              title={t("listView")}
             >
               <LucideIcons.List className="w-4 h-4" />
+              <span>{t("listView")}</span>
             </button>
             <button
               onClick={() => setViewMode("board")}
-              className={`flex items-center justify-center p-2 rounded-xl transition-all duration-300 cursor-pointer ${
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
                 viewMode === "board"
                   ? "bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]"
                   : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
               }`}
-              title={t("boardView" as any) || "Board View"}
+              title={t("boardView")}
             >
               <LucideIcons.Kanban className="w-4 h-4" />
+              <span>{t("boardView")}</span>
             </button>
           </div>
         )}
 
         {/* Sort */}
-        <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm shrink-0">
+        <div className="flex bg-slate-100/80 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/40 shadow-sm w-full sm:w-auto">
           <button
             onClick={() => setSortBy("score")}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
               sortBy === "score"
                 ? "bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]"
                 : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
@@ -208,11 +209,11 @@ export default function FilterBar({
             title={t("relevance")}
           >
             <SlidersHorizontal className="w-4 h-4" />
-            <span className="hidden lg:inline">{t("relevance")}</span>
+            <span>{t("relevance")}</span>
           </button>
           <button
             onClick={() => setSortBy("date")}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 cursor-pointer ${
               sortBy === "date"
                 ? "bg-white dark:bg-slate-700 shadow-md text-indigo-600 dark:text-indigo-400 scale-[1.02]"
                 : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
@@ -220,13 +221,13 @@ export default function FilterBar({
             title={t("newest")}
           >
             <Clock className="w-4 h-4" />
-            <span className="hidden lg:inline">{t("newest")}</span>
+            <span>{t("newest")}</span>
           </button>
         </div>
       </div>
 
       {/* Row 2: Selects + Toggles */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center">
         {/* Platform Select */}
         <div className="relative group flex-1 min-w-[130px]">
           <LayoutGrid className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none" />
@@ -359,7 +360,7 @@ export default function FilterBar({
         {/* hasApplication Toggle */}
         <button
           onClick={() => setHasApplication(!hasApplication)}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border transition-all duration-200 cursor-pointer whitespace-nowrap shadow-sm active:scale-95 shrink-0 ${
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border transition-all duration-200 cursor-pointer whitespace-nowrap shadow-sm active:scale-95 ${
             hasApplication
               ? "bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-500/20 dark:border-indigo-500/40 dark:text-indigo-300 ring-2 ring-indigo-500/10"
               : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300"
@@ -375,10 +376,11 @@ export default function FilterBar({
         {hasActiveFilters && (
           <button
             onClick={clearAllFilters}
-            className="p-2.5 text-rose-500 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl hover:bg-rose-100 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+            className="flex-1 sm:flex-none flex items-center justify-center p-2.5 text-rose-500 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl hover:bg-rose-100 transition-all cursor-pointer shadow-sm active:scale-95"
             title={t("clearAllFilters")}
           >
             <X className="w-4 h-4" />
+            <span className="sm:hidden ml-2 font-bold">{t("clearAllFilters")}</span>
           </button>
         )}
       </div>

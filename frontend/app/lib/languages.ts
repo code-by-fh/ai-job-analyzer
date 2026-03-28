@@ -235,6 +235,8 @@ export const translations = {
     all: "All",
     favorites: "Favorites",
     noFavorites: "No Favorites",
+    listView: "List",
+    boardView: "Kanban",
     confirm: "Confirm",
     cancel: "Cancel",
 
@@ -823,6 +825,8 @@ export const translations = {
     all: "Alle",
     favorites: "Favoriten",
     noFavorites: "Keine Favoriten",
+    listView: "Liste",
+    boardView: "Kanban",
     confirm: "Bestätigen",
     cancel: "Abbrechen",
 
