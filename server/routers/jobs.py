@@ -17,10 +17,10 @@ from database.core import (
     UserProfile,
     JobPatchRequest,
 )
-from auth import get_current_user
-from celery_config import celery_app
+from core.auth import get_current_user
+from core.celery_config import celery_app
 from routers.deps import limiter, UPLOAD_DIR, APPLICATION_STATUSES
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

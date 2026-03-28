@@ -9,7 +9,7 @@ from openai import (
     APIStatusError,
 )
 import redis
-from celery_config import celery_app
+from core.celery_config import celery_app
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 
@@ -24,7 +24,7 @@ from database.core import (
 import requests
 
 # Logging Setup
-from logger import get_logger
+from core.logger import get_logger
 
 from intelligence.service import (
     get_model,
@@ -1692,7 +1692,7 @@ def check_platforms_for_crawl():
                     f"🚀 Platform {p.name} (ID: {p.id}) is due for crawl. Triggering..."
                 )
                 try:
-                    from auth import create_access_token
+                    from core.auth import create_access_token
                     platform_user = db.query(User).filter(User.id == p.user_id).first()
                     if not platform_user:
                         logger.error(f"User {p.user_id} not found for platform {p.name}, skipping")

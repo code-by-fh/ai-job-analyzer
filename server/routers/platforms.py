@@ -16,9 +16,9 @@ from database.core import (
     PlatformUpdate,
     PlatformResponse,
 )
-from auth import get_current_user, create_access_token
+from core.auth import get_current_user, create_access_token
 from routers.deps import APPLICATION_STATUSES
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -315,7 +315,7 @@ def test_pushover_notification(
     platform_id: int,
     current_user: User = Depends(get_current_user),
 ):
-    from worker import _send_via_pushover
+    from workers.worker import _send_via_pushover
 
     db = SessionLocal()
     try:
@@ -356,7 +356,7 @@ def test_resend_notification(
     platform_id: int,
     current_user: User = Depends(get_current_user),
 ):
-    from worker import _send_via_resend_batch
+    from workers.worker import _send_via_resend_batch
 
     db = SessionLocal()
     try:
@@ -401,7 +401,7 @@ def test_mailjet_notification(
     platform_id: int,
     current_user: User = Depends(get_current_user),
 ):
-    from worker import _send_via_mailjet_batch
+    from workers.worker import _send_via_mailjet_batch
 
     db = SessionLocal()
     try:
@@ -471,7 +471,7 @@ def test_smtp_notification(
         from_email = profile.smtp_from_email or profile.smtp_user
         recipients = platform.smtp_recipients if isinstance(platform.smtp_recipients, list) else [platform.smtp_recipients]
 
-        from worker import _RESEND_DEFAULT_HTML, _RESEND_DEFAULT_JOB_ROW
+        from workers.worker import _RESEND_DEFAULT_HTML, _RESEND_DEFAULT_JOB_ROW
 
         class _FakeJob:
             id = 0

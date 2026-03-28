@@ -16,9 +16,9 @@ from database.core import (
     NotificationTemplateUpdate,
     NotificationTemplateResponse,
 )
-from auth import get_current_user
+from core.auth import get_current_user
 from routers.deps import limiter, _SECRET_MASK, _mask_profile, _template_to_dict, get_openrouter_client, get_current_model
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -338,7 +338,7 @@ def save_notification_settings(
 
 @router.post("/notification-settings/test-pushover")
 def test_pushover_settings(current_user: User = Depends(get_current_user)):
-    from worker import _send_via_pushover
+    from workers.worker import _send_via_pushover
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -357,7 +357,7 @@ def test_pushover_settings(current_user: User = Depends(get_current_user)):
 
 @router.post("/notification-settings/test-resend")
 def test_resend_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    from worker import _send_via_resend_batch
+    from workers.worker import _send_via_resend_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -379,7 +379,7 @@ def test_resend_settings(body: TestNotificationBody, current_user: User = Depend
 
 @router.post("/notification-settings/test-mailjet")
 def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    from worker import _send_via_mailjet_batch
+    from workers.worker import _send_via_mailjet_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -401,7 +401,7 @@ def test_mailjet_settings(body: TestNotificationBody, current_user: User = Depen
 
 @router.post("/notification-settings/test-smtp")
 def test_smtp_settings(body: TestNotificationBody, current_user: User = Depends(get_current_user)):
-    from worker import _send_via_smtp_batch
+    from workers.worker import _send_via_smtp_batch
     db = SessionLocal()
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()

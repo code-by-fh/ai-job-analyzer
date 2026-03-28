@@ -21,9 +21,9 @@ from database.core import (
     NotificationTemplateUpdate,
     NotificationTemplateResponse,
 )
-from auth import get_current_admin_user, verify_password
+from core.auth import get_current_admin_user, verify_password
 from routers.deps import _template_to_dict
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

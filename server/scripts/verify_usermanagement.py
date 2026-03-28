@@ -1,8 +1,8 @@
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,7 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from database.core import Base, JobEntry, User, UserProfile
-from auth import get_password_hash
+from core.auth import get_password_hash
 
 # Config
 API_URL = "http://localhost:8002"

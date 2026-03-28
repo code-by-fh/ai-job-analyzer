@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from database.core import SessionLocal, User, JobEntry, UserProfile, JobPlatform
-from auth import (
+from core.auth import (
     create_access_token,
     create_refresh_token,
     get_current_user,
@@ -88,7 +88,7 @@ async def login_for_access_token(
 @limiter.limit("20/minute")
 async def refresh_access_token(request: Request, response: Response):
     from jose import JWTError, jwt
-    from auth import SECRET_KEY, ALGORITHM
+    from core.auth import SECRET_KEY, ALGORITHM
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -236,7 +236,7 @@ async def delete_user(
 
 @router.delete("/user/reset")
 def reset_user_data(request: FactoryResetRequest, current_user: User = Depends(get_current_user)):
-    from logger import get_logger
+    from core.logger import get_logger
     logger = get_logger(__name__)
 
     db = SessionLocal()

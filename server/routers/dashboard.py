@@ -6,9 +6,9 @@ import requests
 from fastapi import APIRouter, Depends
 
 from database.core import SessionLocal, User, JobEntry, UserProfile, JobPlatform
-from auth import get_current_user, create_access_token
+from core.auth import get_current_user, create_access_token
 from routers.deps import _mask_profile
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

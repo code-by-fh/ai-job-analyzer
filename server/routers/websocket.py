@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from database.core import SessionLocal, User
-from connection_manager import manager
+from core.connection_manager import manager
 
 router = APIRouter()
 
@@ -9,7 +9,7 @@ router = APIRouter()
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     from jose import JWTError, jwt
-    from auth import SECRET_KEY, ALGORITHM
+    from core.auth import SECRET_KEY, ALGORITHM
 
     token = websocket.cookies.get("access_token")
     if not token:

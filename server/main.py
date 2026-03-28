@@ -12,10 +12,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
 from database.core import Base, engine, SessionLocal, User
-from auth import get_password_hash
-from connection_manager import redis_listener
+from core.auth import get_password_hash
+from core.connection_manager import redis_listener
 from routers.deps import limiter, COOKIE_SECURE
-from logger import get_logger
+from core.logger import get_logger
 
 from routers import auth as auth_router
 from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage

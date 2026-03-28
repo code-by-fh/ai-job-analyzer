@@ -8,12 +8,12 @@ from celery import chain
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from scraper_celery_config import celery_app
+from core.scraper_celery_config import celery_app
 import redis
 
-from auth import get_current_user
+from core.auth import get_current_user
 from database.core import User
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

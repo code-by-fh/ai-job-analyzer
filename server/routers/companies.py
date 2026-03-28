@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 
 from database.core import SessionLocal, User, CompanyProfile, CompanyAnalyzeRequest, DeepDiveRequest
-from auth import get_current_user
-from celery_config import celery_app
+from core.auth import get_current_user
+from core.celery_config import celery_app
 from intelligence.service import generate_deep_dive, get_model, get_api_key
 
 router = APIRouter()

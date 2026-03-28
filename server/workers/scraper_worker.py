@@ -11,12 +11,12 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import redis
 
-from scraper_celery_config import celery_app, REDIS_URL
+from core.scraper_celery_config import celery_app, REDIS_URL
 from intelligence.service import extract_job_details, get_model, get_api_key
 from database.core import SessionLocal, UserProfile, JobEntry
 
 # Logging Setup
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

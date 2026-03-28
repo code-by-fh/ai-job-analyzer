@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from database.core import SessionLocal, User, UserProfile
-from auth import get_current_user
-from logger import get_logger
+from core.auth import get_current_user
+from core.logger import get_logger
 import httpx
 
 logger = get_logger(__name__)

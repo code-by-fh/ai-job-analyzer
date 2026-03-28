@@ -6,7 +6,7 @@ from typing import List
 from fastapi import WebSocket
 import redis.asyncio as redis_async
 
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
