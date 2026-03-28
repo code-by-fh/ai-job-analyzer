@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   Trash2,
   RotateCcw,
+  X,
+  Building2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -780,130 +782,129 @@ export default function Listings({
           </div>
         )}
       </div>
-
       {/* Bulk Actions Floating Bar */}
       {selectedJobIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300">
-          <div className="bg-white dark:bg-slate-900 shadow-2xl dark:shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-800 rounded-full px-6 py-3 flex items-center gap-4">
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              {selectedJobIds.length} {t("selected")}
-            </span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-bottom-8 duration-500 ease-out w-[calc(100vw-2rem)] sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-1 p-2 sm:p-1 bg-slate-900/95 dark:bg-white/95 backdrop-blur-3xl rounded-3xl sm:rounded-2xl border border-white/10 dark:border-slate-200/80 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.5)] transition-all duration-300">
+            
+            {/* Mobile Header */}
+            <div className="flex sm:hidden items-center justify-between w-full px-3 py-2 mb-1 border-b border-white/5 dark:border-slate-100/50">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-500 text-[12px] font-black text-white shadow-lg shadow-indigo-500/30">
+                  {selectedJobIds.length}
+                </div>
+                <span className="text-[13px] font-black text-slate-100 dark:text-slate-900 uppercase tracking-widest">
+                  {t("selected")}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedJobIds([])}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 dark:bg-slate-50 text-slate-400 hover:text-rose-500 active:scale-90 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            {(() => {
-              const companies = Array.from(
-                new Set(
-                  selectedJobIds
-                    .map((id) => jobs.find((j) => j.id === id)?.company)
-                    .filter(Boolean),
-                ),
-              );
-              if (companies.length === 1 && companies[0]) {
-                return (
-                  <>
-                    <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+            {/* Desktop Selection Info */}
+            <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-r border-white/10 dark:border-slate-100/50 shrink-0">
+              <div className="flex shrink-0 h-5 w-5 items-center justify-center rounded-md bg-indigo-500 text-[10px] font-black text-white shadow-lg shadow-indigo-500/20">
+                {selectedJobIds.length}
+              </div>
+              <span className="text-[11px] font-black text-slate-100 dark:text-slate-900 tracking-tight uppercase opacity-90 whitespace-nowrap">
+                {t("selected")}
+              </span>
+            </div>
+
+            {/* Actions Area */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-1 px-1 sm:px-2 w-full sm:w-auto py-1 sm:py-0">
+              {(() => {
+                const companies = Array.from(
+                  new Set(
+                    selectedJobIds
+                      .map((id) => jobs.find((j) => j.id === id)?.company)
+                      .filter(Boolean),
+                  ),
+                );
+                if (companies.length === 1 && companies[0]) {
+                  return (
                     <button
-                      onClick={() =>
-                        setCompanyToBulkDelete(companies[0] as string)
-                      }
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 cursor-pointer active:scale-95 whitespace-nowrap border border-indigo-200/50 dark:border-indigo-500/30"
+                      onClick={() => setCompanyToBulkDelete(companies[0] as string)}
+                      className="group flex items-center justify-center sm:justify-start gap-2 px-4 py-2.5 sm:py-1.5 rounded-xl sm:rounded-xl text-[13px] sm:text-[12px] font-bold transition-all text-indigo-400 hover:text-white hover:bg-white/5 dark:text-indigo-600 dark:hover:bg-indigo-50 bg-white/5 sm:bg-transparent dark:bg-slate-50 sm:dark:bg-transparent cursor-pointer active:scale-95 whitespace-nowrap"
                     >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      <span className="hidden sm:inline">
+                      <Building2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      <span className="hidden md:inline">
                         {isArchived
-                          ? t("deleteAllFromCompany").replace(
-                              "{company}",
-                              companies[0] as string,
-                            )
-                          : t("archiveAllFromCompany").replace(
-                              "{company}",
-                              companies[0] as string,
-                            )}
+                          ? t("deleteAllFromCompany").replace("{company}", companies[0] as string)
+                          : t("archiveAllFromCompany").replace("{company}", companies[0] as string)}
                       </span>
-                      <span className="sm:hidden">
+                      <span className="md:hidden">
                         {isArchived
                           ? t("deleteAllFromCompany").replace(" {company}", "")
-                          : t("archiveAllFromCompany").replace(
-                              " {company}",
-                              "",
-                            )}
+                          : t("archiveAllFromCompany").replace(" {company}", "")}
                       </span>
                     </button>
-                  </>
-                );
-              }
-              return null;
-            })()}
+                  );
+                }
+                return null;
+              })()}
 
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
-            {isArchived && (
-              <button
-                onClick={async () => {
-                  setIsBulkDeleting(true);
-                  const success = await bulkRestoreJobs(selectedJobIds);
-                  if (success) {
-                    setSelectedJobIds([]);
-                    fetchJobs(true); // Ensure counts update
-                  }
-                  setIsBulkDeleting(false);
-                }}
-                disabled={isBulkDeleting}
-                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:text-emerald-400 cursor-pointer active:scale-95 border border-emerald-200/50 dark:border-emerald-500/30"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="hidden sm:inline">{t("restoreJob")}</span>
-              </button>
-            )}
-            <button
-              onClick={handleBulkDelete}
-              disabled={isBulkDeleting}
-              className={`
-                                flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all
-                                ${
-                                  isBulkDeleting
-                                    ? "bg-indigo-100 text-indigo-400 dark:bg-indigo-900/30"
-                                    : "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 cursor-pointer active:scale-95"
-                                }
-                            `}
-            >
-              {isBulkDeleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : isArchived ? (
-                <Trash2 className="w-4 h-4" />
-              ) : (
-                <Archive className="w-4 h-4" />
+              {isArchived && (
+                <button
+                  onClick={async () => {
+                    setIsBulkDeleting(true);
+                    const success = await bulkRestoreJobs(selectedJobIds);
+                    if (success) {
+                      setSelectedJobIds([]);
+                      fetchJobs(true);
+                    }
+                    setIsBulkDeleting(false);
+                  }}
+                  disabled={isBulkDeleting}
+                  className="group flex items-center justify-center sm:justify-start gap-2 px-4 py-2.5 sm:py-1.5 rounded-xl sm:rounded-xl text-[13px] sm:text-[12px] font-bold transition-all text-emerald-400 hover:text-white hover:bg-emerald-500/20 dark:text-emerald-700 dark:hover:bg-emerald-50 bg-white/5 sm:bg-transparent dark:bg-slate-50 sm:dark:bg-transparent cursor-pointer active:scale-95 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-4 h-4 sm:w-3.5 sm:h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                  <span>{t("restoreJob")}</span>
+                </button>
               )}
-              {isArchived ? t("deletePermanent" as any) : t("archiveSelected")}
-            </button>
-            <button
-              onClick={() => setSelectedJobIds([])}
-              className="ml-2 w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              
+              <button
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className={`
+                  group flex items-center justify-center sm:justify-start gap-2 px-5 py-3 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-xl text-[13px] sm:text-[12px] font-bold transition-all active:scale-95 shadow-sm whitespace-nowrap
+                  ${
+                    isBulkDeleting
+                      ? "text-slate-500 bg-slate-800/50 cursor-not-allowed"
+                      : isArchived
+                        ? "bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white dark:bg-rose-50 dark:text-rose-600 dark:hover:bg-rose-500 dark:hover:text-white"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/30 dark:shadow-none"
+                  }
+                `}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
+                {isBulkDeleting ? (
+                  <Loader2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 animate-spin" />
+                ) : isArchived ? (
+                  <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 opacity-90 group-hover:opacity-100 transition-opacity" />
+                ) : (
+                  <Archive className="w-4 h-4 sm:w-3.5 sm:h-3.5 opacity-90 group-hover:opacity-100 transition-opacity" />
+                )}
+                <span>
+                   <span className="hidden sm:inline">{isArchived ? t("deletePermanent" as any) : t("archiveSelected")}</span>
+                   <span className="sm:hidden">{isArchived ? t("deletePermanent" as any) : t("archiveJob")}</span>
+                </span>
+              </button>
+            </div>
+
+            {/* Desktop Clear Button */}
+            <div className="hidden sm:flex pl-0.5 border-l border-white/10 dark:border-slate-100/50 shrink-0">
+              <button
+                onClick={() => setSelectedJobIds([])}
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-rose-500 hover:bg-white/5 dark:hover:bg-slate-50 transition-all cursor-pointer group active:scale-90"
+                title={t("close")}
+              >
+                <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
+              </button>
+            </div>
           </div>
         </div>
       )}
