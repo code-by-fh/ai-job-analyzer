@@ -131,7 +131,7 @@ def create_platform(
 
         # Trigger immediate initial scan (saves URLs as SEEN placeholders, no AI analysis)
         try:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
+            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
             _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             resp = requests.post(
                 f"{SCRAPER_URL}/search",
@@ -715,7 +715,7 @@ def trigger_platform_crawl(
         # Trigger scraper-service
         from sqlalchemy import func
 
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
         logger.info(f"Triggering scraper at: {SCRAPER_URL}/search")
         _internal_token = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
         try:

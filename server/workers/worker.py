@@ -633,7 +633,7 @@ def filter_urls_task(args):
         logger.error(f"Filter Error processing {base_url}: {e}", exc_info=True)
         if job_id:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
             )
             try:
                 requests.post(
@@ -1017,7 +1017,7 @@ def analyze_job_task(job_data):
                 import requests as _req
 
                 SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
                 )
                 _req.post(
                     f"{SCRAPER_URL}/fail-crawl",
@@ -1040,7 +1040,7 @@ def analyze_job_task(job_data):
                 import requests
 
                 SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
+                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
                 )
                 requests.post(
                     f"{SCRAPER_URL}/fail-crawl",
@@ -1635,7 +1635,7 @@ def check_platforms_for_crawl():
         platforms = db.query(JobPlatform).filter(JobPlatform.is_active == True).all()
 
         triggered_count = 0
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper")
+        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
 
         for p in platforms:
             is_due = False

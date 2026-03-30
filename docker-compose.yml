@@ -38,7 +38,7 @@ services:
       - "8002:8080"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-jobdb}
-      - SCRAPER_SERVICE_URL=http://127.0.0.1:8080/scraper
+      - SCRAPER_SERVICE_URL=http://127.0.0.1:8081
       - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1

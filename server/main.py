@@ -116,10 +116,6 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Scraper sub-app must be mounted after middleware registration
-from scraper_api import app as scraper_app
-app.mount("/scraper", scraper_app)
-
 # Routers
 app.include_router(auth_router.router)
 app.include_router(jobs.router)

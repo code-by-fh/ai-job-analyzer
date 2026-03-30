@@ -102,7 +102,7 @@ def get_dashboard_data(
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
             )
             _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(
@@ -213,7 +213,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
         active_crawls = []
         try:
             SCRAPER_URL = os.getenv(
-                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8002/scraper"
+                "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
             )
             _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
             res = requests.get(
