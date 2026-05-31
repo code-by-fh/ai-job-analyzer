@@ -23,7 +23,20 @@ import {
   CheckCircle2,
   UploadCloud,
   GraduationCap,
+  Trash2,
+  FilePlus,
+  LayoutTemplate,
 } from "lucide-react";
+
+interface ProfileDoc {
+  id: number;
+  doc_type: string;
+  label: string | null;
+  original_filename: string;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: string | null;
+}
 
 function Field({
   label,
@@ -70,6 +83,11 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
+  const [profileDocs, setProfileDocs] = useState<ProfileDoc[]>([]);
+  const [templates, setTemplates] = useState<{ cv: string[]; cover_letter: string[] }>({ cv: [], cover_letter: [] });
+  const [cvTemplate, setCvTemplate] = useState("classic");
+  const [coverLetterTemplate, setCoverLetterTemplate] = useState("classic");
+  const [docsLoading, setDocsLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -89,6 +107,8 @@ export default function Profile() {
               education: "",
             },
           });
+          if (profileData.cv_template) setCvTemplate(profileData.cv_template);
+          if (profileData.cover_letter_template) setCoverLetterTemplate(profileData.cover_letter_template);
           setLoading(false);
         })
         .catch((e) => {
@@ -98,6 +118,74 @@ export default function Profile() {
         });
     }
   }, [token]);
+
+  const loadProfileDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/profile/documents`);
+      if (res.ok) setProfileDocs(await res.json());
+    } catch (e: any) {
+      logger.error({ err: e }, "Failed to load profile documents");
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/profile/templates`);
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data);
+      }
+    } catch (e: any) {
+      logger.error({ err: e }, "Failed to load templates");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      loadProfileDocs();
+      loadTemplates();
+    }
+  }, [token, loadProfileDocs, loadTemplates]);
+
+  const uploadProfileDoc = async (file: File, docType: "REFERENCE" | "CERTIFICATE") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("doc_type", docType);
+    form.append("label", file.name);
+    try {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/profile/documents`, {
+        method: "POST",
+        body: form,
+      });
+      if (res.ok) {
+        await loadProfileDocs();
+      } else {
+        showError("Upload fehlgeschlagen");
+      }
+    } catch (e: any) {
+      logger.error({ err: e }, "Profile doc upload failed");
+      showError("Upload fehlgeschlagen");
+    }
+  };
+
+  const deleteProfileDoc = async (id: number) => {
+    try {
+      const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/profile/documents/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setProfileDocs((prev) => prev.filter((d) => d.id !== id));
+      } else {
+        showError("Löschen fehlgeschlagen");
+      }
+    } catch (e: any) {
+      logger.error({ err: e }, "Profile doc delete failed");
+      showError("Löschen fehlgeschlagen");
+    }
+  };
 
   const completionData = useCallback(() => {
     const missing = [];
@@ -130,7 +218,11 @@ export default function Profile() {
       await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          cv_template: cvTemplate,
+          cover_letter_template: coverLetterTemplate,
+        }),
       });
       setSaveStatus("saved");
       refreshUser();
@@ -546,6 +638,167 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* Vorlagen (Templates) */}
+      <div className="glass-card rounded-2xl p-6 sm:p-8 mt-8">
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+          <LayoutTemplate size={20} className="text-indigo-500" />
+          Vorlagen
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <Field label="Lebenslauf-Vorlage" icon={<FileText size={14} />}>
+            <select
+              value={cvTemplate}
+              onChange={(e) => setCvTemplate(e.target.value)}
+              className={inputCls}
+            >
+              {templates.cv.length > 0 ? (
+                templates.cv.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))
+              ) : (
+                <option value={cvTemplate}>{cvTemplate}</option>
+              )}
+            </select>
+          </Field>
+          <Field label="Anschreiben-Vorlage" icon={<FileText size={14} />}>
+            <select
+              value={coverLetterTemplate}
+              onChange={(e) => setCoverLetterTemplate(e.target.value)}
+              className={inputCls}
+            >
+              {templates.cover_letter.length > 0 ? (
+                templates.cover_letter.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))
+              ) : (
+                <option value={coverLetterTemplate}>{coverLetterTemplate}</option>
+              )}
+            </select>
+          </Field>
+        </div>
+      </div>
+
+      {/* Bewerbungsunterlagen */}
+      <div className="glass-card rounded-2xl p-6 sm:p-8 mt-6">
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+          <FilePlus size={20} className="text-indigo-500" />
+          Bewerbungsunterlagen
+        </h2>
+
+        {docsLoading ? (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+            <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+            Dokumente werden geladen…
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Arbeitszeugnisse */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
+                Arbeitszeugnisse
+              </h3>
+              <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                <UploadCloud size={16} />
+                Datei hochladen
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadProfileDoc(f, "REFERENCE");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <div className="mt-3 space-y-2">
+                {profileDocs
+                  .filter((d) => d.doc_type === "REFERENCE")
+                  .map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText size={15} className="text-indigo-400 shrink-0" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
+                          {doc.original_filename}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deleteProfileDoc(doc.id)}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
+                        title="Löschen"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                {profileDocs.filter((d) => d.doc_type === "REFERENCE").length === 0 && (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                    Noch keine Arbeitszeugnisse hochgeladen.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Zertifikate */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
+                Zertifikate
+              </h3>
+              <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                <UploadCloud size={16} />
+                Datei hochladen
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadProfileDoc(f, "CERTIFICATE");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <div className="mt-3 space-y-2">
+                {profileDocs
+                  .filter((d) => d.doc_type === "CERTIFICATE")
+                  .map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText size={15} className="text-indigo-400 shrink-0" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
+                          {doc.original_filename}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deleteProfileDoc(doc.id)}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
+                        title="Löschen"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                {profileDocs.filter((d) => d.doc_type === "CERTIFICATE").length === 0 && (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                    Noch keine Zertifikate hochgeladen.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Sticky Save Bar */}
       <div className="sticky bottom-4 mt-8 flex justify-end pointer-events-none">
