@@ -602,3 +602,25 @@ def get_extract_job_details_messages(
             "content": f"Extract the job description from this text:\n\n{text[:12000]}",
         },
     ]
+
+
+def get_tailored_cv_messages(cv_data, job_title, job_description, language="de"):
+    import json as _json
+    lang_note = "Antworte auf Deutsch." if language == "de" else "Respond in English."
+    system = (
+        "You are a CV editor. You receive a candidate's structured CV as JSON and a "
+        "job posting. Reorder and re-emphasize the existing content to best match the "
+        "job. You MUST NOT invent facts, employers, dates, or skills that are not in "
+        "the input. You may rewrite descriptions for clarity and add a short 'summary'. "
+        "Return ONLY a JSON object with the same keys as the input plus an optional "
+        "'summary' (string) and 'skills' (string). " + lang_note
+    )
+    user = (
+        f"JOB TITLE:\n{job_title}\n\nJOB DESCRIPTION:\n{job_description[:6000]}\n\n"
+        f"CANDIDATE CV JSON:\n{_json.dumps(cv_data, ensure_ascii=False)}\n\n"
+        "Return the tailored CV as JSON only."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]

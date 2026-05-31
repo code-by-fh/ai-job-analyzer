@@ -24,6 +24,7 @@ from intelligence.prompts import (
     get_company_profile_summary_messages,
     get_extract_job_details_messages,
     get_deep_dive_messages,
+    get_tailored_cv_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,24 @@ def get_ai_client(api_key: str = None, db: Any = None):
             "X-Title": "Job Agent MVP",
         },
     )
+
+
+def get_ollama_client():
+    """OpenAI-compatible client pointed at the local Ollama service."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+    return OpenAI(base_url=base_url, api_key="ollama")
+
+
+def get_ollama_model(db=None) -> str:
+    try:
+        if db:
+            from database.core import SystemSettings
+            settings = db.query(SystemSettings).first()
+            if settings and settings.ollama_model:
+                return settings.ollama_model
+    except Exception:
+        pass
+    return os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
 
 def _call_openrouter(
@@ -477,3 +496,48 @@ def extract_job_details(
     except Exception as e:
         logger.debug(f"Error in extract_job_details: {e}")
         return text[:4000]  # Fallback to original behavior
+
+
+def generate_tailored_cv(
+    cv_data: dict,
+    job_title: str,
+    job_description: str,
+    candidate_name: str = "",
+    candidate_role: str = "",
+    language: str = "de",
+    model: str = None,
+) -> dict:
+    """Use local Ollama to reorder/emphasize the candidate's CV for a job.
+
+    Returns a dict with the same shape as the CV template expects. Never invents
+    facts; on any failure the original cv_data is returned with name/role filled.
+    """
+    base = dict(cv_data or {})
+    base.setdefault("experience", [])
+    base.setdefault("projects", [])
+    base.setdefault("education", "")
+    base["name"] = candidate_name or base.get("name", "")
+    base["role"] = candidate_role or base.get("role", "")
+
+    client = get_ollama_client()
+    messages = get_tailored_cv_messages(base, job_title, job_description, language)
+    try:
+        response = _call_openrouter(
+            client=client,
+            model=model or get_ollama_model(),
+            messages=messages,
+            temperature=0.3,
+            func_name="generate_tailored_cv",
+        )
+        tailored = extract_json(response.choices[0].message.content.strip())
+    except Exception as e:
+        logger.error(f"Ollama tailored CV failed, using untailored CV: {e}")
+        return base
+
+    # Merge: tailored content wins, but guarantee required keys + name/role.
+    tailored.setdefault("experience", base["experience"])
+    tailored.setdefault("projects", base["projects"])
+    tailored.setdefault("education", base["education"])
+    tailored["name"] = base["name"]
+    tailored["role"] = base["role"]
+    return tailored
