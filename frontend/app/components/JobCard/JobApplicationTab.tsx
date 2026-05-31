@@ -63,6 +63,8 @@ export default function JobApplicationTab({
   const [phaseIndex, setPhaseIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [includeDocs, setIncludeDocs] = useState(true);
+  const [generatingPackage, setGeneratingPackage] = useState(false);
 
   // Elapsed timer + phase rotation while generating
   useEffect(() => {
@@ -191,6 +193,46 @@ export default function JobApplicationTab({
       } catch {}
     }
     localStorage.removeItem(`gen_app_${job.id}`);
+  };
+
+  const generatePackage = async () => {
+    setGeneratingPackage(true);
+    try {
+      const baseUrl = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
+      const res = await fetchWithAuth(
+        `${baseUrl}/jobs/${encodeURIComponent(job.id)}/generate-package`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ include_profile_documents: includeDocs }),
+        },
+      );
+      if (!res.ok) {
+        alert(
+          `Bewerbungspaket konnte nicht erstellt werden (HTTP ${res.status})`,
+        );
+      }
+    } catch (e) {
+      console.error("Generate package error:", e);
+    } finally {
+      setGeneratingPackage(false);
+    }
+    // Status transitions (GENERATING → DRAFTED) arrive via the existing WS job_update handler
+  };
+
+  const submitOnline = async () => {
+    try {
+      const baseUrl = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
+      const res = await fetchWithAuth(
+        `${baseUrl}/jobs/${encodeURIComponent(job.id)}/submit-application`,
+        { method: "POST" },
+      );
+      if (res.status === 501) {
+        alert("Online-Bewerbung ist noch nicht verfügbar.");
+      }
+    } catch (e) {
+      console.error("Submit online error:", e);
+    }
   };
 
   // First-time generation (no existing draft) → full spinner
@@ -432,6 +474,44 @@ export default function JobApplicationTab({
             <Zap className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {/* Bewerbungspaket */}
+      {job.status === "OPEN" && (
+        <div className="flex flex-wrap items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeDocs}
+              onChange={(e) => setIncludeDocs(e.target.checked)}
+              className="accent-indigo-600 w-3.5 h-3.5 cursor-pointer"
+            />
+            Profil-Dokumente beilegen
+          </label>
+          <button
+            onClick={generatePackage}
+            disabled={generatingPackage}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all shadow-sm shadow-indigo-500/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+          >
+            {generatingPackage ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Wird erstellt…
+              </>
+            ) : (
+              "Bewerbungspaket erstellen"
+            )}
+          </button>
+        </div>
+      )}
+
+      {job.status === "DRAFTED" && (
+        <button
+          onClick={submitOnline}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all shadow-sm shadow-emerald-500/20 cursor-pointer whitespace-nowrap self-start"
+        >
+          Online bewerben →
+        </button>
       )}
     </div>
   );
