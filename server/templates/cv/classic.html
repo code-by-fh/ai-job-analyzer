@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 2cm; }
+  body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 10.5pt; color: #222; }
+  h1 { font-size: 20pt; margin: 0 0 2pt 0; color: #111; }
+  .role { font-size: 12pt; color: #555; margin-bottom: 12pt; }
+  h2 { font-size: 12pt; color: #111; border-bottom: 1px solid #ccc; padding-bottom: 2pt; margin-top: 16pt; }
+  .item { margin-bottom: 8pt; }
+  .item .meta { color: #666; font-size: 9.5pt; }
+  .summary { margin-bottom: 12pt; }
+</style>
+</head>
+<body>
+  <h1>{{ name }}</h1>
+  <div class="role">{{ role }}</div>
+
+  {% if summary %}<div class="summary">{{ summary }}</div>{% endif %}
+
+  {% if skills %}<h2>Skills</h2><div>{{ skills }}</div>{% endif %}
+
+  {% if experience %}
+  <h2>Berufserfahrung</h2>
+  {% for exp in experience %}
+  <div class="item">
+    <strong>{{ exp.role }}</strong> — {{ exp.company }}
+    <div class="meta">{{ exp.duration }}</div>
+    <div>{{ exp.description }}</div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if projects %}
+  <h2>Projekte</h2>
+  {% for proj in projects %}
+  <div class="item">
+    <strong>{{ proj.name }}</strong>
+    <div class="meta">{{ proj.tech_stack }}</div>
+    <div>{{ proj.description }}</div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if education %}<h2>Ausbildung</h2><div>{{ education }}</div>{% endif %}
+</body>
+</html>

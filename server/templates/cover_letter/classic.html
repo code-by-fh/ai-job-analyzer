@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 2.5cm; }
+  body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #333; }
+  .sender { color: #555; font-size: 10pt; margin-bottom: 24pt; }
+  .recipient { margin-bottom: 24pt; }
+  p { margin: 0 0 10pt 0; }
+</style>
+</head>
+<body>
+  <div class="sender">{{ sender_name }}</div>
+  <div class="recipient">{{ company }}</div>
+  {{ body_html | safe }}
+</body>
+</html>
