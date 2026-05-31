@@ -4,13 +4,14 @@
 
 * **Phase:** MVP feature-complete & end-to-end verkabelt. Fokus auf Härtung, Polish und Stabilisierung des Scraper-Workers.
 * **Goal:** Scraper-Worker ausbauen (Playwright Link-Extraction, Content Cleaning) und `context/` Dokumentation abschließen.
+* **Letzte Änderung:** Matching-Threshold in den Einstellungen (`/settings` → General, eigener Endpunkt `POST /matching-preference`) — neue Crawl-Jobs unter dem Score-Schwellenwert werden direkt archiviert (Migration `i1a2b3c4d5e6`, `workers/worker.py` `analyze_job_task`).
 
 ### 2. Status Board
 
 | Feature Block | Status / Files | Key Details |
 | --- | --- | --- |
 | **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin-UI. |
-| **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notizen, Bulk-Aktionen, History, Uploads. |
+| **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notizen, Bulk-Aktionen, History, Uploads. Matching-Threshold (`user_settings.match_threshold`) archiviert neue Jobs mit `match_score < Wert` automatisch (0 = aus, ohne Notification). |
 | **AI Layer** | ✅ Completed (`intelligence/`) | Matching, Anschreiben, Interview-Prep, Firmenprofile via OpenRouter. |
 | **Platforms & Beat** | ✅ Completed (`routers/platforms.py`) | CRUD, Intervalle, Scheduler (`ai.check_platforms_for_crawl` @60s). |
 | **Scraper Worker** | 🟡 In Progress (`workers/scraper_worker.py`) | Link-Extraction, BS4-Cleaning, SSRF-Schutz (`_is_safe_url`), Port 8081. |

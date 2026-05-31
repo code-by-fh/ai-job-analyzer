@@ -24,6 +24,7 @@ import {
   Database,
   ChevronDown,
   ChevronUp,
+  Filter,
 } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -85,6 +86,8 @@ export default function Settings() {
   const [uiLanguage, setUiLanguage] = useState<"de" | "en">("de");
   const [timezone, setTimezone] = useState("Europe/Berlin");
   const [tzStatus, setTzStatus] = useState("");
+  const [matchThreshold, setMatchThreshold] = useState("0");
+  const [mtStatus, setMtStatus] = useState("");
 
   useEffect(() => {
     const tab = searchParams.get("tab") as Tab;
@@ -137,6 +140,29 @@ export default function Settings() {
       setTimeout(() => setTzStatus(""), 2500);
     } catch {
       setTzStatus(t("timezoneError"));
+    }
+  };
+
+  const handleMatchThresholdSave = async () => {
+    const val = Math.min(
+      100,
+      Math.max(0, parseInt(matchThreshold || "0", 10) || 0),
+    );
+    setMatchThreshold(String(val));
+    setMtStatus(t("matchThresholdSaving"));
+    try {
+      await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/matching-preference`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ match_threshold: val }),
+        },
+      );
+      setMtStatus(t("matchThresholdSaved"));
+      setTimeout(() => setMtStatus(""), 2500);
+    } catch {
+      setMtStatus(t("matchThresholdError"));
     }
   };
 
@@ -226,6 +252,8 @@ export default function Settings() {
           setFormData(loadedData);
           setSavedData(loadedData);
           if (profileData.timezone) setTimezone(profileData.timezone);
+          if (profileData.match_threshold != null)
+            setMatchThreshold(String(profileData.match_threshold));
 
           setStorageStatus({
             service: profileData.active_storage_service || "NONE",
@@ -581,6 +609,33 @@ export default function Settings() {
                     className={`text-sm font-semibold whitespace-nowrap ${tzStatus === t("timezoneSaved") ? "text-emerald-600 dark:text-emerald-400" : tzStatus === t("timezoneError") ? "text-rose-500" : "text-indigo-500 animate-pulse"}`}
                   >
                     {tzStatus}
+                  </span>
+                )}
+              </div>
+            </SettingsCard>
+
+            <SettingsCard
+              title={t("matchThreshold")}
+              icon={<Filter className="w-5 h-5" />}
+            >
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                {t("matchThresholdHint")}
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={matchThreshold}
+                  onChange={(e) => setMatchThreshold(e.target.value)}
+                  onBlur={handleMatchThresholdSave}
+                  className="w-32 bg-slate-50 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                />
+                {mtStatus && (
+                  <span
+                    className={`text-sm font-semibold whitespace-nowrap ${mtStatus === t("matchThresholdSaved") ? "text-emerald-600 dark:text-emerald-400" : mtStatus === t("matchThresholdError") ? "text-rose-500" : "text-indigo-500 animate-pulse"}`}
+                  >
+                    {mtStatus}
                   </span>
                 )}
               </div>

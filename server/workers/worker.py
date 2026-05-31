@@ -808,6 +808,20 @@ def analyze_job_task(job_data):
             f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
         )
 
+        # Auto-archive jobs whose score is below the user's matching threshold.
+        # Only applies to newly analyzed jobs, never to manual re-analysis.
+        threshold = getattr(profile, "match_threshold", 0) or 0
+        score_val = float(data.get("score", 0))
+        auto_archive = (
+            not (existing_job and force_reanalyze)
+            and threshold > 0
+            and score_val < threshold
+        )
+        if auto_archive:
+            logger.info(
+                f"Job {job_id} auto-archived (score {score_val} < threshold {threshold})"
+            )
+
         job_url = job_data.get("url")
         company_domain = None
         if job_url:
@@ -838,6 +852,7 @@ def analyze_job_task(job_data):
                 user_id=user_id,
                 platform_id=job_data.get("platform_id"),
                 company_domain=company_domain,
+                is_archived=auto_archive,
             )
             db.add(db_job)
             db.commit()
@@ -857,6 +872,7 @@ def analyze_job_task(job_data):
                     "reasoning": db_job.reasoning,
                     "url": db_job.url,
                     "status": db_job.status,
+                    "is_archived": db_job.is_archived,
                     "created_at": (
                         db_job.created_at.isoformat() if db_job.created_at else None
                     ),
@@ -888,8 +904,9 @@ def analyze_job_task(job_data):
             )
 
         # --- NOTIFICATION LOGIC ---
+        # Auto-archived jobs (below matching threshold) never trigger notifications.
         try:
-            if db_job.platform_id:
+            if db_job.platform_id and not auto_archive:
                 platform = (
                     db.query(JobPlatform)
                     .filter(JobPlatform.id == db_job.platform_id)

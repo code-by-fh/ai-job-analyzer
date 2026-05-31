@@ -80,6 +80,8 @@ class UserProfile(Base):
     min_salary = Column(String, default="60000")
     location = Column(String, default="Remote")
     preferences = Column(Text, default="")
+    # Matching: Jobs with match_score below this threshold are auto-archived (0 = disabled)
+    match_threshold = Column(Integer, default=0, nullable=False, server_default="0")
     cv_data = Column(JSON, default={})
     job_urls = Column(JSON, default=[])
 

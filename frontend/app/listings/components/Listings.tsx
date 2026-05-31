@@ -214,6 +214,8 @@ export default function Listings({
     (job: Job, crawlJobId?: string) => {
       if (job?.user_id === user?.id) {
         let shouldAdd = true;
+        // Auto-archived jobs (below matching threshold) never enter the active list
+        if (job.is_archived) shouldAdd = false;
         if (filterType === "favorite" && !job.is_favorite) shouldAdd = false;
         if (filterType === "no_favorite" && job.is_favorite) shouldAdd = false;
 

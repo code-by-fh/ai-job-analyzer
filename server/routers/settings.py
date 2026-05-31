@@ -3,7 +3,7 @@ import json
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Depends, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from database.core import (
     SessionLocal,
@@ -86,6 +86,10 @@ def parse_cv_with_ai(cv_text):
 
 class LanguagePreferenceData(BaseModel):
     language: str = "de"
+
+
+class MatchThresholdData(BaseModel):
+    match_threshold: int = Field(default=0, ge=0, le=100)
 
 
 class TestNotificationBody(BaseModel):
@@ -274,6 +278,21 @@ def save_language_preference(data: LanguagePreferenceData, current_user: User = 
         profile.language = lang
         db.commit()
         return {"status": "saved", "language": lang}
+    finally:
+        db.close()
+
+
+@router.post("/matching-preference")
+def save_matching_preference(data: MatchThresholdData, current_user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if not profile:
+            profile = UserProfile(user_id=current_user.id)
+            db.add(profile)
+        profile.match_threshold = data.match_threshold
+        db.commit()
+        return {"status": "saved", "match_threshold": data.match_threshold}
     finally:
         db.close()
 
