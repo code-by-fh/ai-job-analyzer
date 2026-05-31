@@ -43,6 +43,7 @@ from workers.tasks.scheduling import (
     check_platforms_for_crawl,
     cleanup_stale_redis_jobs,
 )
+from workers.tasks.package import generate_application_package_task  # noqa: F401
 
 __all__ = [
     "celery_app",
@@ -69,4 +70,5 @@ __all__ = [
     "check_follow_ups",
     "check_platforms_for_crawl",
     "cleanup_stale_redis_jobs",
+    "generate_application_package_task",
 ]
