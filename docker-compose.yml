@@ -21,6 +21,15 @@ services:
     container_name: redis
     hostname: redis
 
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    container_name: ollama
+    hostname: ollama
+
   rabbitmq:
     image: rabbitmq:3-management
     ports:
@@ -48,10 +57,12 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
     depends_on:
       - database
       - rabbitmq
       - redis
+      - ollama
     container_name: server
     hostname: server
     volumes:
@@ -72,3 +83,4 @@ services:
 
 volumes:
   db_data:
+  ollama_data:

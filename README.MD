@@ -104,6 +104,12 @@ graph TD
     ```
     This builds the containers for Frontend, Scraper Service, and AI Service, and starts the database and message broker.
 
+4.  **Pull Ollama Model** (on first start):
+    After the services are running, pull the Ollama model:
+    ```bash
+    docker exec -it ollama ollama pull llama3.1:8b
+    ```
+
 ### Access
 After starting, the services are available at the following addresses:
 
