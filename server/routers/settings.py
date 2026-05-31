@@ -167,6 +167,11 @@ def save_settings(
         profile.cv_data = settings.cv_data.dict()
         profile.job_urls = settings.job_urls
 
+        if settings.cv_template is not None:
+            profile.cv_template = settings.cv_template
+        if settings.cover_letter_template is not None:
+            profile.cover_letter_template = settings.cover_letter_template
+
         # Save Notification Settings
         profile.pushover_user_key = settings.pushover_user_key
 

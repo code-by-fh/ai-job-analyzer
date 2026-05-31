@@ -276,6 +276,8 @@ class SettingsData(BaseModel):
     active_notification_service: str = "NONE"
     language: str = "de"
     timezone: str = "Europe/Berlin"
+    cv_template: Optional[str] = None
+    cover_letter_template: Optional[str] = None
     active_storage_service: str = "NONE"
     google_drive_email: Optional[str] = None
 
