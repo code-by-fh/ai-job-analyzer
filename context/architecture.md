@@ -8,6 +8,7 @@
 3. Celery Worker 1 (`ai_queue`): AI-Tasks + Celery Beat (`-B` Scheduler).
 4. Celery Worker 2 (`scraper_queue`): Playwright/BS4 Scraping.
 
+* **LLM Services:** OpenRouter (extern; Models: Claude 3.5 Sonnet Matching/Research, Claude 3 Haiku Interview). Ein interner `ollama` Service läuft lokal (Docker Compose); exempt von `_is_safe_url` (nur ausgehendes Scraping ist eingeschränkt). Verwendet OpenAI-kompatible API für CV-Generierung.
 
 * **Frontend:** Next.js 16 (App Router), React 19, Tailwind v4.
 * **Infrastruktur:** PostgreSQL 15 (SQLAlchemy 2.0, Alembic), Redis (Crawl-Status, Pub/Sub, Celery Backend), RabbitMQ (Celery Broker).
@@ -18,12 +19,17 @@
 * `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs.
 * `server/intelligence/` — Einziger LLM-Integrationspunkt (OpenRouter).
 * `server/workers/` — Asynchrone Tasks. `worker.py` ist nur noch dünner Celery-Entrypoint/Aggregator (`-A workers.worker.celery_app`), der `workers/tasks/*` (analyze, application, research, scheduling, urls; gemeinsame Crawl-Completion in `crawl_status.py`) und `workers/notifications/*` (email, push, templates) re-exportiert. `scraper_worker.py` für Crawls.
+* `server/services/document_renderer.py` — Jinja2 + xhtml2pdf HTML→PDF rendering (CV, Anschreiben).
+* `server/services/job_documents.py` — Dual-Storage-Helper für generierte JobDocuments (same-kind replacement).
+* `server/workers/tasks/package.py` — Sequentielle Paket-Orchestrierung (CV → Anschreiben → Profil-Docs).
+* `server/routers/profile_documents.py` — Profil-weiter Dokumentenspeicher (CRUD Zeugnisse/Zertifikate).
 * `server/core/` — Cross-cutting Infra (JWT-Auth, WebSocket-Manager, Logger).
 * `server/database/` — SQLAlchemy-Modelle + Alembic-Migrationen.
 
 ### 3. Data & Storage Layer
 
-* **PostgreSQL (Source of Truth):** User, Jobs, Settings, Platforms, Company Profiles.
+* **PostgreSQL (Source of Truth):** User, Jobs, Settings, Platforms, Company Profiles, ProfileDocuments.
+* **ProfileDocument (neue Tabelle):** Profil-weiter Speicher für Zeugnisse/Zertifikate, Dual-Storage (DB-Blob oder Drive).
 * **Documents (Dual):** DB Blob (`LargeBinary`) **oder** Google Drive (OAuth2), gesteuert via `active_storage_service`.
 * **Redis (Ephemeral):** Crawl-Hashes (1h TTL), Active-Sets, WebSocket Pub/Sub (`job_updates`).
 
