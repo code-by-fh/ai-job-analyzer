@@ -84,6 +84,8 @@ class UserProfile(Base):
     match_threshold = Column(Integer, default=0, nullable=False, server_default="0")
     cv_data = Column(JSON, default={})
     job_urls = Column(JSON, default=[])
+    cv_template = Column(String, nullable=True, default="classic")
+    cover_letter_template = Column(String, nullable=True, default="classic")
 
     # Notification Settings
     pushover_user_key = Column(String, nullable=True)
@@ -116,6 +118,7 @@ class SystemSettings(Base):
     id = Column(Integer, primary_key=True)
     openrouter_model = Column(String, default="tngtech/deepseek-r1t2-chimera:free")
     openrouter_api_key = Column(String, nullable=True)
+    ollama_model = Column(String, nullable=True, default="llama3.1:8b")
 
 
 class DomainUrlPattern(Base):
@@ -195,10 +198,26 @@ class JobDocument(Base):
     original_filename = Column(String, nullable=False)
     file_size = Column(Integer, nullable=True)
     mime_type = Column(String, nullable=True)
+    kind = Column(String, default="UPLOADED", nullable=False, server_default="UPLOADED")
+    # UPLOADED | GENERATED_CV | GENERATED_LETTER | ATTACHED_CERT | ATTACHED_REFERENCE
     content = Column(LargeBinary, nullable=True) # For local database storage
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
 
     job = relationship("JobEntry", back_populates="documents")
+
+
+class ProfileDocument(Base):
+    __tablename__ = "profile_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    doc_type = Column(String, nullable=False)  # REFERENCE | CERTIFICATE
+    label = Column(String, nullable=True)
+    filename = Column(String, nullable=False)  # db://<name> or gdrive://<name>
+    original_filename = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    mime_type = Column(String, nullable=True)
+    content = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class JobStatusHistory(Base):
