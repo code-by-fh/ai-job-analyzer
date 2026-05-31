@@ -17,7 +17,7 @@
 * `server/main.py` & `routers/` — REST-Endpunkte (Auth-geschützt, `user_id`-isoliert).
 * `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs.
 * `server/intelligence/` — Einziger LLM-Integrationspunkt (OpenRouter).
-* `server/workers/` — Asynchrone Tasks (`worker.py` für AI; `scraper_worker.py` für Crawls).
+* `server/workers/` — Asynchrone Tasks. `worker.py` ist nur noch dünner Celery-Entrypoint/Aggregator (`-A workers.worker.celery_app`), der `workers/tasks/*` (analyze, application, research, scheduling, urls; gemeinsame Crawl-Completion in `crawl_status.py`) und `workers/notifications/*` (email, push, templates) re-exportiert. `scraper_worker.py` für Crawls.
 * `server/core/` — Cross-cutting Infra (JWT-Auth, WebSocket-Manager, Logger).
 * `server/database/` — SQLAlchemy-Modelle + Alembic-Migrationen.
 

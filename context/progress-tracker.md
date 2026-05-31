@@ -4,7 +4,7 @@
 
 * **Phase:** MVP feature-complete & end-to-end verkabelt. Fokus auf Härtung, Polish und Stabilisierung des Scraper-Workers.
 * **Goal:** Scraper-Worker ausbauen (Playwright Link-Extraction, Content Cleaning) und `context/` Dokumentation abschließen.
-* **Letzte Änderung:** Matching-Threshold in den Einstellungen (`/settings` → General, eigener Endpunkt `POST /matching-preference`) — neue Crawl-Jobs unter dem Score-Schwellenwert werden direkt archiviert (Migration `i1a2b3c4d5e6`, `workers/worker.py` `analyze_job_task`).
+* **Letzte Änderung:** Token-Optimierung der Codebasis für die Weiterentwicklung: (1) `CLAUDE.md` liest Context-Dateien jetzt konditional statt alle 6 pro Session; (2) `workers/worker.py` (1808 Z.) aufgeteilt in `workers/tasks/*` + `workers/notifications/*`, `worker.py` bleibt dünner Aggregator/Celery-Entrypoint; (3) die 3 E-Mail-Batch-Adapter (Resend/Mailjet/SMTP) und die Crawl-Completion-Logik dedupliziert. Verhaltens-erhaltend; dabei wurde eine latente Inkonsistenz behoben (SMTP-Digest wurde auf dem Save-Completion-Pfad bisher nicht geflusht — `maybe_complete_crawl` flusht nun konsistent alle drei Kanäle).
 
 ### 2. Status Board
 

@@ -3,10 +3,12 @@
 ## Approach
 
 Build incrementally against the specs in `context/`. Implement what the context
-files define — don't infer or invent behavior. Before any implementation or
-architectural decision, read the context files in the order set by `CLAUDE.md`:
-`project-overview` → `architecture` → `ui-context` → `code-standards` →
-`ai-workflow-rules` → `progress-tracker`.
+files define — don't infer or invent behavior. Read the context files
+**conditionally** as defined in `CLAUDE.md`: always start with
+`progress-tracker.md`, then read the file whose domain your task touches
+(`project-overview` for scope, `architecture` for structure, `ui-context` for
+UI, `code-standards` for conventions, this file for workflow). Don't read all
+six for a trivial change.
 
 Monorepo: `frontend/` (Next.js/React/TS/Tailwind) + `server/` (FastAPI/Celery/
 SQLAlchemy/Alembic), infra via `docker-compose.yml`. Respect the boundaries in

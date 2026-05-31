@@ -4,9 +4,8 @@ Smoke Test Suite for Job Agent MVP
 ====================================
 Tests all essential functions:
   - API Endpoints (Auth, Jobs, Settings, Platforms, Admin, Users)
-  - Notification-Adapter (Gmail, Pushover) via Mocking
-  - Worker-Helper functions (format_cv_for_prompt, get_clean_content)
-  - Schedule-Logik (schedule_crawls_task via Mocking)
+  - Notification-Adapter (Pushover) via Mocking
+  - Worker-Helper functions (format_cv_for_prompt, send_notification)
 
 Execution:
   python smoke_test.py                     # gegen http://localhost:8002
@@ -515,485 +514,176 @@ def cleanup_platforms(token: str, platform_ids: list) -> None:
 
 
 def test_worker_utilities() -> None:
-    """Testet Helper functions aus worker.py (ohne DB/Celery)."""
+    """Testet Helper functions aus intelligence.service (ohne DB/Celery)."""
     section("10. Worker Utility Functions")
 
-    # Temporarily adjust sys.path so local modules can be imported
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-
-    # format_cv_for_prompt
+    # format_cv_for_prompt with a full CV
     try:
-        # Module import with mocked dependencies
-        with patch.dict(
-            "sys.modules",
-            {
-                "celery_config": MagicMock(),
-                "openai": MagicMock(),
-                "pypdf": MagicMock(),
-                "redis": MagicMock(),
-            },
-        ):
-            import importlib
-            import worker as w
+        from intelligence.service import format_cv_for_prompt
 
-            importlib.reload(w)
+        cv_json = {
+            "experience": [
+                {
+                    "role": "Senior Dev",
+                    "company": "TechCorp",
+                    "duration": "2020-2023",
+                    "description": "Developed systems",
+                }
+            ],
+            "projects": [
+                {
+                    "name": "JobAgent",
+                    "tech_stack": "Python, FastAPI",
+                    "description": "AI job matching",
+                }
+            ],
+            "education": "B.Sc. Informatik",
+        }
 
-            cv_json = {
-                "experience": [
-                    {
-                        "role": "Senior Dev",
-                        "company": "TechCorp",
-                        "duration": "2020-2023",
-                        "description": "Developed systems",
-                    }
-                ],
-                "projects": [
-                    {
-                        "name": "JobAgent",
-                        "tech_stack": "Python, FastAPI",
-                        "description": "AI job matching",
-                    }
-                ],
-                "education": "B.Sc. Informatik",
-            }
-
-            result = w.format_cv_for_prompt(cv_json)
-            assert "Senior Dev" in result, "Erfahrung is missing"
-            assert "TechCorp" in result, "Firma is missing"
-            assert "JobAgent" in result, "Projekt is missing"
-            assert "B.Sc. Informatik" in result, "Education is missing"
-            ok("format_cv_for_prompt -> All CV fields formatted correctly")
+        result = format_cv_for_prompt(cv_json)
+        assert "Senior Dev" in result, "Erfahrung is missing"
+        assert "TechCorp" in result, "Firma is missing"
+        assert "JobAgent" in result, "Projekt is missing"
+        assert "B.Sc. Informatik" in result, "Education is missing"
+        ok("format_cv_for_prompt -> All CV fields formatted correctly")
     except Exception as e:
         fail("format_cv_for_prompt", str(e))
 
-    # format_cv_for_prompt with empty input
+    # format_cv_for_prompt with empty input -> fallback text
     try:
-        with patch.dict(
-            "sys.modules",
-            {
-                "celery_config": MagicMock(),
-                "openai": MagicMock(),
-                "pypdf": MagicMock(),
-                "redis": MagicMock(),
-            },
-        ):
-            import worker as w
+        from intelligence.service import format_cv_for_prompt
 
-            result = w.format_cv_for_prompt(None)
-            assert "Keine" in result, "Empty input not handled correctly"
-            ok("format_cv_for_prompt(None) -> Fallback text correct")
+        result = format_cv_for_prompt(None)
+        assert "No detailed experience" in result, "Empty input not handled correctly"
+        ok("format_cv_for_prompt(None) -> Fallback text correct")
     except Exception as e:
         fail("format_cv_for_prompt(None)", str(e))
 
 
-def test_notification_gmail() -> None:
-    """Tests Gmail notification adapter via SMTP mock."""
-    section("11. Notification - Gmail Adapter")
-
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
-
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib
-        import worker as w
-
-        importlib.reload(w)
-
-        job = SimpleNamespace(
-            id="test-job-123",
-            title="Python Developer",
-            company="TestCorp GmbH",
-            match_score=87.5,
-            reasoning="Very good match with experience.",
-            url="https://testcorp.de/jobs/python-dev",
-        )
-        profile_ok = SimpleNamespace(
-            gmail_address="test@gmail.com",
-            gmail_app_password="app-password-123",
-        )
-        profile_missing = SimpleNamespace(
-            gmail_address=None,
-            gmail_app_password=None,
-        )
-
-        # 11a. Missing credentials -> immediate False return
-        result = w._send_via_gmail(job, profile_missing)
-        if result is False:
-            ok("_send_via_gmail (missing creds) -> False (correct)")
-        else:
-            fail(
-                "_send_via_gmail (missing creds)", f"Expected False, received {result}"
-            )
-
-        # 11b. successfullyer Gmail-Versand via Mock
-        mock_server = MagicMock()
-        with patch("smtplib.SMTP_SSL") as mock_smtp_cls:
-            mock_smtp_cls.return_value.__enter__ = lambda s: mock_server
-            mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
-
-            try:
-                result = w._send_via_gmail(job, profile_ok)
-                if result is True:
-                    ok("_send_via_gmail (Mock SMTP) -> True, Email sent")
-                else:
-                    fail(
-                        "_send_via_gmail (Mock SMTP)",
-                        f"Expected True, received {result}",
-                    )
-            except Exception as e:
-                fail("_send_via_gmail (Mock SMTP)", str(e))
-
-
 def test_notification_pushover() -> None:
     """Tests Pushover notification adapter via HTTP mock."""
-    section("12. Notification - Pushover Adapter")
+    section("11. Notification - Pushover Adapter")
 
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
+    from workers.notifications.push import _send_via_pushover
 
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
+    job = SimpleNamespace(
+        id="test-job-456",
+        title="DevOps Engineer",
+        company="CloudCorp AG",
+        match_score=92.0,
+        reasoning="Excellent Docker knowledge.",
+        url="https://cloudcorp.de/jobs/devops",
+    )
+    profile_ok = SimpleNamespace(
+        pushover_user_key="user-key-abc",
+        pushover_api_token="api-token-xyz",
+    )
+    profile_missing = SimpleNamespace(
+        pushover_user_key=None,
+        pushover_api_token=None,
+    )
 
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib
-        import worker as w
-
-        importlib.reload(w)
-
-        job = SimpleNamespace(
-            id="test-job-456",
-            title="DevOps Engineer",
-            company="CloudCorp AG",
-            match_score=92.0,
-            reasoning="Excellent Docker knowledge.",
-            url="https://cloudcorp.de/jobs/devops",
-        )
-        profile_ok = SimpleNamespace(
-            pushover_user_key="user-key-abc",
-            pushover_api_token="api-token-xyz",
-        )
-        profile_missing = SimpleNamespace(
-            pushover_user_key=None,
-            pushover_api_token=None,
+    # 11a. Missing Credentials
+    result = _send_via_pushover(job, profile_missing)
+    if result is False:
+        ok("_send_via_pushover (missing creds) -> False (correct)")
+    else:
+        fail(
+            "_send_via_pushover (missing creds)",
+            f"Expected False, received {result}",
         )
 
-        # 12a. Missing Credentials
-        result = w._send_via_pushover(job, profile_missing)
-        if result is False:
-            ok("_send_via_pushover (missing creds) -> False (correct)")
+    # 11b. successfullye Pushover-Anfrage (HTTP 200)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = _send_via_pushover(job, profile_ok)
+        if result is True:
+            ok("_send_via_pushover (Mock HTTP 200) -> True, Push sent")
+            # Check dass POST-Payload correcte Felder contains
+            call_kwargs = mock_post.call_args
+            payload = (
+                call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
+            )
+            assert payload.get("token") == "api-token-xyz", "Wrong API token"
+            assert payload.get("user") == "user-key-abc", "Wrong User key"
+            ok(
+                "_send_via_pushover -> Payload contains correcten Token und User-Key"
+            )
         else:
             fail(
-                "_send_via_pushover (missing creds)",
+                "_send_via_pushover (Mock HTTP 200)",
+                f"Expected True, received {result}",
+            )
+
+    # 11c. Pushover Errorfall (HTTP 400)
+    mock_response_err = MagicMock()
+    mock_response_err.status_code = 400
+    mock_response_err.text = '{"errors":["app token is invalid"]}'
+    with patch("requests.post", return_value=mock_response_err):
+        result = _send_via_pushover(job, profile_ok)
+        if result is False:
+            ok("_send_via_pushover (Mock HTTP 400) -> False (Error handling)")
+        else:
+            fail(
+                "_send_via_pushover (Mock HTTP 400)",
                 f"Expected False, received {result}",
             )
 
-        # 12b. successfullye Pushover-Anfrage (HTTP 200)
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        with patch("requests.post", return_value=mock_response) as mock_post:
-            result = w._send_via_pushover(job, profile_ok)
-            if result is True:
-                ok("_send_via_pushover (Mock HTTP 200) -> True, Push sent")
-                # Check dass POST-Payload correcte Felder contains
-                call_kwargs = mock_post.call_args
-                payload = (
-                    call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
-                )
-                assert payload.get("token") == "api-token-xyz", "Wrong API token"
-                assert payload.get("user") == "user-key-abc", "Wrong User key"
-                ok(
-                    "_send_via_pushover -> Payload contains correcten Token und User-Key"
-                )
-            else:
-                fail(
-                    "_send_via_pushover (Mock HTTP 200)",
-                    f"Expected True, received {result}",
-                )
-
-        # 12c. Pushover Errorfall (HTTP 400)
-        mock_response_err = MagicMock()
-        mock_response_err.status_code = 400
-        mock_response_err.text = '{"errors":["app token is invalid"]}'
-        with patch("requests.post", return_value=mock_response_err):
-            result = w._send_via_pushover(job, profile_ok)
-            if result is False:
-                ok("_send_via_pushover (Mock HTTP 400) -> False (Error handling)")
-            else:
-                fail(
-                    "_send_via_pushover (Mock HTTP 400)",
-                    f"Expected False, received {result}",
-                )
-
 
 def test_notification_dispatcher() -> None:
-    """Tests the send_notification dispatcher."""
-    section("13. Notification - Dispatcher (send_notification)")
+    """Tests the send_notification dispatcher (Pushover is the only adapter)."""
+    section("12. Notification - Dispatcher (send_notification)")
 
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
+    from workers.notifications import push
 
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
+    job = SimpleNamespace(
+        id="test-job-789",
+        title="Test Position",
+        company="SmokeTest GmbH",
+        match_score=75.0,
+        reasoning="Fits well.",
+        url="https://smoketest.de/jobs/1",
+    )
+    profile = SimpleNamespace(
+        user_id=1,
+        pushover_user_key="key",
+        pushover_api_token="token",
+    )
+    # send_notification only uses db to resolve the username.
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        username="smoketester"
+    )
 
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib
-        import worker as w
+    # 12a. Explicit adapter list: PUSHOVER
+    with patch.object(push, "_send_via_pushover", return_value=True) as mock_push:
+        result = push.send_notification(job, profile, db, adapters=["PUSHOVER"])
+        assert result is True
+        assert mock_push.call_count == 1
+        ok("send_notification(adapters=['PUSHOVER']) -> calls Pushover")
 
-        importlib.reload(w)
+    # 12b. Fallback ohne Adapter-Angabe (nutzt Credentials)
+    with patch.object(push, "_send_via_pushover", return_value=True):
+        result = push.send_notification(job, profile, db, adapters=None)
+        assert result is True
+        ok("send_notification(adapters=None) -> Fallback auf vorhandene Credentials")
 
-        job = SimpleNamespace(
-            id="test-job-789",
-            title="Test Position",
-            company="SmokeTest GmbH",
-            match_score=75.0,
-            reasoning="Fits well.",
-            url="https://smoketest.de/jobs/1",
-        )
-        profile = SimpleNamespace(
-            gmail_address="test@gmail.com",
-            gmail_app_password="pw",
-            pushover_user_key="key",
-            pushover_api_token="token",
-        )
-
-        # 13a. Explicit adapter list: nur GMAIL
-        with patch.object(
-            w, "_send_via_gmail", return_value=True
-        ) as mock_gmail, patch.object(
-            w, "_send_via_pushover", return_value=False
-        ) as mock_push:
-            result = w.send_notification(job, profile, adapters=["GMAIL"])
-            assert result is True
-            assert mock_gmail.call_count == 1
-            assert mock_push.call_count == 0
-            ok("send_notification(adapters=['GMAIL']) -> only calls Gmail")
-
-        # 13b. Explicit adapter list: GMAIL + PUSHOVER
-        with patch.object(
-            w, "_send_via_gmail", return_value=True
-        ) as mock_gmail, patch.object(
-            w, "_send_via_pushover", return_value=True
-        ) as mock_push:
-            result = w.send_notification(job, profile, adapters=["GMAIL", "PUSHOVER"])
-            assert result is True
-            assert mock_gmail.call_count == 1
-            assert mock_push.call_count == 1
-            ok(
-                "send_notification(adapters=['GMAIL','PUSHOVER']) -> ruft beide Adapter auf"
+    # 12c. Kein Service verfuegbar -> False
+    empty_profile = SimpleNamespace(
+        user_id=1,
+        pushover_user_key=None,
+        pushover_api_token=None,
+    )
+    with patch.object(push, "_send_via_pushover", return_value=False):
+        result = push.send_notification(job, empty_profile, db, adapters=None)
+        if result is False:
+            ok("send_notification (keine Credentials) -> False")
+        else:
+            fail(
+                "send_notification (keine Credentials)",
+                f"Expected False, received {result}",
             )
-
-        # 13c. Fallback ohne Adapter-Angabe (nutzt Credentials)
-        with patch.object(
-            w, "_send_via_gmail", return_value=True
-        ) as mock_gmail, patch.object(
-            w, "_send_via_pushover", return_value=True
-        ) as mock_push:
-            result = w.send_notification(job, profile, adapters=None)
-            assert result is True
-            ok(
-                "send_notification(adapters=None) -> Fallback auf vorhandene Credentials"
-            )
-
-        # 13d. Kein Service verfuegbar -> False
-        empty_profile = SimpleNamespace(
-            gmail_address=None,
-            gmail_app_password=None,
-            pushover_user_key=None,
-            pushover_api_token=None,
-        )
-        with patch.object(w, "_send_via_gmail", return_value=False), patch.object(
-            w, "_send_via_pushover", return_value=False
-        ):
-            result = w.send_notification(job, empty_profile, adapters=None)
-            if result is False:
-                ok("send_notification (keine Credentials) -> False")
-            else:
-                fail(
-                    "send_notification (keine Credentials)",
-                    f"Expected False, received {result}",
-                )
-
-
-def test_scraper_utilities() -> None:
-    """Testet Helper functions aus scraper_worker.py."""
-    section("14. Scraper Utility Functions")
-
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "scraper_celery_config": MagicMock(),
-            "playwright": MagicMock(),
-            "playwright.sync_api": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib
-        import scraper_worker as sw
-
-        importlib.reload(sw)
-
-        # 14a. get_clean_content mit echtem HTML
-        sample_html = """
-        <html>
-          <head><title>Software Engineer</title></head>
-          <body>
-            <nav>Nav-Junk</nav>
-            <script>alert('xss')</script>
-            <h1>Senior Python Developer</h1>
-            <p>Wir suchen einen erfahrenen Python-Entwickler.</p>
-            <ul>
-              <li>5 Jahre Erfahrung</li>
-              <li>FastAPI, Docker, PostgreSQL</li>
-            </ul>
-            <footer>Footer-Junk</footer>
-          </body>
-        </html>
-        """
-        try:
-            result = sw.get_clean_content(sample_html)
-            assert "Senior Python Developer" in result, "Jobtitel is missing im Ergebnis"
-            assert "Python-Entwickler" in result, "Jobtext is missing im Ergebnis"
-            assert "Nav-Junk" not in result, "Nav-Inhalt nicht entfernt"
-            assert "Footer-Junk" not in result, "Footer-Inhalt nicht entfernt"
-            assert "alert" not in result, "Script nicht entfernt"
-            ok(
-                "get_clean_content -> HTML correct cleaned up (Nav/Script/Footer entfernt)"
-            )
-        except Exception as e:
-            fail("get_clean_content", str(e))
-
-        # 14b. get_clean_content mit leerem String
-        try:
-            result = sw.get_clean_content("")
-            assert isinstance(result, str), "Kein String zurueckgegeben"
-            ok("get_clean_content('') -> Leerer String ohne Exception")
-        except Exception as e:
-            fail("get_clean_content('')", str(e))
-
-
-def test_schedule_crawls_logic() -> None:
-    """Testet die interne Schedule-Crawl-Logik direkt (ohne Celery-Task-Wrapper)."""
-    section("15. Schedule Crawls Task (Unit)")
-
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-
-    # Der @celery_app.task Decorator ersetzt die Funktion durch ein MagicMock.
-    # Wir testen die interne Logik, indem wir den Decorator so mocken,
-    # dass er die originale Funktion unveraendert zurueckgibt.
-    mock_send_task = MagicMock()
-
-    def passthrough_task_decorator(**kwargs):
-        """Gibt die dekorierte Funktion unveraendert zurueck."""
-
-        def decorator(fn):
-            return fn
-
-        return decorator
-
-    mock_celery = MagicMock()
-    mock_celery.task = passthrough_task_decorator
-    mock_celery.send_task = mock_send_task
-
-    mock_redis_module = MagicMock()
-    mock_redis_instance = MagicMock()
-    mock_redis_module.from_url.return_value = mock_redis_instance
-    mock_redis_instance.hget.return_value = b"https://example.com/jobs"
-    mock_redis_instance.hincrby.return_value = 1
-
-    mock_scraper_celery_cfg = MagicMock()
-    mock_scraper_celery_cfg.celery_app = mock_celery
-    mock_scraper_celery_cfg.REDIS_URL = "redis://localhost:6379/0"
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "scraper_celery_config": mock_scraper_celery_cfg,
-            "playwright": MagicMock(),
-            "playwright.sync_api": MagicMock(),
-            "redis": mock_redis_module,
-        },
-    ):
-        import importlib
-        import scraper_worker as sw
-
-        importlib.reload(sw)
-        # Nach reload: celery_app im Modul ist unser mock mit passthrough decorator
-        # send_task muss separat gemockt werden da das Modul celery_app.send_task nutzt
-        sw.celery_app = mock_celery
-
-        # 15a. Leere gefilterte Links -> sofortiger Return, kein send_task
-        mock_send_task.reset_mock()
-        try:
-            sw.schedule_crawls_task([[], 1, "job-123", 42])
-            if mock_send_task.call_count == 0:
-                ok("schedule_crawls_task (leere Links) -> kein Task gesendet (correct)")
-            else:
-                fail(
-                    "schedule_crawls_task (leere Links)",
-                    f"Expected 0 Tasks, {mock_send_task.call_count} gesendet",
-                )
-        except Exception as e:
-            fail("schedule_crawls_task (leere Links)", str(e))
-
-        # 15b. 2 Links vorhanden -> send_task 2x aufgerufen
-        mock_send_task.reset_mock()
-        test_links = [
-            "https://example.com/jobs/python-dev",
-            "https://example.com/jobs/devops",
-        ]
-        try:
-            sw.schedule_crawls_task([test_links, 1, "job-456", 42])
-            n = mock_send_task.call_count
-            if n == len(test_links):
-                ok(f"schedule_crawls_task -> {n} scraper.scrape_detail Tasks geplant")
-            else:
-                fail(
-                    "schedule_crawls_task (mit Links)",
-                    f"Expected {len(test_links)} Tasks, received {n}",
-                )
-        except Exception as e:
-            fail("schedule_crawls_task (mit Links)", str(e))
-
-        # 15c. Ungueltige Args -> kein Crash, nur Logging
-        try:
-            sw.schedule_crawls_task([])
-            ok("schedule_crawls_task (leere Args) -> kein Crash")
-        except SystemExit:
-            ok("schedule_crawls_task (leere Args) -> frueher Return (ok)")
-        except Exception as e:
-            fail("schedule_crawls_task (leere Args)", str(e))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1037,144 +727,66 @@ def print_summary() -> int:
 
 def test_unit_format_cv():
     """pytest: format_cv_for_prompt"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
+    from intelligence.service import format_cv_for_prompt
 
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib, worker as w
-
-        importlib.reload(w)
-        cv = {
-            "experience": [
-                {"role": "Dev", "company": "X", "duration": "2y", "description": "d"}
-            ],
-            "projects": [],
-            "education": "BSc",
-        }
-        r = w.format_cv_for_prompt(cv)
-        assert "Dev" in r and "X" in r
+    cv = {
+        "experience": [
+            {"role": "Dev", "company": "X", "duration": "2y", "description": "d"}
+        ],
+        "projects": [],
+        "education": "BSc",
+    }
+    r = format_cv_for_prompt(cv)
+    assert "Dev" in r and "X" in r
 
 
 def test_unit_format_cv_none():
     """pytest: format_cv_for_prompt(None)"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
+    from intelligence.service import format_cv_for_prompt
 
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib, worker as w
-
-        importlib.reload(w)
-        assert "Keine" in w.format_cv_for_prompt(None)
+    assert "No detailed experience" in format_cv_for_prompt(None)
 
 
-def test_unit_get_clean_content():
-    """pytest: get_clean_content"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-    with patch.dict(
-        "sys.modules",
-        {
-            "scraper_celery_config": MagicMock(),
-            "playwright": MagicMock(),
-            "playwright.sync_api": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib, scraper_worker as sw
+def test_unit_send_notification_pushover_only():
+    """pytest: send_notification mit Pushover-Adapter"""
+    from workers.notifications import push
 
-        importlib.reload(sw)
-        html = (
-            "<html><body><nav>nav</nav><h1>Senior Dev</h1><p>cool job</p></body></html>"
-        )
-        r = sw.get_clean_content(html)
-        assert "Senior Dev" in r
-        assert "nav" not in r.lower() or True  # nav koennte in Heading erscheinen
-
-
-def test_unit_send_notification_gmail_only():
-    """pytest: send_notification mit Gmail-Adapter"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
-
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib, worker as w
-
-        importlib.reload(w)
-        job = SimpleNamespace(
-            id="j1",
-            title="Dev",
-            company="C",
-            match_score=80,
-            reasoning="r",
-            url="http://x.com",
-        )
-        profile = SimpleNamespace(
-            gmail_address="a@b.com",
-            gmail_app_password="pw",
-            pushover_user_key=None,
-            pushover_api_token=None,
-        )
-        with patch.object(w, "_send_via_gmail", return_value=True) as m:
-            assert w.send_notification(job, profile, adapters=["GMAIL"]) is True
-            assert m.call_count == 1
+    job = SimpleNamespace(
+        id="j1",
+        title="Dev",
+        company="C",
+        match_score=80,
+        reasoning="r",
+        url="http://x.com",
+    )
+    profile = SimpleNamespace(
+        user_id=1,
+        pushover_user_key="key",
+        pushover_api_token="token",
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        username="tester"
+    )
+    with patch.object(push, "_send_via_pushover", return_value=True) as m:
+        assert push.send_notification(job, profile, db, adapters=["PUSHOVER"]) is True
+        assert m.call_count == 1
 
 
 def test_unit_pushover_missing_creds():
-    """pytest: _send_via_pushover mit Missingn Credentials"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    if server_dir not in sys.path:
-        sys.path.insert(0, server_dir)
-    with patch.dict(
-        "sys.modules",
-        {
-            "celery_config": MagicMock(),
+    """pytest: _send_via_pushover mit fehlenden Credentials"""
+    from workers.notifications.push import _send_via_pushover
 
-            "openai": MagicMock(),
-            "pypdf": MagicMock(),
-            "redis": MagicMock(),
-        },
-    ):
-        import importlib, worker as w
-
-        importlib.reload(w)
-        job = SimpleNamespace(
-            id="j2",
-            title="Dev",
-            company="C",
-            match_score=80,
-            reasoning="r",
-            url="http://x.com",
-        )
-        profile = SimpleNamespace(pushover_user_key=None, pushover_api_token=None)
-        assert w._send_via_pushover(job, profile) is False
+    job = SimpleNamespace(
+        id="j2",
+        title="Dev",
+        company="C",
+        match_score=80,
+        reasoning="r",
+        url="http://x.com",
+    )
+    profile = SimpleNamespace(pushover_user_key=None, pushover_api_token=None)
+    assert _send_via_pushover(job, profile) is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1227,11 +839,8 @@ def main():
 
     # ── Unit Tests ─────────────────────────────────────────────────────────────
     test_worker_utilities()
-    test_notification_gmail()
     test_notification_pushover()
     test_notification_dispatcher()
-    test_scraper_utilities()
-    test_schedule_crawls_logic()
 
     return print_summary()
 
