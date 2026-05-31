@@ -50,6 +50,10 @@ class GenerateRequest(BaseModel):
     improvement_notes: Optional[str] = None
 
 
+class GeneratePackageRequest(BaseModel):
+    include_profile_documents: bool = True
+
+
 @router.get("/jobs/counts")
 def get_job_counts(current_user: User = Depends(get_current_user), is_archived: bool = False):
     db = SessionLocal()
@@ -250,6 +254,45 @@ def trigger_generation(request: Request, job_id: str, body: Optional[GenerateReq
         return {"status": "started"}
     finally:
         db.close()
+
+
+@router.post("/jobs/{job_id}/generate-package")
+@limiter.limit("5/minute")
+def trigger_package_generation(
+    request: Request,
+    job_id: str,
+    body: Optional[GeneratePackageRequest] = None,
+    current_user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(JobEntry)
+            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
+            .first()
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job.status = "GENERATING"
+        db.commit()
+        include_docs = body.include_profile_documents if body else True
+        celery_app.send_task(
+            "ai.generate_application_package",
+            args=[job_id, current_user.id, include_docs],
+            queue="ai_queue",
+        )
+        return {"status": "started"}
+    finally:
+        db.close()
+
+
+@router.post("/jobs/{job_id}/submit-application")
+def submit_application(job_id: str, current_user: User = Depends(get_current_user)):
+    # Out of scope: automated online submission. Hook only.
+    raise HTTPException(
+        status_code=501,
+        detail="Online submission is not implemented (out of scope).",
+    )
 
 
 @router.get("/jobs/{job_id}/download")
