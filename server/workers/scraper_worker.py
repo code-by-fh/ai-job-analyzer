@@ -43,6 +43,7 @@ def _is_safe_url(url: str) -> bool:
         if hostname.lower() in ("localhost",):
             return False
         import socket
+
         try:
             ip_str = socket.gethostbyname(hostname)
         except Exception:
@@ -50,7 +51,12 @@ def _is_safe_url(url: str) -> bool:
         parts = ip_str.split(".")
         if len(parts) != 4:
             return False
-        ip_int = (int(parts[0]) << 24) | (int(parts[1]) << 16) | (int(parts[2]) << 8) | int(parts[3])
+        ip_int = (
+            (int(parts[0]) << 24)
+            | (int(parts[1]) << 16)
+            | (int(parts[2]) << 8)
+            | int(parts[3])
+        )
         for lo, hi in _PRIVATE_RANGES:
             if lo <= ip_int <= hi:
                 return False
@@ -60,7 +66,7 @@ def _is_safe_url(url: str) -> bool:
 
 
 _HTTP_TIMEOUT_CONNECT = 10
-_HTTP_TIMEOUT_READ    = 20
+_HTTP_TIMEOUT_READ = 20
 
 _HTTP_HEADERS = {
     "User-Agent": (
@@ -82,6 +88,7 @@ def get_html_without_browser(url: str) -> str | None:
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
     import requests as _requests
+
     try:
         logger.info(f"[HTTP] Attempting plain HTTP fetch for: {url}")
         resp = _requests.get(
@@ -91,15 +98,17 @@ def get_html_without_browser(url: str) -> str | None:
             allow_redirects=True,
         )
         resp.raise_for_status()
-        logger.info(f"[HTTP] Fetched {len(resp.text)} chars (status {resp.status_code})")
+        logger.info(
+            f"[HTTP] Fetched {len(resp.text)} chars (status {resp.status_code})"
+        )
         return resp.text
     except Exception as e:
         logger.info(f"[HTTP] Plain HTTP fetch failed for {url}: {e}")
         return None
 
 
-_MIN_HTML_LENGTH  = 500
-_MIN_TEXT_LENGTH  = 200
+_MIN_HTML_LENGTH = 500
+_MIN_TEXT_LENGTH = 200
 _MIN_ANCHOR_COUNT = 3
 
 
@@ -128,7 +137,9 @@ def get_html(url: str) -> str | None:
         logger.info(f"[HTTP] Using plain HTTP result for {url}")
         return html
     if html:
-        logger.info(f"[HTTP] Insufficient content ({len(html)} chars) — falling back to browser")
+        logger.info(
+            f"[HTTP] Insufficient content ({len(html)} chars) — falling back to browser"
+        )
     else:
         logger.info(f"[HTTP] Plain HTTP failed — falling back to browser")
     return get_html_with_browser(url)
@@ -386,7 +397,9 @@ def schedule_crawls_task(args):
 
         # First-run: just store the found URLs as deduplication placeholders.
         # No detail scraping or AI analysis — subsequent runs will only process NEW URLs.
-        is_initial_flag = r.hget(f"crawl_job:{job_id}", "is_initial_run") if job_id else None
+        is_initial_flag = (
+            r.hget(f"crawl_job:{job_id}", "is_initial_run") if job_id else None
+        )
         is_initial_run = is_initial_flag is not None and int(is_initial_flag) == 1
 
         if is_initial_run:
@@ -396,21 +409,25 @@ def schedule_crawls_task(args):
                 for link in filtered_links:
                     entry_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{link}"))
                     if not db.query(JobEntry).filter(JobEntry.id == entry_id).first():
-                        db.add(JobEntry(
-                            id=entry_id,
-                            url=link,
-                            title="",
-                            company="",
-                            description="",
-                            match_score=0.0,
-                            reasoning="",
-                            status="SEEN",
-                            user_id=user_id,
-                            platform_id=platform_id,
-                        ))
+                        db.add(
+                            JobEntry(
+                                id=entry_id,
+                                url=link,
+                                title="",
+                                company="",
+                                description="",
+                                match_score=0.0,
+                                reasoning="",
+                                status="SEEN",
+                                user_id=user_id,
+                                platform_id=platform_id,
+                            )
+                        )
                         stored += 1
                 db.commit()
-                logger.info(f"Initial run: stored {stored} URL placeholders for job {job_id}.")
+                logger.info(
+                    f"Initial run: stored {stored} URL placeholders for job {job_id}."
+                )
             except Exception as db_e:
                 logger.error(f"Error storing initial URLs for job {job_id}: {db_e}")
                 db.rollback()
@@ -419,21 +436,29 @@ def schedule_crawls_task(args):
 
             if job_id:
                 n = len(filtered_links)
-                r.hset(f"crawl_job:{job_id}", mapping={
-                    "total": n,
-                    "scraping_completed": n,
-                    "jobs_saved": stored,
-                    "status": "completed",
-                })
+                r.hset(
+                    f"crawl_job:{job_id}",
+                    mapping={
+                        "total": n,
+                        "scraping_completed": n,
+                        "jobs_saved": stored,
+                        "status": "completed",
+                    },
+                )
                 r.srem(f"user:{user_id}:active_crawls", job_id)
                 r.delete("system:crawling")
-                r.publish("job_updates", json.dumps({
-                    "type": "crawl_job_completed",
-                    "job_id": job_id,
-                    "user_id": user_id,
-                    "total": n,
-                    "total_found": total_found,
-                }))
+                r.publish(
+                    "job_updates",
+                    json.dumps(
+                        {
+                            "type": "crawl_job_completed",
+                            "job_id": job_id,
+                            "user_id": user_id,
+                            "total": n,
+                            "total_found": total_found,
+                        }
+                    ),
+                )
                 r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
 
@@ -475,13 +500,18 @@ def _mark_scrape_failed(r, job_id, user_id):
         r.hset(f"crawl_job:{job_id}", "status", "completed")
         r.srem(f"user:{stored_user_id}:active_crawls", job_id)
         r.delete("system:crawling")
-        r.publish("job_updates", json.dumps({
-            "type": "crawl_job_completed",
-            "job_id": job_id,
-            "user_id": stored_user_id,
-            "total": total,
-            "total_found": total_found,
-        }))
+        r.publish(
+            "job_updates",
+            json.dumps(
+                {
+                    "type": "crawl_job_completed",
+                    "job_id": job_id,
+                    "user_id": stored_user_id,
+                    "total": total,
+                    "total_found": total_found,
+                }
+            ),
+        )
         r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
 
 
@@ -503,16 +533,25 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
             logger.warning(f"Skipping {url} due to download failure.")
             if job_id:
                 r.hset(f"crawl_job:{job_id}", "status", "failed")
-                r.hset(f"crawl_job:{job_id}", "error_message", "URL konnte nicht erreicht werden")
+                r.hset(
+                    f"crawl_job:{job_id}",
+                    "error_message",
+                    "URL konnte nicht erreicht werden",
+                )
                 r.srem(f"user:{user_id}:active_crawls", job_id)
                 r.delete("system:crawling")
-                r.publish("job_updates", json.dumps({
-                    "type": "crawl_job_failed",
-                    "job_id": job_id,
-                    "user_id": user_id,
-                    "reason": "error",
-                    "error_message": "URL konnte nicht erreicht werden",
-                }))
+                r.publish(
+                    "job_updates",
+                    json.dumps(
+                        {
+                            "type": "crawl_job_failed",
+                            "job_id": job_id,
+                            "user_id": user_id,
+                            "reason": "error",
+                            "error_message": "URL konnte nicht erreicht werden",
+                        }
+                    ),
+                )
             return
 
         content = get_clean_content(html)
@@ -529,19 +568,28 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
         api_key = get_api_key(db)
 
         if job_id:
-            extracting_count = int(r.hincrby(f"crawl_job:{job_id}", "extracting_count", 1))
+            extracting_count = int(
+                r.hincrby(f"crawl_job:{job_id}", "extracting_count", 1)
+            )
             total_bytes = r.hget(f"crawl_job:{job_id}", "total")
             extr_total = int(total_bytes.decode("utf-8")) if total_bytes else 0
             platform_bytes = r.hget(f"crawl_job:{job_id}", "platform_url")
-            extr_platform = platform_bytes.decode("utf-8") if platform_bytes else "Unknown"
-            r.publish("job_updates", json.dumps({
-                "type": "crawl_job_extracting",
-                "job_id": job_id,
-                "user_id": user_id,
-                "platform": extr_platform,
-                "extracting_count": extracting_count,
-                "total": extr_total,
-            }))
+            extr_platform = (
+                platform_bytes.decode("utf-8") if platform_bytes else "Unknown"
+            )
+            r.publish(
+                "job_updates",
+                json.dumps(
+                    {
+                        "type": "crawl_job_extracting",
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "platform": extr_platform,
+                        "extracting_count": extracting_count,
+                        "total": extr_total,
+                    }
+                ),
+            )
 
         logger.info(f"Extracting job details intelligently for {url}...")
         intelligent_content = extract_job_details(
