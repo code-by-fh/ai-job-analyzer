@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 import redis
 
 from core.scraper_celery_config import celery_app, REDIS_URL
@@ -149,11 +150,12 @@ def get_html_with_browser(url):
     if not _is_safe_url(url):
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
+    os.environ["DISPLAY"] = ":99"
     logger.info(f"Launching browser for URL: {url}")
     start_time = time.time()
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -165,6 +167,7 @@ def get_html_with_browser(url):
             viewport={"width": 1920, "height": 1080},
         )
         page = context.new_page()
+        stealth_sync(page)
         try:
             logger.info(f"Navigating to {url}...")
             page.goto(url, timeout=60000, wait_until="domcontentloaded")
