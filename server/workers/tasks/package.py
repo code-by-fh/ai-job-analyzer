@@ -16,9 +16,11 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
 )
-from services.document_renderer import render_cv_pdf, render_cover_letter_pdf
+from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf_playwright
 from services.job_documents import store_generated_document
 from services.storage import get_storage_service
+from services.template_filler import fill_template
+from database.core import DocumentTemplate
 
 logger = get_logger(__name__)
 
@@ -29,6 +31,23 @@ def _publish(r, job, status, **extra):
     payload = {"type": "job_update", "job_id": job.id, "status": status, "user_id": job.user_id}
     payload.update(extra)
     r.publish("job_updates", json.dumps(payload))
+
+
+def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str | None:
+    """Return the HTML for a template reference, or None to use the legacy path.
+
+    A numeric string → look up DocumentTemplate by id.
+    Non-numeric or None → legacy file-based path (return None).
+    """
+    if not template_ref:
+        return None
+    if not template_ref.isdigit():
+        return None  # "classic" or other file-key → legacy
+    t = db.query(DocumentTemplate).filter(
+        DocumentTemplate.id == int(template_ref),
+        DocumentTemplate.doc_type == doc_type,
+    ).first()
+    return t.html if t else None
 
 
 @celery_app.task(name="ai.generate_application_package")
@@ -75,7 +94,12 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             db=db,
         )
         job.cv_draft = _cv_dict_to_markdown(tailored)
-        cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
+        cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
+        if cv_template_html:
+            job.cv_html = fill_template(cv_template_html, tailored)
+            cv_pdf = html_to_pdf_playwright(job.cv_html)
+        else:
+            cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
         store_generated_document(
             db, job.id, target_user_id, cv_pdf,
             original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
@@ -94,12 +118,22 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             api_key=get_api_key(db),
         )
         job.application_draft = letter_text
-        letter_pdf = render_cover_letter_pdf(
-            letter_markdown=letter_text,
-            template_key=profile.cover_letter_template or "classic",
-            sender_name=candidate_name,
-            company=job.company or "",
-        )
+        letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
+        if letter_template_html:
+            letter_data = {
+                "sender_name": candidate_name,
+                "company": job.company or "",
+                "body": letter_text,
+            }
+            job.cover_letter_html = fill_template(letter_template_html, letter_data)
+            letter_pdf = html_to_pdf_playwright(job.cover_letter_html)
+        else:
+            letter_pdf = render_cover_letter_pdf(
+                letter_markdown=letter_text,
+                template_key=profile.cover_letter_template or "classic",
+                sender_name=candidate_name,
+                company=job.company or "",
+            )
         store_generated_document(
             db, job.id, target_user_id, letter_pdf,
             original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
@@ -180,3 +214,50 @@ def _cv_dict_to_markdown(cv: dict) -> str:
 def _safe(value):
     cleaned = "".join(c for c in (value or "Job") if c.isalnum() or c in " -_")
     return cleaned.replace(" ", "_") or "Job"
+
+
+@celery_app.task(name="ai.render_document_pdf")
+def render_document_pdf_task(job_id: str, kind: str, user_id: int):
+    """Re-render edited HTML for a job to PDF and replace the JobDocument."""
+    logger.info(f"[TASK] render_document_pdf job={job_id} kind={kind} user={user_id}")
+    db = SessionLocal()
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    try:
+        job = db.query(JobEntry).filter(
+            JobEntry.id == job_id,
+            JobEntry.user_id == user_id,
+        ).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for user {user_id}")
+            return
+
+        html = job.cv_html if kind == "cv" else job.cover_letter_html
+        if not html:
+            logger.error(f"No HTML stored for job {job_id} kind={kind}")
+            return
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        storage = (
+            get_storage_service(profile)
+            if profile and profile.active_storage_service != "NONE"
+            else None
+        )
+
+        pdf = html_to_pdf_playwright(html)
+        doc_kind = "GENERATED_CV" if kind == "cv" else "GENERATED_LETTER"
+        prefix = "Lebenslauf" if kind == "cv" else "Anschreiben"
+        store_generated_document(
+            db, job_id, user_id, pdf,
+            original_filename=f"{prefix}_{_safe(job.company)}.pdf",
+            mime_type="application/pdf",
+            kind=doc_kind,
+            storage=storage,
+        )
+        db.commit()
+        _publish(r, job, "DRAFTED", rendered_kind=kind)
+        logger.info(f"render_document_pdf complete job={job_id} kind={kind}")
+    except Exception as e:
+        logger.error(f"render_document_pdf failed job={job_id}: {e}", exc_info=True)
+        _publish(r, job, "FAILED", error=str(e))
+    finally:
+        db.close()

@@ -46,6 +46,8 @@ class JobEntry(Base):
     reasoning = Column(Text)
     application_draft = Column(Text, nullable=True)
     cv_draft = Column(Text, nullable=True)
+    cv_html = Column(Text, nullable=True)
+    cover_letter_html = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     url = Column(String, nullable=True)
     status = Column(String, default="OPEN")
@@ -168,6 +170,22 @@ class NotificationTemplate(Base):
     is_admin = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = admin template
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+
+
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = admin/global
+    is_admin = Column(Boolean, default=False)
+    doc_type = Column(String, nullable=False)  # "CV" | "COVER_LETTER"
+    name = Column(String, nullable=False)
+    html = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     user = relationship("User")
 
@@ -371,6 +389,30 @@ class NotificationTemplateResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class DocumentTemplateCreate(BaseModel):
+    doc_type: str  # "CV" | "COVER_LETTER"
+    name: str
+    html: str
+    is_admin: bool = False  # only honored when current_user.is_admin
+
+
+class DocumentTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    html: Optional[str] = None
+
+
+class DocumentTemplateResponse(BaseModel):
+    id: int
+    doc_type: str
+    name: str
+    is_admin: bool
+    user_id: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    model_config = {"from_attributes": True}
 
 
 class CompanyProfileResponse(BaseModel):

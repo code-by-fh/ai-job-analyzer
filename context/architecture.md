@@ -16,19 +16,24 @@
 ### 2. Boundary Map
 
 * `server/main.py` & `routers/` — REST-Endpunkte (Auth-geschützt, `user_id`-isoliert).
-* `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs.
+* `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs. Läuft als eigener uvicorn-Prozess (`127.0.0.1:8081`, supervisord). Interne Aufrufer nutzen `SCRAPER_SERVICE_URL`; das Frontend erreicht ihn über den Reverse-Proxy `GET/POST /scraper/{path}` in `main.py`.
 * `server/intelligence/` — Einziger LLM-Integrationspunkt (OpenRouter).
 * `server/workers/` — Asynchrone Tasks. `worker.py` ist nur noch dünner Celery-Entrypoint/Aggregator (`-A workers.worker.celery_app`), der `workers/tasks/*` (analyze, application, research, scheduling, urls; gemeinsame Crawl-Completion in `crawl_status.py`) und `workers/notifications/*` (email, push, templates) re-exportiert. `scraper_worker.py` für Crawls.
-* `server/services/document_renderer.py` — Jinja2 + xhtml2pdf HTML→PDF rendering (CV, Anschreiben).
+* `server/routers/templates.py` — DocumentTemplate CRUD (global is_admin + user-scoped).
+* `server/services/template_filler.py` — Pure fill + validate: HTML template + data dict → filled HTML (data-slot / data-repeat).
+* `server/services/document_renderer.py` — Extended: `html_to_pdf_playwright` via Playwright (SSRF-blocked); legacy Jinja2+xhtml2pdf path retained as fallback.
 * `server/services/job_documents.py` — Dual-Storage-Helper für generierte JobDocuments (same-kind replacement).
-* `server/workers/tasks/package.py` — Sequentielle Paket-Orchestrierung (CV → Anschreiben → Profil-Docs).
+* `server/workers/tasks/package.py` — Sequentielle Paket-Orchestrierung (CV → Anschreiben → Profil-Docs). Nutzt Slot-Filler + Playwright wenn numerische template-ref; Legacy-Pfad bei String-Keys.
 * `server/routers/profile_documents.py` — Profil-weiter Dokumentenspeicher (CRUD Zeugnisse/Zertifikate).
+* `frontend/app/components/editor/` — Two-column browser editor (DocumentEditor + BlockInspector (dnd-kit) + StylePanel).
 * `server/core/` — Cross-cutting Infra (JWT-Auth, WebSocket-Manager, Logger).
 * `server/database/` — SQLAlchemy-Modelle + Alembic-Migrationen.
 
 ### 3. Data & Storage Layer
 
-* **PostgreSQL (Source of Truth):** User, Jobs, Settings, Platforms, Company Profiles, ProfileDocuments.
+* **PostgreSQL (Source of Truth):** User, Jobs, Settings, Platforms, Company Profiles, ProfileDocuments, DocumentTemplates.
+* **document_templates table:** Global (is_admin=true) + user-scoped HTML templates. Seeded with "Classic" CV and COVER_LETTER templates on migration.
+* **jobs.cv_html / jobs.cover_letter_html:** Per-job editable HTML — single source of truth for the browser editor and Playwright PDF export.
 * **ProfileDocument (neue Tabelle):** Profil-weiter Speicher für Zeugnisse/Zertifikate, Dual-Storage (DB-Blob oder Drive).
 * **Documents (Dual):** DB Blob (`LargeBinary`) **oder** Google Drive (OAuth2), gesteuert via `active_storage_service`.
 * **Redis (Ephemeral):** Crawl-Hashes (1h TTL), Active-Sets, WebSocket Pub/Sub (`job_updates`).

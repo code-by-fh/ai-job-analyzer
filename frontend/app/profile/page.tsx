@@ -27,6 +27,7 @@ import {
   FilePlus,
   LayoutTemplate,
 } from "lucide-react";
+import type { DocumentTemplate } from "../lib/types";
 
 interface ProfileDoc {
   id: number;
@@ -88,12 +89,14 @@ export default function Profile() {
   const [cvTemplate, setCvTemplate] = useState("classic");
   const [coverLetterTemplate, setCoverLetterTemplate] = useState("classic");
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docTemplates, setDocTemplates] = useState<DocumentTemplate[]>([]);
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
 
   useEffect(() => {
     if (token) {
       fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`)
         .then((res) => res.json())
-        .then((data) => {
+        .then(async (data) => {
           const profileData = data.profile || {};
           setFormData({
             role: profileData.role || "",
@@ -109,6 +112,15 @@ export default function Profile() {
           });
           if (profileData.cv_template) setCvTemplate(profileData.cv_template);
           if (profileData.cover_letter_template) setCoverLetterTemplate(profileData.cover_letter_template);
+
+          const tmplRes = await fetchWithAuth(
+            `${process.env.NEXT_PUBLIC_API_URL}/document-templates`
+          );
+          if (tmplRes.ok) {
+            const tmplData: DocumentTemplate[] = await tmplRes.json();
+            setDocTemplates(tmplData);
+          }
+
           setLoading(false);
         })
         .catch((e) => {
@@ -184,6 +196,37 @@ export default function Profile() {
     } catch (e: any) {
       logger.error({ err: e }, "Profile doc delete failed");
       showError("Löschen fehlgeschlagen");
+    }
+  };
+
+  const handleUploadTemplate = async (
+    file: File,
+    docType: "CV" | "COVER_LETTER"
+  ) => {
+    setUploadingTemplate(true);
+    try {
+      const html = await file.text();
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/document-templates`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            doc_type: docType,
+            name: file.name.replace(/\.html?$/, ""),
+            html,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        showError(err.detail || "Upload fehlgeschlagen");
+        return;
+      }
+      const created: DocumentTemplate = await res.json();
+      setDocTemplates((prev) => [...prev, created]);
+    } finally {
+      setUploadingTemplate(false);
     }
   };
 
@@ -639,48 +682,67 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Vorlagen (Templates) */}
-      <div className="glass-card rounded-2xl p-6 sm:p-8 mt-8">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-          <LayoutTemplate size={20} className="text-indigo-500" />
-          Vorlagen
+      {/* Template Gallery */}
+      <div className="glass-card rounded-2xl p-6 space-y-6 mt-8">
+        <h2 className="font-bold text-lg tracking-tight flex items-center gap-2">
+          <LayoutTemplate className="w-5 h-5 text-indigo-500" />
+          Dokument-Templates
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <Field label="Lebenslauf-Vorlage" icon={<FileText size={14} />}>
-            <select
-              value={cvTemplate}
-              onChange={(e) => setCvTemplate(e.target.value)}
-              className={inputCls}
-            >
-              {templates.cv.length > 0 ? (
-                templates.cv.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))
-              ) : (
-                <option value={cvTemplate}>{cvTemplate}</option>
-              )}
-            </select>
-          </Field>
-          <Field label="Anschreiben-Vorlage" icon={<FileText size={14} />}>
-            <select
-              value={coverLetterTemplate}
-              onChange={(e) => setCoverLetterTemplate(e.target.value)}
-              className={inputCls}
-            >
-              {templates.cover_letter.length > 0 ? (
-                templates.cover_letter.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))
-              ) : (
-                <option value={coverLetterTemplate}>{coverLetterTemplate}</option>
-              )}
-            </select>
-          </Field>
-        </div>
+
+        {(["CV", "COVER_LETTER"] as const).map((docType) => {
+          const label = docType === "CV" ? "Lebenslauf" : "Anschreiben";
+          const currentVal = docType === "CV" ? cvTemplate : coverLetterTemplate;
+          const setter = docType === "CV" ? setCvTemplate : setCoverLetterTemplate;
+          const filtered = docTemplates.filter((t) => t.doc_type === docType);
+
+          return (
+            <div key={docType} className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {label}
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {filtered.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setter(String(t.id))}
+                    className={`rounded-xl border-2 p-3 text-left transition-all active:scale-95 ${
+                      currentVal === String(t.id)
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
+                        : "border-slate-200 dark:border-slate-800 hover:border-indigo-300"
+                    }`}
+                  >
+                    <div className="text-xs font-bold truncate">{t.name}</div>
+                    {t.is_admin && (
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">
+                        Standard
+                      </div>
+                    )}
+                  </button>
+                ))}
+
+                {/* Upload button */}
+                <label
+                  className={`rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-3 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors ${
+                    uploadingTemplate ? "opacity-50 pointer-events-none" : ""
+                  }`}
+                >
+                  <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
+                  <span className="text-xs text-slate-500">HTML hochladen</span>
+                  <input
+                    type="file"
+                    accept=".html,.htm"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadTemplate(f, docType);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Bewerbungsunterlagen */}

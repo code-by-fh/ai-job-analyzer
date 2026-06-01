@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
+
+const DocumentEditor = dynamic(
+  () => import("../editor/DocumentEditor"),
+  { ssr: false }
+);
 import {
   Check,
   Copy,
@@ -117,6 +123,11 @@ export default function JobApplicationTab({
   const [isCvEditing, setIsCvEditing] = useState(false);
   const [cvDraftContent, setCvDraftContent] = useState(job.cv_draft || "");
   const [isCvSaving, setIsCvSaving] = useState(false);
+
+  // ── Document editor ───────────────────────────────────────────────────────
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorKind, setEditorKind] = useState<"cv" | "cover_letter">("cv");
+  const [editorHtml, setEditorHtml] = useState("");
 
   // ── Anschreiben timer ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -334,6 +345,20 @@ export default function JobApplicationTab({
     a.remove();
   };
 
+  const openEditor = useCallback(
+    async (kind: "cv" | "cover_letter") => {
+      const res = await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/html?kind=${kind}`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      setEditorHtml(data.html || "");
+      setEditorKind(kind);
+      setEditorOpen(true);
+    },
+    [job.id, apiBase]
+  );
+
   const handleRegenCv = async () => {
     cvGenerationPending.current = true;
     localStorage.setItem(`gen_cv_${job.id}`, Date.now().toString());
@@ -390,6 +415,7 @@ export default function JobApplicationTab({
   const cvPhase = CV_PHASES[cvPhaseIndex];
 
   return (
+    <>
     <div className="space-y-4 flex-1 flex flex-col">
 
       {/* ── SEGMENTED TOGGLE ─────────────────────────────────────────────────── */}
@@ -691,6 +717,24 @@ export default function JobApplicationTab({
                   <span>PDF</span>
                 </button>
               )}
+              {!isCvEditing && !cvGenerating && job.cv_html && (
+                <button
+                  onClick={() => openEditor("cv")}
+                  className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Editor</span>
+                </button>
+              )}
+              {!isCvEditing && !cvGenerating && job.cover_letter_html && (
+                <button
+                  onClick={() => openEditor("cover_letter")}
+                  className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Anschreiben</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -770,6 +814,17 @@ export default function JobApplicationTab({
         </div>
       )}
     </div>
+
+    {editorOpen && (
+      <DocumentEditor
+        jobId={job.id}
+        kind={editorKind}
+        initialHtml={editorHtml}
+        apiBase={apiBase}
+        onClose={() => setEditorOpen(false)}
+      />
+    )}
+    </>
   );
 }
 

@@ -54,6 +54,10 @@ class GeneratePackageRequest(BaseModel):
     include_profile_documents: bool = True
 
 
+class SaveHtmlRequest(BaseModel):
+    html: str
+
+
 @router.get("/jobs/counts")
 def get_job_counts(current_user: User = Depends(get_current_user), is_archived: bool = False):
     db = SessionLocal()
@@ -987,5 +991,83 @@ def delete_job_document(
         db.rollback()
         logger.error(f"Document delete error: {e}")
         raise HTTPException(status_code=500, detail="Delete failed")
+    finally:
+        db.close()
+
+
+@router.get("/jobs/{job_id}/documents/html")
+def get_job_html(
+    job_id: str,
+    kind: str = "cv",
+    current_user: User = Depends(get_current_user),
+):
+    if kind not in ("cv", "cover_letter"):
+        raise HTTPException(status_code=400, detail="kind must be 'cv' or 'cover_letter'")
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(
+            JobEntry.id == job_id,
+            JobEntry.user_id == current_user.id,
+        ).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        html = job.cv_html if kind == "cv" else job.cover_letter_html
+        return {"html": html or ""}
+    finally:
+        db.close()
+
+
+@router.put("/jobs/{job_id}/documents/html")
+def save_job_html(
+    job_id: str,
+    body: SaveHtmlRequest,
+    kind: str = "cv",
+    current_user: User = Depends(get_current_user),
+):
+    if kind not in ("cv", "cover_letter"):
+        raise HTTPException(status_code=400, detail="kind must be 'cv' or 'cover_letter'")
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(
+            JobEntry.id == job_id,
+            JobEntry.user_id == current_user.id,
+        ).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if kind == "cv":
+            job.cv_html = body.html
+        else:
+            job.cover_letter_html = body.html
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/jobs/{job_id}/documents/render")
+def render_job_pdf(
+    job_id: str,
+    kind: str = "cv",
+    current_user: User = Depends(get_current_user),
+):
+    if kind not in ("cv", "cover_letter"):
+        raise HTTPException(status_code=400, detail="kind must be 'cv' or 'cover_letter'")
+    db = SessionLocal()
+    try:
+        job = db.query(JobEntry).filter(
+            JobEntry.id == job_id,
+            JobEntry.user_id == current_user.id,
+        ).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        html = job.cv_html if kind == "cv" else job.cover_letter_html
+        if not html:
+            raise HTTPException(status_code=422, detail=f"No saved HTML for kind={kind}")
+        celery_app.send_task(
+            "ai.render_document_pdf",
+            args=[job_id, kind, current_user.id],
+            queue="ai_queue",
+        )
+        return {"queued": True}
     finally:
         db.close()
