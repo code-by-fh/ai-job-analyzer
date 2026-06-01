@@ -1,10 +1,12 @@
 ## 📈 Progress Tracker (Token-Optimized)
 
-### 1. Current Status (As of 2026-05-31)
+### 1. Current Status (As of 2026-06-01)
 
 * **Phase:** MVP feature-complete & end-to-end verkabelt. Fokus auf Härtung, Polish und Stabilisierung des Scraper-Workers.
 * **Goal:** Scraper-Worker ausbauen (Playwright Link-Extraction, Content Cleaning) und `context/` Dokumentation abschließen.
-* **Letzte Änderung:** Token-Optimierung der Codebasis für die Weiterentwicklung: (1) `CLAUDE.md` liest Context-Dateien jetzt konditional statt alle 6 pro Session; (2) `workers/worker.py` (1808 Z.) aufgeteilt in `workers/tasks/*` + `workers/notifications/*`, `worker.py` bleibt dünner Aggregator/Celery-Entrypoint; (3) die 3 E-Mail-Batch-Adapter (Resend/Mailjet/SMTP) und die Crawl-Completion-Logik dedupliziert. Verhaltens-erhaltend; dabei wurde eine latente Inkonsistenz behoben (SMTP-Digest wurde auf dem Save-Completion-Pfad bisher nicht geflusht — `maybe_complete_crawl` flusht nun konsistent alle drei Kanäle).
+* **Letzte Änderung:** Hot-Reload-Setup für lokale Entwicklung: `docker-compose.dev.yml` + `server/supervisord.dev.conf` + `frontend/Dockerfile.dev`. Start via `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`. Server (uvicorn + scraper_api) mit `--reload`, Frontend mit `next dev` + Source-Volume-Mount.
+
+* **Vorletzte Änderung:** Token-Optimierung der Codebasis für die Weiterentwicklung: (1) `CLAUDE.md` liest Context-Dateien jetzt konditional statt alle 6 pro Session; (2) `workers/worker.py` (1808 Z.) aufgeteilt in `workers/tasks/*` + `workers/notifications/*`, `worker.py` bleibt dünner Aggregator/Celery-Entrypoint; (3) die 3 E-Mail-Batch-Adapter (Resend/Mailjet/SMTP) und die Crawl-Completion-Logik dedupliziert. Verhaltens-erhaltend; dabei wurde eine latente Inkonsistenz behoben (SMTP-Digest wurde auf dem Save-Completion-Pfad bisher nicht geflusht — `maybe_complete_crawl` flusht nun konsistent alle drei Kanäle).
 
 ### 2. Status Board
 

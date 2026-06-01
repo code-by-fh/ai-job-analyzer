@@ -1,0 +1,33 @@
+services:
+  server:
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-jobdb}
+      - SCRAPER_SERVICE_URL=http://127.0.0.1:8081
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+    command: sh -c "alembic -c database/alembic.ini upgrade head && supervisord -c supervisord.dev.conf"
+    volumes:
+      - ./server:/app
+      - /app/__pycache__
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${APP_API_URL:-http://localhost:8002}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - server
