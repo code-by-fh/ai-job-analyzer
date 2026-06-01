@@ -16,7 +16,7 @@
 ### 2. Boundary Map
 
 * `server/main.py` & `routers/` — REST-Endpunkte (Auth-geschützt, `user_id`-isoliert).
-* `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs.
+* `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs. Läuft als eigener uvicorn-Prozess (`127.0.0.1:8081`, supervisord). Interne Aufrufer nutzen `SCRAPER_SERVICE_URL`; das Frontend erreicht ihn über den Reverse-Proxy `GET/POST /scraper/{path}` in `main.py`.
 * `server/intelligence/` — Einziger LLM-Integrationspunkt (OpenRouter).
 * `server/workers/` — Asynchrone Tasks. `worker.py` ist nur noch dünner Celery-Entrypoint/Aggregator (`-A workers.worker.celery_app`), der `workers/tasks/*` (analyze, application, research, scheduling, urls; gemeinsame Crawl-Completion in `crawl_status.py`) und `workers/notifications/*` (email, push, templates) re-exportiert. `scraper_worker.py` für Crawls.
 * `server/services/document_renderer.py` — Jinja2 + xhtml2pdf HTML→PDF rendering (CV, Anschreiben).
