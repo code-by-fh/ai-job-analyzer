@@ -759,14 +759,6 @@ export default function Listings({
           </div>
         )}
 
-        {visibleJobs.length === 0 && !isCrawling && (
-          <div className="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-            <p className="text-slate-400 dark:text-slate-500">
-              {isArchived ? t("archiveEmpty") : t("systemWaiting")}
-            </p>
-          </div>
-        )}
-
         {!isArchived && viewMode === "board" ? (
           <div className="-mx-4 sm:mx-0 pt-2 pb-4">
             <JobBoard

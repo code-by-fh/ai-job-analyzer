@@ -470,13 +470,6 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
 
       {/* JOB LIST */}
       <div className="grid gap-6">
-        {visibleJobs.length === 0 && !isCrawling && (
-          <div className="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-            <p className="text-slate-400 dark:text-slate-500">
-              {t("systemWaiting")}
-            </p>
-          </div>
-        )}
 
         {visibleJobs.map((job, index) => (
           <JobCard
