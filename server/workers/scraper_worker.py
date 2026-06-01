@@ -2,8 +2,6 @@ import os
 import json
 import uuid
 import time
-import logging
-import sys
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -105,8 +103,6 @@ def get_html(url: str) -> str | None:
     else:
         logger.info(f"[botasaurus/request] HTTP failed — falling back to browser")
 
-    if not _is_safe_url(url):
-        return None
     return get_html_with_browser(url)
 
 
