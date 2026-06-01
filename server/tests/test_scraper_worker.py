@@ -37,5 +37,8 @@ def test_get_html_with_browser_applies_stealth():
 
         result = get_html_with_browser("https://example.com")
 
+    mock_playwright.chromium.launch.assert_called_once()
+    call_kwargs = mock_playwright.chromium.launch.call_args[1]
+    assert call_kwargs.get("headless") is False
     mock_stealth.assert_called_once_with(mock_page)
     assert result == "<html><body>test</body></html>"

@@ -150,7 +150,6 @@ def get_html_with_browser(url):
     if not _is_safe_url(url):
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
-    os.environ["DISPLAY"] = ":99"
     logger.info(f"Launching browser for URL: {url}")
     start_time = time.time()
     with sync_playwright() as p:
