@@ -89,8 +89,31 @@ function FileViewerModal({
   const { t } = useLanguage();
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const isPdf = doc.mime_type === "application/pdf";
   const isImage = doc.mime_type?.startsWith("image/") ?? false;
+
+  // Fetch document via authenticated request and create a blob URL.
+  // This bypasses X-Frame-Options: DENY and handles cookie auth correctly.
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    setLoadError(false);
+    setBlobUrl(null);
+
+    fetchWithAuth(viewUrl)
+      .then(async (res) => {
+        if (!res.ok) { setLoadError(true); return; }
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+      })
+      .catch(() => setLoadError(true));
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [viewUrl]);
 
   // Close on Escape
   useEffect(() => {
@@ -173,20 +196,31 @@ function FileViewerModal({
 
       {/* Content */}
       <div className="flex-1 overflow-auto flex items-start justify-center p-6 min-h-0">
-        {isPdf && (
+        {loadError && (
+          <div className="flex flex-col items-center justify-center gap-3 text-slate-400">
+            <ShieldAlert className="w-10 h-10 text-rose-400" />
+            <span className="text-sm font-semibold">{t("loadingFile" as any) || "Datei konnte nicht geladen werden"}</span>
+          </div>
+        )}
+        {!blobUrl && !loadError && (
+          <div className="flex flex-col items-center justify-center gap-3 text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+          </div>
+        )}
+        {isPdf && blobUrl && (
           <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-900 flex flex-col">
             <iframe
-              src={viewUrl}
+              src={blobUrl}
               className="flex-1 w-full border-0"
               title={doc.original_filename}
             />
           </div>
         )}
-        {isImage && (
+        {isImage && blobUrl && (
           <div className="flex items-center justify-center p-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={viewUrl}
+              src={blobUrl}
               alt={doc.original_filename}
               style={{
                 transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,

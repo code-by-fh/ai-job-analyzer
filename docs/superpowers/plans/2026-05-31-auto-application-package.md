@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** One-click generation of a complete job application package per job: a job-tailored CV (local Ollama → HTML template → PDF), a cover letter (OpenRouter → HTML template → PDF), and an optional fixed set of profile documents (references/certificates), all stored as job documents.
+**Goal:** One-click generation of a complete job application package per job: a job-tailored CV (local LM Studio/Ollama → HTML template → PDF), a cover letter (OpenRouter → HTML template → PDF), and an optional fixed set of profile documents (references/certificates), all stored as job documents.
 
-**Architecture:** A single sequential Celery task (`ai.generate_application_package`) orchestrates: tailored CV via a new local Ollama provider, cover letter via the existing OpenRouter path, deterministic HTML→PDF rendering via Jinja2 + `xhtml2pdf`, and copying of profile documents. Generated/attached files are persisted as `JobDocument` rows (tagged via a new `kind` column) using the existing dual-storage pattern (DB blob or Google Drive). Online submission stays out of scope — only a stub endpoint + adapter placeholder are added.
+**Architecture:** A single sequential Celery task (`ai.generate_application_package`) orchestrates: tailored CV via a local LM Studio/Ollama server (OpenAI-compatible API at `http://localhost:11434/v1` by default, overridable via `OLLAMA_BASE_URL`), cover letter via the existing OpenRouter path, deterministic HTML→PDF rendering via Jinja2 + `xhtml2pdf`, and copying of profile documents. Generated/attached files are persisted as `JobDocument` rows (tagged via a new `kind` column) using the existing dual-storage pattern (DB blob or Google Drive). Online submission stays out of scope — only a stub endpoint + adapter placeholder are added.
 
 **Tech Stack:** FastAPI, SQLAlchemy 2.0 + Alembic, Celery (RabbitMQ broker, Redis backend), OpenAI SDK (for both OpenRouter and Ollama's OpenAI-compatible API), Jinja2 (new), xhtml2pdf (existing), Next.js/React frontend, pytest (new test infra).
 
@@ -34,7 +34,6 @@
 - `server/routers/settings.py` — accept `cv_template`/`cover_letter_template` in profile save + return them in GET.
 - `server/main.py` — register `profile_documents` router.
 - `server/requirements.txt` — add `jinja2`, `pytest`, `httpx` (test client).
-- `docker-compose.yml` — add `ollama` service + `OLLAMA_BASE_URL` env for `server`.
 
 **Modified frontend files:**
 - `frontend/app/profile/page.tsx` — reference/certificate upload areas + template selection.
@@ -731,64 +730,7 @@ git commit -m "feat: add local Ollama provider and job-tailored CV generation"
 
 ---
 
-## Task 6: Docker Compose Ollama service
-
-**Files:**
-- Modify: `docker-compose.yml`
-
-- [ ] **Step 1: Add the `ollama` service**
-
-In `docker-compose.yml`, add under `services:` (after `redis`):
-
-```yaml
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    container_name: ollama
-    hostname: ollama
-```
-
-- [ ] **Step 2: Add the env var + dependency to `server`**
-
-In the `server` service `environment:` list add:
-
-```yaml
-      - OLLAMA_BASE_URL=http://ollama:11434/v1
-```
-
-In the `server` service `depends_on:` list add `- ollama`.
-
-- [ ] **Step 3: Add the volume**
-
-Under top-level `volumes:` add:
-
-```yaml
-  ollama_data:
-```
-
-- [ ] **Step 4: Verify compose parses**
-
-Run: `docker compose config`
-Expected: valid merged config printed, `ollama` service present, no errors.
-
-- [ ] **Step 5: Document model pull**
-
-Add a note to `README.MD` (Setup section): after first start, pull the model:
-`docker exec -it ollama ollama pull llama3.1:8b`
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add docker-compose.yml README.MD
-git commit -m "feat: add ollama service to docker-compose and document model pull"
-```
-
----
-
-## Task 7: Job-document storage helper
+## Task 6: Job-document storage helper
 
 A reusable helper to persist generated/attached files as `JobDocument`s via the dual-storage pattern, replacing any existing document of the same `kind` for a job.
 
@@ -921,7 +863,7 @@ git commit -m "feat: add job-document storage helper with same-kind replacement"
 
 ---
 
-## Task 8: Package orchestration Celery task
+## Task 7: Package orchestration Celery task
 
 **Files:**
 - Create: `server/workers/tasks/package.py`
@@ -1104,7 +1046,7 @@ git commit -m "feat: add sequential application-package generation task"
 
 ---
 
-## Task 9: Profile documents router (CRUD + view/download + templates list)
+## Task 8: Profile documents router (CRUD + view/download + templates list)
 
 Mirror the job-documents endpoints in `routers/jobs.py:706-908` but scoped to the user's profile.
 
@@ -1305,7 +1247,9 @@ git commit -m "feat: add profile documents router (CRUD, view/download, template
 
 ---
 
-## Task 10: Persist template selection in settings
+## Task 9: Persist template selection in settings
+
+> **Note:** Ollama server URL and model name are already configurable via Admin → Settings (`/admin/settings`). Task 9 only covers the user-level CV/cover-letter template selection.
 
 **Files:**
 - Modify: `server/routers/settings.py` (`SettingsData` ~line 236; `save_settings` ~line 149; `get_settings` ~line 123)
@@ -1355,7 +1299,7 @@ git commit -m "feat: persist CV/cover-letter template selection in profile setti
 
 ---
 
-## Task 11: Package endpoints + submission hook
+## Task 10: Package endpoints + submission hook
 
 **Files:**
 - Create: `server/services/submission.py`
@@ -1446,7 +1390,7 @@ git commit -m "feat: add generate-package endpoint and out-of-scope submission h
 
 ---
 
-## Task 12: Frontend — profile documents + template selection
+## Task 11: Frontend — profile documents + template selection
 
 No frontend test framework exists; verify via build + manual check.
 
@@ -1513,7 +1457,7 @@ git commit -m "feat: profile document uploads (references/certificates) and temp
 
 ---
 
-## Task 13: Frontend — package CTA on the job card
+## Task 12: Frontend — package CTA on the job card
 
 **Files:**
 - Modify: `frontend/app/components/JobCard/JobApplicationTab.tsx`
@@ -1565,7 +1509,7 @@ git commit -m "feat: add application-package CTA and online-apply hook to job ca
 
 ---
 
-## Task 14: Update context documentation
+## Task 13: Update context documentation
 
 **Files:**
 - Modify: `context/progress-tracker.md`
@@ -1581,12 +1525,12 @@ In `context/progress-tracker.md`, set the current status/goal to reflect the app
 
 - [ ] **Step 2: Update architecture notes**
 
-In `context/architecture.md`: add `ProfileDocument` to the Data layer, note the new internal `ollama` service (and that it is exempt from `_is_safe_url`, which only guards outbound scraping), and add `services/document_renderer.py`, `services/job_documents.py`, `workers/tasks/package.py`, `routers/profile_documents.py` to the Boundary Map.
+In `context/architecture.md`: add `ProfileDocument` to the Data layer, note that the Ollama/LM Studio service runs locally on the host (default `http://localhost:11434/v1`, overridable via `OLLAMA_BASE_URL` env var), and add `services/document_renderer.py`, `services/job_documents.py`, `workers/tasks/package.py`, `routers/profile_documents.py` to the Boundary Map.
 
 - [ ] **Step 3: Run the full test suite**
 
 Run: `cd server && python -m pytest -v`
-Expected: all tests pass (Tasks 1,2,4,5,7 suites green).
+Expected: all tests pass (Tasks 1,2,4,5,6 suites green).
 
 - [ ] **Step 4: Commit**
 

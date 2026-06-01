@@ -186,6 +186,7 @@ def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
             "match_score": job.match_score,
             "reasoning": job.reasoning,
             "application_draft": job.application_draft,
+            "cv_draft": job.cv_draft,
             "interview_prep_material": job.interview_prep_material,
             "status": job.status,
             "url": job.url,
@@ -566,6 +567,8 @@ def patch_job(
             job.notes = request.notes
         if request.application_draft is not None:
             job.application_draft = request.application_draft
+        if request.cv_draft is not None:
+            job.cv_draft = request.cv_draft
         if request.is_archived is not None:
             job.is_archived = request.is_archived
 
@@ -842,6 +845,7 @@ def list_job_documents(job_id: str, current_user: User = Depends(get_current_use
                 "original_filename": d.original_filename,
                 "file_size": d.file_size,
                 "mime_type": d.mime_type,
+                "kind": d.kind,
                 "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
             }
             for d in docs

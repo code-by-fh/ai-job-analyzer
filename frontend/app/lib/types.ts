@@ -7,6 +7,7 @@ export interface Job {
   reasoning: string;
   url?: string;
   application_draft?: string;
+  cv_draft?: string;
   created_at?: string;
   status?: string;
   is_favorite?: boolean;

@@ -72,7 +72,9 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             candidate_role=profile.role,
             language=language,
             model=get_ollama_model(db),
+            db=db,
         )
+        job.cv_draft = _cv_dict_to_markdown(tailored)
         cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
         store_generated_document(
             db, job.id, target_user_id, cv_pdf,
@@ -122,7 +124,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
 
         job.status = "DRAFTED"
         db.commit()
-        _publish(r, job, "DRAFTED", application_draft=job.application_draft)
+        _publish(r, job, "DRAFTED", application_draft=job.application_draft, cv_draft=job.cv_draft)
         logger.info(f"Application package for job {job_id} complete.")
 
     except Exception as e:
@@ -139,6 +141,40 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             logger.error(f"Failed to persist FAILED status: {db_e}")
     finally:
         db.close()
+
+
+def _cv_dict_to_markdown(cv: dict) -> str:
+    parts = []
+    if cv.get("name"):
+        parts.append(f"# {cv['name']}")
+    if cv.get("role"):
+        parts.append(f"**{cv['role']}**\n")
+    for exp in cv.get("experience", []):
+        if not exp:
+            continue
+        if not parts or parts[-1] != "## Berufserfahrung":
+            parts.append("## Berufserfahrung")
+        parts.append(f"### {exp.get('role', '')} — {exp.get('company', '')} ({exp.get('duration', '')})")
+        if exp.get("description"):
+            parts.append(exp["description"])
+        parts.append("")
+    for proj in cv.get("projects", []):
+        if not proj:
+            continue
+        if not parts or parts[-1] != "## Projekte":
+            parts.append("## Projekte")
+        parts.append(f"### {proj.get('name', '')} ({proj.get('tech_stack', '')})")
+        if proj.get("description"):
+            parts.append(proj["description"])
+        parts.append("")
+    if cv.get("education"):
+        parts.append("## Ausbildung")
+        parts.append(cv["education"])
+    skills = cv.get("skills", [])
+    if skills:
+        parts.append("\n## Skills")
+        parts.append(", ".join(skills) if isinstance(skills, list) else str(skills))
+    return "\n".join(parts)
 
 
 def _safe(value):
