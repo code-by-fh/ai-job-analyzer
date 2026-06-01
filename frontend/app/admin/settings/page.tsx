@@ -38,6 +38,8 @@ export default function AdminSettingsPage() {
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySet, setApiKeySet] = useState(false);
+  const [ollamaModel, setOllamaModel] = useState("llama3.1:8b");
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
 
@@ -57,6 +59,56 @@ export default function AdminSettingsPage() {
 
   const [redisCleanupStatus, setRedisCleanupStatus] = useState("");
   const [redisCleanupLoading, setRedisCleanupLoading] = useState(false);
+
+  const [orTestStatus, setOrTestStatus] = useState("");
+  const [orTestLoading, setOrTestLoading] = useState(false);
+  const [ollamaTestStatus, setOllamaTestStatus] = useState("");
+  const [ollamaTestLoading, setOllamaTestLoading] = useState(false);
+
+  const handleTestOpenRouter = async () => {
+    setOrTestLoading(true);
+    setOrTestStatus("Testing...");
+    try {
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/test/openrouter`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setOrTestStatus(`Connected — model: ${data.model}`);
+      } else {
+        setOrTestStatus(`Error: ${data.detail || "Connection failed"}`);
+      }
+    } catch {
+      setOrTestStatus("Network error");
+    } finally {
+      setOrTestLoading(false);
+    }
+  };
+
+  const handleTestOllama = async () => {
+    setOllamaTestLoading(true);
+    setOllamaTestStatus("Testing...");
+    try {
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/test/ollama`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        const modelNote = data.model_found
+          ? `model "${data.model}" ready`
+          : `server reachable — model "${data.model}" not found locally (available: ${(data.available_models ?? []).join(", ") || "none"})`;
+        setOllamaTestStatus(`Connected — ${modelNote}`);
+      } else {
+        setOllamaTestStatus(`Error: ${data.detail || "Connection failed"}`);
+      }
+    } catch {
+      setOllamaTestStatus("Network error");
+    } finally {
+      setOllamaTestLoading(false);
+    }
+  };
 
   const handleRedisCleanup = async () => {
     setRedisCleanupLoading(true);
@@ -163,6 +215,8 @@ export default function AdminSettingsPage() {
         const data = await res.json();
         setModel(data.openrouter_model);
         setApiKeySet(data.openrouter_api_key_set ?? false);
+        setOllamaModel(data.ollama_model || "llama3.1:8b");
+        setOllamaBaseUrl(data.ollama_base_url || "");
       }
     } catch (e) {
       logger.error({ err: e }, "Fetch settings failed");
@@ -199,6 +253,8 @@ export default function AdminSettingsPage() {
     try {
       const payload: Record<string, string | null> = {
         openrouter_model: model,
+        ollama_model: ollamaModel,
+        ollama_base_url: ollamaBaseUrl || null,
       };
       if (apiKey !== "") payload.openrouter_api_key = apiKey || null;
       const res = await fetchWithAuth(
@@ -216,6 +272,8 @@ export default function AdminSettingsPage() {
         setStatus("Saved successfully!");
         setApiKeySet(data.openrouter_api_key_set ?? false);
         setApiKey("");
+        if (data.ollama_model) setOllamaModel(data.ollama_model);
+        if (data.ollama_base_url !== undefined) setOllamaBaseUrl(data.ollama_base_url);
       } else {
         setStatus("Error saving settings");
       }
@@ -316,6 +374,23 @@ export default function AdminSettingsPage() {
                 </button>
               )}
             </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleTestOpenRouter}
+              disabled={orTestLoading || !apiKeySet}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3 h-3 ${orTestLoading ? "animate-spin" : ""}`} />
+              Test connection
+            </button>
+            {orTestStatus && (
+              <span className={`text-xs font-medium ${orTestStatus.startsWith("Error") || orTestStatus.startsWith("Network") ? "text-rose-500" : "text-emerald-500"}`}>
+                {orTestStatus}
+              </span>
+            )}
           </div>
 
           <div className="border-t border-slate-100 dark:border-slate-800" />
@@ -489,6 +564,65 @@ export default function AdminSettingsPage() {
               <p className="text-xs text-slate-500 dark:text-slate-500">
                 {models.length} models loaded from OpenRouter.
               </p>
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+
+          {/* Ollama / LM Studio Section */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Bot className="w-4 h-4 text-violet-500" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Local LLM (LM Studio / Ollama)
+              </h3>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                Server URL
+              </label>
+              <input
+                type="text"
+                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
+                value={ollamaBaseUrl}
+                onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434/v1"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-500">
+                OpenAI-compatible endpoint of your local LM Studio or Ollama server. Leave blank to use the default (<code className="text-violet-500">http://localhost:11434/v1</code>).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                Model name
+              </label>
+              <input
+                type="text"
+                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
+                value={ollamaModel}
+                onChange={(e) => setOllamaModel(e.target.value)}
+                placeholder="llama3.1:8b"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-500">
+                Model identifier as shown in LM Studio or by <code className="text-violet-500">ollama list</code>. Used for CV tailoring.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleTestOllama}
+              disabled={ollamaTestLoading}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3 h-3 ${ollamaTestLoading ? "animate-spin" : ""}`} />
+              Test connection
+            </button>
+            {ollamaTestStatus && (
+              <span className={`text-xs font-medium ${ollamaTestStatus.startsWith("Error") || ollamaTestStatus.startsWith("Network") ? "text-rose-500" : ollamaTestStatus.includes("not found") ? "text-amber-500" : "text-emerald-500"}`}>
+                {ollamaTestStatus}
+              </span>
             )}
           </div>
 
