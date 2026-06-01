@@ -16,7 +16,7 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
 )
-from services.document_renderer import render_cv_pdf, render_cover_letter_pdf
+from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf_playwright
 from services.job_documents import store_generated_document
 from services.storage import get_storage_service
 
@@ -180,3 +180,50 @@ def _cv_dict_to_markdown(cv: dict) -> str:
 def _safe(value):
     cleaned = "".join(c for c in (value or "Job") if c.isalnum() or c in " -_")
     return cleaned.replace(" ", "_") or "Job"
+
+
+@celery_app.task(name="ai.render_document_pdf")
+def render_document_pdf_task(job_id: str, kind: str, user_id: int):
+    """Re-render edited HTML for a job to PDF and replace the JobDocument."""
+    logger.info(f"[TASK] render_document_pdf job={job_id} kind={kind} user={user_id}")
+    db = SessionLocal()
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    try:
+        job = db.query(JobEntry).filter(
+            JobEntry.id == job_id,
+            JobEntry.user_id == user_id,
+        ).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for user {user_id}")
+            return
+
+        html = job.cv_html if kind == "cv" else job.cover_letter_html
+        if not html:
+            logger.error(f"No HTML stored for job {job_id} kind={kind}")
+            return
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        storage = (
+            get_storage_service(profile)
+            if profile and profile.active_storage_service != "NONE"
+            else None
+        )
+
+        pdf = html_to_pdf_playwright(html)
+        doc_kind = "GENERATED_CV" if kind == "cv" else "GENERATED_LETTER"
+        prefix = "Lebenslauf" if kind == "cv" else "Anschreiben"
+        store_generated_document(
+            db, job_id, user_id, pdf,
+            original_filename=f"{prefix}_{_safe(job.company)}.pdf",
+            mime_type="application/pdf",
+            kind=doc_kind,
+            storage=storage,
+        )
+        db.commit()
+        _publish(r, job, "DRAFTED", rendered_kind=kind)
+        logger.info(f"render_document_pdf complete job={job_id} kind={kind}")
+    except Exception as e:
+        logger.error(f"render_document_pdf failed job={job_id}: {e}", exc_info=True)
+        _publish(r, job, "FAILED", error=str(e))
+    finally:
+        db.close()
