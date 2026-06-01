@@ -87,10 +87,28 @@ def get_ai_client(api_key: str = None, db: Any = None):
     )
 
 
-def get_ollama_client():
-    """OpenAI-compatible client pointed at the local Ollama service."""
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
-    return OpenAI(base_url=base_url, api_key="ollama")
+def _resolve_local_url(url: str) -> str:
+    """Replace localhost/127.0.0.1 with host.docker.internal when running inside Docker."""
+    if not os.path.exists("/.dockerenv"):
+        return url
+    return url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+
+
+def get_ollama_base_url(db=None) -> str:
+    try:
+        if db:
+            from database.core import SystemSettings
+            settings = db.query(SystemSettings).first()
+            if settings and settings.ollama_base_url:
+                return _resolve_local_url(settings.ollama_base_url)
+    except Exception:
+        pass
+    return _resolve_local_url(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"))
+
+
+def get_ollama_client(db=None):
+    """OpenAI-compatible client pointed at the local LM Studio / Ollama service."""
+    return OpenAI(base_url=get_ollama_base_url(db), api_key="ollama")
 
 
 def get_ollama_model(db=None) -> str:
@@ -506,6 +524,7 @@ def generate_tailored_cv(
     candidate_role: str = "",
     language: str = "de",
     model: str = None,
+    db=None,
 ) -> dict:
     """Use local Ollama to reorder/emphasize the candidate's CV for a job.
 
@@ -519,12 +538,12 @@ def generate_tailored_cv(
     base["name"] = candidate_name or base.get("name", "")
     base["role"] = candidate_role or base.get("role", "")
 
-    client = get_ollama_client()
+    client = get_ollama_client(db)
     messages = get_tailored_cv_messages(base, job_title, job_description, language)
     try:
         response = _call_openrouter(
             client=client,
-            model=model or get_ollama_model(),
+            model=model or get_ollama_model(db),
             messages=messages,
             temperature=0.3,
             func_name="generate_tailored_cv",

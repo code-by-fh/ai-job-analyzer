@@ -45,6 +45,7 @@ class JobEntry(Base):
     match_score = Column(Float)
     reasoning = Column(Text)
     application_draft = Column(Text, nullable=True)
+    cv_draft = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     url = Column(String, nullable=True)
     status = Column(String, default="OPEN")
@@ -119,6 +120,7 @@ class SystemSettings(Base):
     openrouter_model = Column(String, default="tngtech/deepseek-r1t2-chimera:free")
     openrouter_api_key = Column(String, nullable=True)
     ollama_model = Column(String, nullable=True, default="llama3.1:8b")
+    ollama_base_url = Column(String, nullable=True)
 
 
 class DomainUrlPattern(Base):
@@ -409,6 +411,7 @@ class JobPatchRequest(BaseModel):
     note: Optional[str] = None
     notes: Optional[str] = None
     application_draft: Optional[str] = None
+    cv_draft: Optional[str] = None
     is_archived: Optional[bool] = None
 
 

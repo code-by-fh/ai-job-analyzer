@@ -33,6 +33,8 @@ router = APIRouter()
 class SystemSettingsUpdate(BaseModel):
     openrouter_model: str
     openrouter_api_key: Optional[str] = None
+    ollama_model: Optional[str] = None
+    ollama_base_url: Optional[str] = None
 
 
 class AdminWipeRequest(BaseModel):
@@ -49,10 +51,14 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
             return {
                 "openrouter_model": "tngtech/deepseek-r1t2-chimera:free",
                 "openrouter_api_key_set": False,
+                "ollama_model": "llama3.1:8b",
+                "ollama_base_url": "",
             }
         return {
             "openrouter_model": settings.openrouter_model,
             "openrouter_api_key_set": bool(settings.openrouter_api_key),
+            "ollama_model": settings.ollama_model or "llama3.1:8b",
+            "ollama_base_url": settings.ollama_base_url or "",
         }
     finally:
         db.close()
@@ -72,11 +78,17 @@ def update_admin_settings(
             db_settings.openrouter_model = settings.openrouter_model
         if settings.openrouter_api_key is not None:
             db_settings.openrouter_api_key = settings.openrouter_api_key or None
+        if settings.ollama_model is not None:
+            db_settings.ollama_model = settings.ollama_model or "llama3.1:8b"
+        if settings.ollama_base_url is not None:
+            db_settings.ollama_base_url = settings.ollama_base_url or None
         db.commit()
         return {
             "status": "updated",
             "openrouter_model": db_settings.openrouter_model,
             "openrouter_api_key_set": bool(db_settings.openrouter_api_key),
+            "ollama_model": db_settings.ollama_model or "llama3.1:8b",
+            "ollama_base_url": db_settings.ollama_base_url or "",
         }
     finally:
         db.close()
@@ -168,6 +180,67 @@ def get_openrouter_models(current_user: User = Depends(get_current_admin_user)):
     except requests.RequestException as e:
         logger.error(f"Failed to fetch OpenRouter models: {e}")
         raise HTTPException(status_code=502, detail="Could not reach OpenRouter API")
+
+
+@router.post("/admin/test/openrouter")
+def test_openrouter_connection(current_user: User = Depends(get_current_admin_user)):
+    db = SessionLocal()
+    try:
+        settings = db.query(SystemSettings).first()
+        api_key = settings.openrouter_api_key if settings else None
+        model = settings.openrouter_model if settings else None
+    finally:
+        db.close()
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No OpenRouter API key configured")
+    if not model:
+        raise HTTPException(status_code=400, detail="No model configured")
+
+    try:
+        from openai import OpenAI as _OpenAI
+        client = _OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            default_headers={"HTTP-Referer": "https://github.com/ai-job-analyzer"},
+        )
+        client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=1,
+        )
+        return {"ok": True, "model": model}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/admin/test/ollama")
+def test_ollama_connection(current_user: User = Depends(get_current_admin_user)):
+    from intelligence.service import get_ollama_base_url, get_ollama_model
+    db = SessionLocal()
+    try:
+        base_url = get_ollama_base_url(db)
+        model = get_ollama_model(db)
+    finally:
+        db.close()
+
+    try:
+        response = requests.get(
+            f"{base_url.rstrip('/')}/models",
+            timeout=5,
+        )
+        if response.ok:
+            body = response.json()
+            # Handle both {"data": [...]} and top-level list formats
+            items = body.get("data", body) if isinstance(body, dict) else body
+            available = [m.get("id") or m.get("key", "") for m in items if isinstance(m, dict)]
+            available = [a for a in available if a]
+            # Prefix-match: "google/gemma-4-e4b" matches "google/gemma-4-e4b@q4_k_m"
+            model_found = any(a == model or a.startswith(model + "@") for a in available)
+            return {"ok": True, "model": model, "model_found": model_found, "available_models": available}
+        raise HTTPException(status_code=502, detail=f"Server returned {response.status_code}")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Cannot reach server: {e}")
 
 
 @router.post("/admin/database/wipe")
