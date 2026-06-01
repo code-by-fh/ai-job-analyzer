@@ -3,20 +3,20 @@ import json
 import uuid
 import time
 import logging
-import random
 import sys
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 import redis
 
 from core.scraper_celery_config import celery_app, REDIS_URL
 from intelligence.service import extract_job_details, get_model, get_api_key
 from database.core import SessionLocal, UserProfile, JobEntry
-
-# Logging Setup
 from core.logger import get_logger
+from workers.botasaurus_fetcher import (
+    get_html_without_browser,
+    get_html_with_browser,
+)
 
 logger = get_logger(__name__)
 
@@ -65,47 +65,6 @@ def _is_safe_url(url: str) -> bool:
         return False
 
 
-_HTTP_TIMEOUT_CONNECT = 10
-_HTTP_TIMEOUT_READ = 20
-
-_HTTP_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
-
-
-def get_html_without_browser(url: str) -> str | None:
-    """Fetch raw HTML via a plain HTTP GET. Returns None on any error."""
-    if not _is_safe_url(url):
-        logger.warning(f"Blocked SSRF attempt for URL: {url}")
-        return None
-    import requests as _requests
-
-    try:
-        logger.info(f"[HTTP] Attempting plain HTTP fetch for: {url}")
-        resp = _requests.get(
-            url,
-            headers=_HTTP_HEADERS,
-            timeout=(_HTTP_TIMEOUT_CONNECT, _HTTP_TIMEOUT_READ),
-            allow_redirects=True,
-        )
-        resp.raise_for_status()
-        logger.info(
-            f"[HTTP] Fetched {len(resp.text)} chars (status {resp.status_code})"
-        )
-        return resp.text
-    except Exception as e:
-        logger.info(f"[HTTP] Plain HTTP fetch failed for {url}: {e}")
-        return None
-
 
 _MIN_HTML_LENGTH = 500
 _MIN_TEXT_LENGTH = 200
@@ -131,60 +90,24 @@ def _is_useful_html(html: str) -> bool:
 
 
 def get_html(url: str) -> str | None:
-    """Fetch page HTML, preferring a plain HTTP request and falling back to browser if needed."""
-    html = get_html_without_browser(url)
-    if html and _is_useful_html(html):
-        logger.info(f"[HTTP] Using plain HTTP result for {url}")
-        return html
-    if html:
-        logger.info(
-            f"[HTTP] Insufficient content ({len(html)} chars) — falling back to browser"
-        )
-    else:
-        logger.info(f"[HTTP] Plain HTTP failed — falling back to browser")
-    return get_html_with_browser(url)
-
-
-def get_html_with_browser(url):
+    """Fetch page HTML with SSRF protection, preferring HTTP then falling back to browser."""
     if not _is_safe_url(url):
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
-    logger.info(f"Launching browser for URL: {url}")
-    start_time = time.time()
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-            ],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-        )
-        page = context.new_page()
-        try:
-            logger.info(f"Navigating to {url}...")
-            page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
-            sleep_time = random.uniform(2, 4)
-            logger.info(f"Waiting {sleep_time:.2f}s for dynamic content...")
-            time.sleep(sleep_time)
+    html = get_html_without_browser(url)
+    if html and _is_useful_html(html):
+        logger.info(f"[botasaurus/request] Using HTTP result for {url}")
+        return html
 
-            content = page.content()
-            duration = time.time() - start_time
-            logger.info(
-                f"Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s"
-            )
-            return content
-        except Exception as e:
-            logger.error(f"Playwright Error fetching {url}: {e}", exc_info=True)
-            return None
-        finally:
-            browser.close()
-            logger.info("Browser closed.")
+    if html:
+        logger.info(f"[botasaurus/request] Insufficient content — falling back to browser")
+    else:
+        logger.info(f"[botasaurus/request] HTTP failed — falling back to browser")
+
+    if not _is_safe_url(url):
+        return None
+    return get_html_with_browser(url)
 
 
 def get_clean_content(html):
