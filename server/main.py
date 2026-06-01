@@ -19,7 +19,7 @@ from routers.deps import limiter, COOKIE_SECURE
 from core.logger import get_logger
 
 from routers import auth as auth_router
-from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage, profile_documents
+from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage, profile_documents, templates
 
 logger = get_logger(__name__)
 
@@ -128,6 +128,7 @@ app.include_router(dashboard.router)
 app.include_router(websocket.router)
 app.include_router(storage.router)
 app.include_router(profile_documents.router)
+app.include_router(templates.router)
 
 
 # Scraper runs as a separate internal service (see supervisord.conf). The frontend
