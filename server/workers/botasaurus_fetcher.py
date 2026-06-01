@@ -26,12 +26,12 @@ def _call_browser_scraper(driver: Driver, data: dict) -> str | None:
         return None
 
 
-@request(cache=False, parallel=1)
+@request(cache=False, parallel=1, output=None)
 def _http_scraper(req: AntiDetectRequests, data: dict):
     return _call_request_scraper(req, data)
 
 
-@browser(headless=True, cache=False, parallel=1)
+@browser(headless=True, cache=False, parallel=1, output=None)
 def _browser_scraper(driver: Driver, data: dict):
     return _call_browser_scraper(driver, data)
 
