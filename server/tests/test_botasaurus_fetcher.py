@@ -29,7 +29,7 @@ def _make_fetcher_module():
     request_mod.AntiDetectRequests = MagicMock
     browser_mod.Driver = MagicMock
 
-    sys.modules.setdefault("botasaurus", MagicMock())
+    sys.modules["botasaurus"] = MagicMock()
     sys.modules["botasaurus.request"] = request_mod
     sys.modules["botasaurus.browser"] = browser_mod
 
@@ -41,7 +41,7 @@ def _make_fetcher_module():
     return m
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def fetcher():
     return _make_fetcher_module()
 
@@ -114,6 +114,12 @@ def test_get_html_with_browser_returns_html(fetcher):
     with patch.object(fetcher, "_browser_scraper", return_value=["<html>rendered</html>"]):
         html = fetcher.get_html_with_browser("https://protected.example.com")
     assert html == "<html>rendered</html>"
+
+
+def test_get_html_with_browser_returns_none_when_empty_list(fetcher):
+    with patch.object(fetcher, "_browser_scraper", return_value=[]):
+        html = fetcher.get_html_with_browser("https://protected.example.com")
+    assert html is None
 
 
 def test_get_html_with_browser_returns_none_on_failure(fetcher):
