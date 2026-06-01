@@ -320,8 +320,6 @@ export const translations = {
     // Listings Page
     listingsPageTitle: "Job Listings",
     listingsPageSubtitle: "All your discovered job opportunities",
-    listingsDescription:
-      "Browse and manage all job opportunities found by the agent.",
 
     // Companies
     companies: "Companies",
@@ -916,8 +914,6 @@ export const translations = {
     // Listings Page
     listingsPageTitle: "Stellenangebote",
     listingsPageSubtitle: "Alle gefundenen Stellenanzeigen im Überblick",
-    listingsDescription:
-      "Verwalte alle vom Agenten gefundenen Stellenangebote.",
 
     // Companies
     companies: "Firmen",

@@ -653,9 +653,6 @@ export default function Listings({
             headlineMsgkey="jobIntelligence"
             searchError={searchError}
           />
-          <p className="text-sm text-slate-500 dark:text-slate-400 -mt-2 mb-2 px-1">
-            {t("listingsDescription")}
-          </p>
         </>
       )}
       {isArchived && (
