@@ -2,9 +2,9 @@
 
 ### 1. Current Status (As of 2026-06-01)
 
-* **Phase:** Template Editor implementiert. CV/Anschreiben können per HTML-Template generiert, im Browser bearbeitet und als PDF gerendert werden. Fokus auf Härtung, Polish und Stabilisierung des Scraper-Workers.
-* **Goal:** Scraper-Worker ausbauen (Playwright Link-Extraction, Content Cleaning) und `context/` Dokumentation abschließen.
-* **Letzte Änderung:** Hot-Reload-Setup für lokale Entwicklung: `docker-compose.dev.yml` + `server/supervisord.dev.conf` + `frontend/Dockerfile.dev`. Start via `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`. Server (uvicorn + scraper_api) mit `--reload`, Frontend mit `next dev` + Source-Volume-Mount.
+* **Phase:** Stealth-Browser-Scraper integriert. Playwright läuft jetzt mit `headless=False` + `playwright-stealth` + Xvfb im Container gegen Bot-Detection. Fokus: Automated Tests (Auth, Jobs, SSRF) und Security Hardening.
+* **Goal:** Bot-Detection beim Crawlen umgehen; nächster Schritt: Automated Tests auf Auth, Jobs und `_is_safe_url`.
+* **Letzte Änderung:** Stealth-Browser-Integration (2026-06-01): `playwright-stealth==2.0.3` hinzugefügt; `headless=False` + `stealth_sync(page)` in `get_html_with_browser()`; Xvfb als supervisord-Prozess (priority=1, startsecs=2); `ENV DISPLAY=:99` im Dockerfile. 28 Unit-Tests grün.
 
 * **Vorletzte Änderung:** Token-Optimierung der Codebasis für die Weiterentwicklung: (1) `CLAUDE.md` liest Context-Dateien jetzt konditional statt alle 6 pro Session; (2) `workers/worker.py` (1808 Z.) aufgeteilt in `workers/tasks/*` + `workers/notifications/*`, `worker.py` bleibt dünner Aggregator/Celery-Entrypoint; (3) die 3 E-Mail-Batch-Adapter (Resend/Mailjet/SMTP) und die Crawl-Completion-Logik dedupliziert. Verhaltens-erhaltend; dabei wurde eine latente Inkonsistenz behoben (SMTP-Digest wurde auf dem Save-Completion-Pfad bisher nicht geflusht — `maybe_complete_crawl` flusht nun konsistent alle drei Kanäle).
 
