@@ -3,6 +3,8 @@ import os
 # Point the app at a throwaway SQLite DB *before* importing database.core,
 # so importing it never tries to reach the real Postgres at import time.
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+# Set SECRET_KEY for auth module before importing main app
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 
 import pytest
 from sqlalchemy import create_engine
