@@ -45,6 +45,32 @@ def _html_to_pdf(html: str) -> bytes:
     return buf.getvalue()
 
 
+def _block_external(route):
+    """Allow only data: URIs; block all external requests (SSRF protection)."""
+    if route.request.url.startswith("data:"):
+        route.continue_()
+    else:
+        route.abort()
+
+
+def html_to_pdf_playwright(html: str) -> bytes:
+    """Render *html* to PDF bytes using headless Chromium.
+
+    All external network requests are blocked — only data: URIs are allowed.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--no-sandbox"])
+        try:
+            page = browser.new_page()
+            page.route("**/*", _block_external)
+            page.set_content(html, wait_until="networkidle")
+            return page.pdf(print_background=True, prefer_css_page_size=True)
+        finally:
+            browser.close()
+
+
 def render_cv_pdf(cv_data: dict, template_key: str = "classic") -> bytes:
     template = _env.get_template(_resolve("cv", template_key))
     html = template.render(**cv_data)
