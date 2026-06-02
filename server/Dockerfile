@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     libcairo2-dev \
     supervisor \
     xvfb \
+    x11vnc \
+    novnc \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1
