@@ -36,6 +36,7 @@ services:
     build: ./server
     ports:
       - "8002:8080"
+      - "6080:6080"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-jobdb}
       - SCRAPER_SERVICE_URL=http://127.0.0.1:8081
