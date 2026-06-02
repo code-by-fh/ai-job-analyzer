@@ -9,6 +9,7 @@ interface AddPlatformInputProps {
   onAdd: () => void;
   isProfileComplete: boolean;
   isLoading?: boolean;
+  error?: string | null;
 }
 
 export default function AddPlatformInput({
@@ -17,6 +18,7 @@ export default function AddPlatformInput({
   onAdd,
   isProfileComplete,
   isLoading = false,
+  error = null,
 }: AddPlatformInputProps) {
   const { t } = useLanguage();
   const [mounted, setMounted] = useState(false);
@@ -128,6 +130,25 @@ export default function AddPlatformInput({
           <span className="hidden sm:inline">{isLoading ? "..." : "Add"}</span>
         </button>
       </div>
+
+      {error && (
+        <div className="mt-2 flex items-center gap-1.5 px-1 text-xs text-rose-600 dark:text-rose-400">
+          <svg
+            className="w-3.5 h-3.5 shrink-0 text-rose-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+            />
+          </svg>
+          <span>{error}</span>
+        </div>
+      )}
 
       {isLoading &&
         mounted &&

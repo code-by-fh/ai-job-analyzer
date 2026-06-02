@@ -47,6 +47,7 @@ export default function JobPlatformsManager({
   const [status, setStatus] = useState("");
   const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
   const [isAddingPlatform, setIsAddingPlatform] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const [pushoverModalPlatform, setPushoverModalPlatform] =
     useState<Platform | null>(null);
@@ -248,6 +249,7 @@ export default function JobPlatformsManager({
 
   const addPlatform = async () => {
     if (!newUrl) return;
+    setAddError(null);
     try {
       const parsed = new URL(newUrl);
       if (!["http:", "https:"].includes(parsed.protocol)) {
@@ -281,7 +283,11 @@ export default function JobPlatformsManager({
         return;
       } else {
         const err = await res.json();
-        setStatus(`${t("error")}: ${err.detail || "Failed to add"} ❌`);
+        if (res.status === 400 && err.detail === "Platform URL already exists") {
+          setAddError(t("platformAlreadyExists"));
+        } else {
+          setStatus(`${t("error")}: ${err.detail || "Failed to add"} ❌`);
+        }
       }
     } catch (e) {
       setStatus(t("error"));
@@ -944,10 +950,11 @@ export default function JobPlatformsManager({
       <div className="mb-8">
         <AddPlatformInput
           newUrl={newUrl}
-          onUrlChange={setNewUrl}
+          onUrlChange={(url) => { setNewUrl(url); setAddError(null); }}
           onAdd={addPlatform}
           isProfileComplete={!!user?.is_profile_complete}
           isLoading={isAddingPlatform}
+          error={addError}
         />
       </div>
 
