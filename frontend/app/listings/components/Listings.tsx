@@ -653,9 +653,6 @@ export default function Listings({
             headlineMsgkey="jobIntelligence"
             searchError={searchError}
           />
-          <p className="text-sm text-slate-500 dark:text-slate-400 -mt-2 mb-2 px-1">
-            {t("listingsDescription")}
-          </p>
         </>
       )}
       {isArchived && (
@@ -756,14 +753,6 @@ export default function Listings({
                 {t("selectAllVisible")} ({visibleJobs.length})
               </span>
             </label>
-          </div>
-        )}
-
-        {visibleJobs.length === 0 && !isCrawling && (
-          <div className="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-            <p className="text-slate-400 dark:text-slate-500">
-              {isArchived ? t("archiveEmpty") : t("systemWaiting")}
-            </p>
           </div>
         )}
 
