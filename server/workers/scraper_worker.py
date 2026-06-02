@@ -3,7 +3,6 @@ import json
 import uuid
 import time
 import logging
-import random
 import sys
 from urllib.parse import urljoin, urlparse
 
@@ -66,91 +65,16 @@ def _is_safe_url(url: str) -> bool:
         return False
 
 
-_HTTP_TIMEOUT_CONNECT = 10
-_HTTP_TIMEOUT_READ = 20
-
-_HTTP_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
-
-
-def get_html_without_browser(url: str) -> str | None:
-    """Fetch raw HTML via a plain HTTP GET. Returns None on any error."""
-    if not _is_safe_url(url):
-        logger.warning(f"Blocked SSRF attempt for URL: {url}")
-        return None
-    import requests as _requests
-
-    try:
-        logger.info(f"[HTTP] Attempting plain HTTP fetch for: {url}")
-        resp = _requests.get(
-            url,
-            headers=_HTTP_HEADERS,
-            timeout=(_HTTP_TIMEOUT_CONNECT, _HTTP_TIMEOUT_READ),
-            allow_redirects=True,
-        )
-        resp.raise_for_status()
-        logger.info(
-            f"[HTTP] Fetched {len(resp.text)} chars (status {resp.status_code})"
-        )
-        return resp.text
-    except Exception as e:
-        logger.info(f"[HTTP] Plain HTTP fetch failed for {url}: {e}")
-        return None
-
-
-_MIN_HTML_LENGTH = 500
-_MIN_TEXT_LENGTH = 200
-_MIN_ANCHOR_COUNT = 3
-
-
-def _is_useful_html(html: str) -> bool:
-    """Return True when the HTML looks like real content rather than a JS-only shell."""
-    if not html or len(html) < _MIN_HTML_LENGTH:
-        return False
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-        if len(soup.get_text(separator=" ", strip=True)) < _MIN_TEXT_LENGTH:
-            return False
-        if len(soup.find_all("a", href=True)) < _MIN_ANCHOR_COUNT:
-            return False
-        return True
-    except Exception as e:
-        logger.warning(f"[HTTP] _is_useful_html parse error: {e}")
-        return False
-
-
 def get_html(url: str) -> str | None:
-    """Fetch page HTML, preferring a plain HTTP request and falling back to browser if needed."""
-    html = get_html_without_browser(url)
-    if html and _is_useful_html(html):
-        logger.info(f"[HTTP] Using plain HTTP result for {url}")
-        return html
-    if html:
-        logger.info(
-            f"[HTTP] Insufficient content ({len(html)} chars) — falling back to browser"
-        )
-    else:
-        logger.info(f"[HTTP] Plain HTTP failed — falling back to browser")
+    """Fetch page HTML using the Playwright stealth browser."""
     return get_html_with_browser(url)
 
 
-def get_html_with_browser(url):
+def get_html_with_browser(url: str) -> str | None:
     if not _is_safe_url(url):
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
-    logger.info(f"Launching browser for URL: {url}")
+    logger.info(f"[Browser] Launching stealth browser for: {url}")
     start_time = time.time()
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -168,25 +92,22 @@ def get_html_with_browser(url):
         page = context.new_page()
         stealth_sync(page)
         try:
-            logger.info(f"Navigating to {url}...")
+            logger.info(f"[Browser] Navigating to {url}...")
             page.goto(url, timeout=60000, wait_until="domcontentloaded")
-
-            sleep_time = random.uniform(2, 4)
-            logger.info(f"Waiting {sleep_time:.2f}s for dynamic content...")
-            time.sleep(sleep_time)
-
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                logger.info("[Browser] networkidle timeout — proceeding with current page state")
             content = page.content()
             duration = time.time() - start_time
-            logger.info(
-                f"Successfully fetched {len(content)} bytes from {url} in {duration:.2f}s"
-            )
+            logger.info(f"[Browser] Fetched {len(content)} bytes from {url} in {duration:.2f}s")
             return content
         except Exception as e:
-            logger.error(f"Playwright Error fetching {url}: {e}", exc_info=True)
+            logger.error(f"[Browser] Playwright error fetching {url}: {e}", exc_info=True)
             return None
         finally:
             browser.close()
-            logger.info("Browser closed.")
+            logger.info("[Browser] Closed.")
 
 
 def get_clean_content(html):
@@ -518,7 +439,7 @@ def _mark_scrape_failed(r, job_id, user_id):
 
 
 @celery_app.task(name="scraper.scrape_detail")
-def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None):
+def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_browser=False):
     logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
 
     r = redis.from_url(REDIS_URL)
