@@ -8,3 +8,11 @@
 .cursor
 .cursorrules
 .superpowers
+
+# Runtime artifacts (Playwright/Chrome downloads, config caches)
+server/.config/
+server/.local/
+server/.fontconfig/
+
+# External directories not belonging to this project
+muhfweeceevee/
