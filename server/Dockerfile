@@ -6,7 +6,7 @@ WORKDIR /app
 # build-essential & pkg-config: Zum Kompilieren von C-Extensions
 # libcairo2-dev: Grafik-Bibliothek für PDFs
 # python3-dev: Python Header Dateien
-RUN apt-get update && apt-get install -y \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
     pkg-config \
     python3-dev \
