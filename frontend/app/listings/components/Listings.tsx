@@ -20,7 +20,8 @@ import ConfirmModal from "../../components/ConfirmModal";
 import FilterBar from "../../components/FilterBar";
 import JobCard from "../../components/JobCard/JobCard";
 import JobBoard from "../../components/JobBoard";
-import JobDetailModal from "../../components/JobDetailModal";
+import JobSidePanel from "../../components/JobSidePanel";
+import { useJobPanel } from "../../hooks/useJobPanel";
 import PageWrapper from "../../components/PageWrapper";
 import PageHeader from "../../components/PageHeader";
 import SearchHeader from "../../components/SearchHeader";
@@ -111,9 +112,6 @@ export default function Listings({
   const [platforms, setPlatforms] = useState<{ id: number; name: string }[]>(
     [],
   );
-  const [selectedJobForDetail, setSelectedJobForDetail] = useState<Job | null>(
-    null,
-  );
 
   useEffect(() => {
     if (token) {
@@ -200,6 +198,15 @@ export default function Listings({
     initialJobs: initialDataLoaded ? initialJobs : undefined,
     platformId: platformIdFilter,
     isArchived,
+  });
+
+  const { selectedJob, openPanel, closePanel, updateSelectedJob } = useJobPanel({
+    token,
+    logout,
+    onJobUpdate: (updated) =>
+      setJobs((prev) =>
+        prev.map((j) => (j.id === updated.id ? { ...j, ...updated } : j)),
+      ),
   });
 
   const onJobUpdate = useCallback(
@@ -518,14 +525,6 @@ export default function Listings({
       .catch(() => {});
   }, [token, jobs]);
 
-  // Keep the detail modal in sync when the underlying job is updated (e.g. after generation)
-  useEffect(() => {
-    if (!selectedJobForDetail) return;
-    const updated = jobs.find((j) => j.id === selectedJobForDetail.id);
-    if (updated && updated !== selectedJobForDetail) {
-      setSelectedJobForDetail(updated);
-    }
-  }, [jobs]);
 
   const visibleJobs = useMemo(() => {
     return jobs.filter((job) => {
@@ -552,14 +551,14 @@ export default function Listings({
         token={token}
       />
 
-      <JobDetailModal
-        isOpen={!!selectedJobForDetail}
-        onClose={() => setSelectedJobForDetail(null)}
-        job={selectedJobForDetail!}
+      <JobSidePanel
+        isOpen={!!selectedJob}
+        onClose={closePanel}
+        job={selectedJob}
         isGenerating={
-          selectedJobForDetail
-            ? pendingIds.includes(selectedJobForDetail.id) ||
-              selectedJobForDetail.status === "GENERATING"
+          selectedJob
+            ? pendingIds.includes(selectedJob.id) ||
+              selectedJob.status === "GENERATING"
             : false
         }
         onGenerate={handleGenerate}
@@ -778,7 +777,7 @@ export default function Listings({
               jobs={visibleJobs}
               onStatusUpdate={handleUpdateStatus}
               onArchive={setJobToDelete}
-              onOpenDetail={setSelectedJobForDetail}
+              onOpenDetail={openPanel}
               statusCounts={statusCounts}
             />
           </div>
