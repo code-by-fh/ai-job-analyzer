@@ -201,6 +201,25 @@ def _is_http_url(url: str) -> bool:
         return False
 
 
+def _init_crawl_job(job_id: str, user_id: int, platform_url: str, total: int, is_initial_run: bool) -> None:
+    r.hset(
+        f"crawl_job:{job_id}",
+        mapping={
+            "user_id": user_id,
+            "platform_url": platform_url,
+            "total": total,
+            "scraping_completed": 0,
+            "analysis_completed": 0,
+            "jobs_saved": 0,
+            "status": "starting",
+            "started_at": str(int(time.time() * 1000)),
+            "is_initial_run": int(is_initial_run),
+        },
+    )
+    r.expire(f"crawl_job:{job_id}", 3600)
+    r.sadd(f"user:{user_id}:active_crawls", job_id)
+
+
 @app.post("/search")
 async def search_jobs(search: JobSearch, current_user: User = Depends(get_current_user)):
     if not _is_http_url(search.query):
@@ -209,22 +228,7 @@ async def search_jobs(search: JobSearch, current_user: User = Depends(get_curren
     user_id = current_user.id
     job_id = str(uuid.uuid4())
 
-    r.hset(
-        f"crawl_job:{job_id}",
-        mapping={
-            "user_id": user_id,
-            "platform_url": search.query,
-            "total": 0,
-            "scraping_completed": 0,
-            "analysis_completed": 0,
-            "jobs_saved": 0,
-            "status": "starting",
-            "started_at": str(int(time.time() * 1000)),
-            "is_initial_run": int(search.is_initial_run),
-        },
-    )
-    r.expire(f"crawl_job:{job_id}", 3600)  # TTL: 1 hour
-    r.sadd(f"user:{user_id}:active_crawls", job_id)
+    _init_crawl_job(job_id, user_id, search.query, total=0, is_initial_run=search.is_initial_run)
 
     workflow = chain(
         celery_app.signature(
@@ -251,22 +255,7 @@ async def import_job(data: JobImport, current_user: User = Depends(get_current_u
     user_id = current_user.id
     job_id = str(uuid.uuid4())
 
-    r.hset(
-        f"crawl_job:{job_id}",
-        mapping={
-            "user_id": user_id,
-            "platform_url": data.url,
-            "total": 1,
-            "scraping_completed": 0,
-            "analysis_completed": 0,
-            "jobs_saved": 0,
-            "status": "starting",
-            "started_at": str(int(time.time() * 1000)),
-            "is_initial_run": 0,
-        },
-    )
-    r.expire(f"crawl_job:{job_id}", 3600)
-    r.sadd(f"user:{user_id}:active_crawls", job_id)
+    _init_crawl_job(job_id, user_id, data.url, total=1, is_initial_run=False)
 
     # Notify frontend that crawl job started
     r.publish("job_updates", json.dumps({

@@ -92,6 +92,9 @@ export const translations = {
     jobs: "jobs",
     cancelCrawl: "Cancel crawl",
     cancelCrawlConfirm: "Are you sure you want to cancel this crawl job?",
+    jobImportSuccess: "Job successfully imported and analyzed.",
+    jobImportAlreadyExists: "This job is already in your list.",
+    jobImportFailed: "Could not import the job. Please check the URL.",
 
     // Application Modal
     applicationPreview: "Application Preview",
@@ -685,6 +688,9 @@ export const translations = {
     jobs: "Jobs wurden",
     cancelCrawl: "Crawl abbrechen",
     cancelCrawlConfirm: "Möchten Sie diesen Crawl-Job wirklich abbrechen?",
+    jobImportSuccess: "Job erfolgreich importiert und analysiert.",
+    jobImportAlreadyExists: "Dieser Job ist bereits in deiner Liste.",
+    jobImportFailed: "Job konnte nicht importiert werden. Bitte URL prüfen.",
 
     // Application Modal
     applicationPreview: "Anschreiben Vorschau",

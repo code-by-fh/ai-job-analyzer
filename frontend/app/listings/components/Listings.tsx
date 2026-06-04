@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth, fetchWithAuth } from "../../components/AuthProvider";
 import { useLanguage } from "../../components/LanguageProvider";
+import { useNotification } from "../../components/NotificationProvider";
 
 // Components
 import ApplicationModal from "../../components/ApplicationModal";
@@ -45,12 +46,14 @@ export default function Listings({
 }: ListingsProps) {
   const { user, token, logout } = useAuth();
   const { t } = useLanguage();
+  const { showSuccess, showError: showNotificationError } = useNotification();
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // --- STATE ---
   const [query, setQuery] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [importJobId, setImportJobId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"score" | "date">(
     (searchParams.get("sort") as any) || "date",
   );
@@ -378,13 +381,24 @@ export default function Listings({
   }, [hasMore, isLoadingMore, jobs]);
 
   useEffect(() => {
-    activeCrawls.forEach((crawl) => {
-      if (crawl.status === "failed" && !searchError) {
-        setSearchError(crawl.error_message || "Fehler beim Analysieren der URL");
-        setTimeout(() => setSearchError(null), 5000);
+    if (!importJobId) return;
+    const crawl = activeCrawls.get(importJobId);
+    if (!crawl) return;
+
+    if (crawl.show_success) {
+      const skipped = crawl.jobs_skipped ?? 0;
+      const saved = crawl.jobs_saved ?? 0;
+      if (saved > 0) {
+        showSuccess(t("jobImportSuccess"));
+      } else if (skipped > 0) {
+        showSuccess(t("jobImportAlreadyExists"));
       }
-    });
-  }, [activeCrawls, searchError]);
+      setImportJobId(null);
+    } else if (crawl.status === "failed") {
+      showNotificationError(crawl.error_message || t("jobImportFailed"));
+      setImportJobId(null);
+    }
+  }, [activeCrawls, importJobId, showSuccess, showNotificationError, t]);
 
   const startSearch = async () => {
     if (!user?.is_profile_complete) {
@@ -427,6 +441,8 @@ export default function Listings({
         return;
       }
 
+      const result = await response.json();
+      if (result.job_id) setImportJobId(result.job_id);
       setQuery("");
     } catch (e) {
       setSearchError("Fehler beim Analysieren der URL. Bitte versuchen Sie es später erneut.");
