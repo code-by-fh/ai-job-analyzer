@@ -2,7 +2,7 @@
 
 ### 1. Current Status (As of 2026-06-04)
 
-**Phase:** Platform-Setup-Wizard + URL-Pattern-Inferenz abgeschlossen. Automated Tests (49 bestanden) für Platforms, Settings, Profile Documents integriert. Fokus jetzt: Automated Tests für Auth & Jobs, Security Hardening.
+**Phase:** Pipeline Panel implementiert. JobDetailModal ersetzt durch JobSidePanel (Slide-in, URL-sync `?job=<id>`, Pipeline-Tabs, StepCard-CTAs). Vollständige `/jobs/[id]`-Route hinzugefügt. Fokus jetzt: Automated Tests für Auth & Jobs, Security Hardening.
 
 ### 2. Status Board
 
@@ -19,6 +19,7 @@
 | **Dual Storage** | ✅ Completed (`services/storage.py`) | DB-Blob (`LargeBinary`) vs. Google Drive OAuth. |
 | **Notifications** | ✅ Completed & Tested (`routers/settings.py`, `tests/test_settings_router.py`) | 5 Kanäle: Gmail, Pushover, Resend, Mailjet, SMTP + Templates. 49 Tests grün. |
 | **Real-time Engine** | ✅ Completed (`routers/websocket.py`) | Cookie-authed `/ws`, Live-Updates via `useCrawl` / `CrawlStatus`. |
+| **Pipeline Panel** | ✅ Completed (`components/JobSidePanel/`, `hooks/useJobPanel.ts`, `app/jobs/[id]/page.tsx`) | JobSidePanel ersetzt JobDetailModal: 420px Slide-in, PipelineTabs, StepCard-CTAs, URL-sync `?job=<id>`, Deep-Link-Restore, vollständige `/jobs/[id]`-Route. |
 
 ### 3. Next Up & Backlog
 
