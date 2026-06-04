@@ -187,6 +187,8 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
     fetchCrawlStatus,
     crawlToCancel,
     setCrawlToCancel,
+    cancelCrawl,
+    cancelAllCrawls,
     confirmCancelCrawl,
   } = useCrawl({
     user,
@@ -445,6 +447,7 @@ export default function Dashboard({ initialFilter }: DashboardProps) {
             (b.started_at || "").localeCompare(a.started_at || ""),
           )}
           onCancel={setCrawlToCancel}
+          onCancelAll={cancelAllCrawls}
         />
       )}
 

@@ -13,6 +13,7 @@ import MailjetTemplateModal from "./JobPlatforms/MailjetTemplateModal";
 import SmtpTemplateModal from "./JobPlatforms/SmtpTemplateModal";
 import NotificationAdaptersModal from "./JobPlatforms/NotificationAdaptersModal";
 import AddPlatformInput from "./JobPlatforms/AddPlatformInput";
+import PlatformSetupModal from "./JobPlatforms/PlatformSetupModal";
 import { NotificationTemplate } from "../../components/TemplateManager";
 
 interface JobPlatformsManagerProps {
@@ -48,6 +49,7 @@ export default function JobPlatformsManager({
   const [platformToRemove, setPlatformToRemove] = useState<number | null>(null);
   const [isAddingPlatform, setIsAddingPlatform] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [setupUrl, setSetupUrl] = useState<string | null>(null);
 
   const [pushoverModalPlatform, setPushoverModalPlatform] =
     useState<Platform | null>(null);
@@ -127,7 +129,7 @@ export default function JobPlatformsManager({
     Record<number, string | null>
   >({});
 
-  const { activeCrawls, crawlToCancel, setCrawlToCancel, confirmCancelCrawl } =
+  const { activeCrawls, crawlToCancel, setCrawlToCancel, cancelCrawl, cancelAllCrawls, confirmCancelCrawl } =
     useCrawl({ user, token });
   const savedToLastRunRef = useRef<Set<string>>(new Set());
 
@@ -226,6 +228,35 @@ export default function JobPlatformsManager({
     }
   }, [token, initialPlatforms]);
 
+  // Restore setup wizard from URL param on load (reload resilience)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const url = params.get("setup_url");
+    if (url) setSetupUrl(url);
+  }, []);
+
+  // Resume setup for any legacy platform still in pending_setup. New platforms
+  // are only created once setup completes, so this only fires for rows created
+  // before the deferred-creation flow.
+  useEffect(() => {
+    if (setupUrl) return;
+    const pending = platforms.find((p) => p.setup_status === "pending_setup");
+    if (pending) setSetupUrl(pending.url);
+  }, [platforms]);
+
+  // Keep URL in sync with the open setup wizard (reload resilience)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (setupUrl) {
+      params.set("setup_url", setupUrl);
+    } else {
+      params.delete("setup_url");
+    }
+    const newSearch = params.toString();
+    const newUrl = newSearch ? `?${newSearch}` : window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  }, [setupUrl]);
+
   useEffect(() => {
     if (!token) return;
     fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/notification-templates`)
@@ -250,6 +281,7 @@ export default function JobPlatformsManager({
   const addPlatform = async () => {
     if (!newUrl) return;
     setAddError(null);
+    let normalizedUrl: string;
     try {
       const parsed = new URL(newUrl);
       if (!["http:", "https:"].includes(parsed.protocol)) {
@@ -257,43 +289,20 @@ export default function JobPlatformsManager({
         setTimeout(() => setStatus(""), 3000);
         return;
       }
+      normalizedUrl = parsed.href;
     } catch (_) {
       setStatus(t("invalidUrl"));
       setTimeout(() => setStatus(""), 3000);
       return;
     }
-    setIsAddingPlatform(true);
-    setStatus(t("adding"));
-    try {
-      const res = await fetchWithAuth(
-        `${process.env.NEXT_PUBLIC_API_URL}/platforms`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: newUrl }),
-        },
-      );
-      if (res.ok) {
-        await res.json();
-        setNewUrl("");
-        setIsAddingPlatform(false);
-        fetchPlatforms();
-        setStatus(t("platformAdded"));
-        setTimeout(() => setStatus(""), 3000);
-        return;
-      } else {
-        const err = await res.json();
-        if (res.status === 400 && err.detail === "Platform URL already exists") {
-          setAddError(t("platformAlreadyExists"));
-        } else {
-          setStatus(`${t("error")}: ${err.detail || "Failed to add"} ❌`);
-        }
-      }
-    } catch (e) {
-      setStatus(t("error"));
+    // Reject obvious duplicates up front; the platform itself is only created
+    // once the setup wizard completes (deferred creation).
+    if (platforms.some((p) => p.url === normalizedUrl || p.url === newUrl)) {
+      setAddError(t("platformAlreadyExists"));
+      return;
     }
-    setIsAddingPlatform(false);
-    setTimeout(() => setStatus(""), 3000);
+    setNewUrl("");
+    setSetupUrl(newUrl);
   };
 
   const finalizeRemovePlatform = async () => {
@@ -314,6 +323,10 @@ export default function JobPlatformsManager({
   };
 
   const triggerCrawl = async (platform: Platform) => {
+    if (platform.setup_status === "pending_setup") {
+      setSetupUrl(platform.url);
+      return;
+    }
     setPendingUrls((prev) => new Set(prev).add(platform.url));
     setStatus(t("startingCrawler"));
     try {
@@ -327,7 +340,18 @@ export default function JobPlatformsManager({
         setStatus(t("crawlJobsDispatched"));
         fetchPlatforms();
       } else {
-        setStatus(t("error"));
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 400 && err.detail === "Platform setup not completed") {
+          // Setup never finished — resume onboarding for this platform.
+          setSetupUrl(platform.url);
+        } else if (res.status === 404) {
+          // Platform row no longer exists server-side (stale card). Resync the
+          // list: a deleted platform disappears, and a still-pending platform is
+          // reopened for setup by the auto-open effect.
+          await fetchPlatforms();
+        } else {
+          setStatus(t("error"));
+        }
         setPendingUrls((prev) => {
           const next = new Set(prev);
           next.delete(platform.url);
@@ -799,6 +823,17 @@ export default function JobPlatformsManager({
       id="platforms-manager"
       className="bg-white dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6"
     >
+      {setupUrl && (
+        <PlatformSetupModal
+          url={setupUrl}
+          onComplete={() => {
+            setSetupUrl(null);
+            fetchPlatforms();
+          }}
+          onClose={() => setSetupUrl(null)}
+        />
+      )}
+
       <ConfirmModal
         isOpen={!!crawlToCancel}
         onClose={() => setCrawlToCancel(null)}

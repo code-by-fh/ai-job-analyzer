@@ -29,6 +29,7 @@ export interface CrawlJob {
 interface CrawlStatusProps {
   jobs: CrawlJob[];
   onCancel?: (jobId: string) => void;
+  onCancelAll?: () => void;
 }
 
 export function CrawlSteps({
@@ -307,12 +308,27 @@ export function CrawlSteps({
   );
 }
 
-export default function CrawlStatus({ jobs, onCancel }: CrawlStatusProps) {
+export default function CrawlStatus({ jobs, onCancel, onCancelAll }: CrawlStatusProps) {
   const { t } = useLanguage();
   if (jobs.length === 0) return null;
 
+  const cancellableJobs = jobs.filter((j) => !j.show_success);
+
   return (
     <div className="space-y-4">
+      {cancellableJobs.length > 1 && onCancelAll && (
+        <div className="flex justify-end">
+          <button
+            onClick={onCancelAll}
+            className="flex items-center gap-1.5 text-xs text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 font-medium px-3 py-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Alle abbrechen ({cancellableJobs.length})
+          </button>
+        </div>
+      )}
       {jobs.map((job) => (
         <div
           key={job.job_id}

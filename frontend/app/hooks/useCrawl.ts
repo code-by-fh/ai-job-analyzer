@@ -86,26 +86,22 @@ export function useCrawl({
     }
   }, [user?.id]);
 
-  const confirmCancelCrawl = async () => {
-    if (!crawlToCancel || !user?.id) return;
-
+  const cancelCrawl = async (jobId: string) => {
+    if (!user?.id) return;
     try {
       const res = await fetchWithAuth(
         `${process.env.NEXT_PUBLIC_API_URL}/scraper/cancel-crawl`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ job_id: crawlToCancel, user_id: user.id }),
+          body: JSON.stringify({ job_id: jobId }),
         },
       );
-
       if (res.ok) {
         setActiveCrawls((prev) => {
           const newMap = new Map(prev);
-          newMap.delete(crawlToCancel);
-          if (newMap.size === 0) {
-            setIsCrawling(false);
-          }
+          newMap.delete(jobId);
+          if (newMap.size === 0) setIsCrawling(false);
           return newMap;
         });
       } else {
@@ -116,6 +112,31 @@ export function useCrawl({
       logger.error({ err: e }, "Error cancelling crawl");
       setGlobalError("Network error while cancelling crawl");
     }
+  };
+
+  const cancelAllCrawls = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/scraper/cancel-all-crawls`,
+        { method: "POST" },
+      );
+      if (res.ok) {
+        setActiveCrawls(new Map());
+        setIsCrawling(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setGlobalError(`Failed to cancel all: ${data.message || res.statusText}`);
+      }
+    } catch (e) {
+      logger.error({ err: e }, "Error cancelling all crawls");
+      setGlobalError("Network error while cancelling crawls");
+    }
+  };
+
+  const confirmCancelCrawl = async () => {
+    if (!crawlToCancel) return;
+    await cancelCrawl(crawlToCancel);
     setCrawlToCancel(null);
   };
 
@@ -319,6 +340,15 @@ export function useCrawl({
                 });
               }, 5000);
             }
+          } else if (data.type === "crawl_job_cancelled") {
+            if (data.user_id === user?.id) {
+              setActiveCrawls((prev) => {
+                const newMap = new Map(prev);
+                newMap.delete(data.job_id);
+                if (newMap.size === 0) setIsCrawling(false);
+                return newMap;
+              });
+            }
           } else if (data.type === "job_skipped") {
             if (data.user_id === user?.id) {
               setActiveCrawls((prev) => {
@@ -440,6 +470,8 @@ export function useCrawl({
     fetchCrawlStatus,
     crawlToCancel,
     setCrawlToCancel,
+    cancelCrawl,
+    cancelAllCrawls,
     confirmCancelCrawl,
   };
 }

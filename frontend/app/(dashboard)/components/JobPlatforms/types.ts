@@ -4,8 +4,8 @@ export interface Platform {
   name: string;
   favicon_url: string | null;
   crawl_interval_minutes: number;
-  schedule_time: string | null; // "HH:MM" UTC
-  schedule_days: number[] | null; // 0=Mon..6=Sun
+  schedule_time: string | null;
+  schedule_days: number[] | null;
   last_crawl_at: string | null;
   is_active: boolean;
   job_count: number;
@@ -19,6 +19,8 @@ export interface Platform {
   mailjet_recipients: string[] | null;
   smtp_template: string | null;
   smtp_recipients: string[] | null;
+  setup_status: "pending_setup" | "active";
+  url_pattern: string | null;
 }
 
 export type LastRun = {
