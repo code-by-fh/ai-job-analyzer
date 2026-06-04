@@ -8,7 +8,7 @@
 
 | Feature Block | Status / Files | Key Details |
 | --- | --- | --- |
-| **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin-UI. |
+| **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin-UI, geteilte AI Model Settings (Cloud & Lokal) mit separaten Forms/Save-Buttons. |
 | **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notizen, Bulk-Aktionen, History, Uploads. Matching-Threshold archiviert neue Jobs mit `match_score < Wert` automatisch. |
 | **AI Layer** | ✅ Completed (`intelligence/`) | Matching, Anschreiben, Interview-Prep, Firmenprofile via OpenRouter. |
 | **Platforms & Beat** | ✅ Completed & Tested (`routers/platforms.py`, `tests/test_platforms_router.py`) | CRUD, Intervalle, Scheduler, Deferred Setup-Wizard (URL-basiert), URL-Pattern-Inferenz (zeichenweiser Common-Prefix). 15 Tests grün. |

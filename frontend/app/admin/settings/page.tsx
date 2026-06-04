@@ -41,7 +41,8 @@ export default function AdminSettingsPage() {
   const [ollamaModel, setOllamaModel] = useState("llama3.1:8b");
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
+  const [statusOpenRouter, setStatusOpenRouter] = useState("");
+  const [statusOllama, setStatusOllama] = useState("");
 
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -247,14 +248,12 @@ export default function AdminSettingsPage() {
     }
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveOpenRouter = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus("Saving...");
+    setStatusOpenRouter("Saving...");
     try {
       const payload: Record<string, string | null> = {
         openrouter_model: model,
-        ollama_model: ollamaModel,
-        ollama_base_url: ollamaBaseUrl || null,
       };
       if (apiKey !== "") payload.openrouter_api_key = apiKey || null;
       const res = await fetchWithAuth(
@@ -269,18 +268,48 @@ export default function AdminSettingsPage() {
       );
       if (res.ok) {
         const data = await res.json();
-        setStatus("Saved successfully!");
+        setStatusOpenRouter("Saved successfully!");
         setApiKeySet(data.openrouter_api_key_set ?? false);
         setApiKey("");
+      } else {
+        setStatusOpenRouter("Error saving settings");
+      }
+    } catch {
+      setStatusOpenRouter("Error saving settings");
+    }
+    setTimeout(() => setStatusOpenRouter(""), 3000);
+  };
+
+  const handleSaveOllama = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusOllama("Saving...");
+    try {
+      const payload = {
+        ollama_model: ollamaModel,
+        ollama_base_url: ollamaBaseUrl || null,
+      };
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/settings`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setStatusOllama("Saved successfully!");
         if (data.ollama_model) setOllamaModel(data.ollama_model);
         if (data.ollama_base_url !== undefined) setOllamaBaseUrl(data.ollama_base_url);
       } else {
-        setStatus("Error saving settings");
+        setStatusOllama("Error saving settings");
       }
-    } catch (e) {
-      setStatus("Error saving settings");
+    } catch {
+      setStatusOllama("Error saving settings");
     }
-    setTimeout(() => setStatus(""), 3000);
+    setTimeout(() => setStatusOllama(""), 3000);
   };
 
   const filteredModels = models.filter((m) => {
@@ -321,327 +350,348 @@ export default function AdminSettingsPage() {
         subtitle={t("adminSettingsDescription")}
       />
 
-      <div className="relative z-20 bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-        <form onSubmit={handleSave} className="space-y-6">
-          {/* API Key Section */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <Key className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                OpenRouter API Key
-              </h3>
-              {apiKeySet && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Key configured
+      <div className="space-y-8 relative z-20">
+        {/* Cloud AI Model (OpenRouter) */}
+        <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <form onSubmit={handleSaveOpenRouter} className="space-y-6">
+            {/* API Key Section */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Key className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  OpenRouter API Key
+                </h3>
+                {apiKeySet && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Key configured
+                  </span>
+                )}
+              </div>
+              <input
+                id="openrouter-api-key"
+                type="password"
+                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={
+                  apiKeySet
+                    ? "••••••••  (leave blank to keep current)"
+                    : "sk-or-v1-..."
+                }
+                autoComplete="off"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-500">
+                Your{" "}
+                <a
+                  href="https://openrouter.ai/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-500 hover:underline inline-flex items-center gap-0.5"
+                >
+                  OpenRouter API key
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                {". "}
+                If set, this overrides the server environment variable for all AI
+                operations.
+                {apiKeySet && (
+                  <button
+                    type="button"
+                    className="ml-2 text-rose-500 hover:underline"
+                    onClick={() => setApiKey("")}
+                  >
+                    Clear key
+                  </button>
+                )}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleTestOpenRouter}
+                disabled={orTestLoading || !apiKeySet}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-3 h-3 ${orTestLoading ? "animate-spin" : ""}`} />
+                Test connection
+              </button>
+              {orTestStatus && (
+                <span className={`text-xs font-medium ${orTestStatus.startsWith("Error") || orTestStatus.startsWith("Network") ? "text-rose-500" : "text-emerald-500"}`}>
+                  {orTestStatus}
                 </span>
               )}
             </div>
-            <input
-              id="openrouter-api-key"
-              type="password"
-              className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={
-                apiKeySet
-                  ? "••••••••  (leave blank to keep current)"
-                  : "sk-or-v1-..."
-              }
-              autoComplete="off"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-500">
-              Your{" "}
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-indigo-500 hover:underline inline-flex items-center gap-0.5"
-              >
-                OpenRouter API key
-                <ExternalLink className="w-3 h-3" />
-              </a>
-              {". "}
-              If set, this overrides the server environment variable for all AI
-              operations.
-              {apiKeySet && (
-                <button
-                  type="button"
-                  className="ml-2 text-rose-500 hover:underline"
-                  onClick={() => setApiKey("")}
-                >
-                  Clear key
-                </button>
-              )}
-            </p>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleTestOpenRouter}
-              disabled={orTestLoading || !apiKeySet}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-3 h-3 ${orTestLoading ? "animate-spin" : ""}`} />
-              Test connection
-            </button>
-            {orTestStatus && (
-              <span className={`text-xs font-medium ${orTestStatus.startsWith("Error") || orTestStatus.startsWith("Network") ? "text-rose-500" : "text-emerald-500"}`}>
-                {orTestStatus}
-              </span>
-            )}
-          </div>
+            <div className="border-t border-slate-100 dark:border-slate-800" />
 
-          <div className="border-t border-slate-100 dark:border-slate-800" />
-
-          {/* Model Section */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <Bot className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                AI Model
-              </h3>
-            </div>
-
-            <div className="flex gap-2">
-              <div className="relative flex-1" ref={dropdownRef}>
-                <button
-                  type="button"
-                  id="model-selector"
-                  className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-950/50 hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-left focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
-                  onClick={() => {
-                    if (models.length > 0) {
-                      setDropdownOpen((o) => !o);
-                    } else {
-                      fetchModels();
-                    }
-                  }}
-                >
-                  <div className="min-w-0">
-                    {selectedModel ? (
-                      <div>
-                        <span className="block text-sm font-medium text-slate-900 dark:text-white truncate">
-                          {selectedModel.name}
-                        </span>
-                        <span className="block text-xs text-slate-400 font-mono truncate">
-                          {selectedModel.id}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-slate-500 font-mono truncate">
-                        {model || "Select a model..."}
-                      </span>
-                    )}
-                  </div>
-                  <ChevronDown
-                    className={`w-4 h-4 text-slate-400 shrink-0 ml-2 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
-
-                {dropdownOpen && models.length > 0 && (
-                  <div className="absolute z-[100] mt-2 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl shadow-slate-900/20 overflow-hidden">
-                    <div className="p-2 space-y-1.5 border-b border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                        <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                        <input
-                          type="text"
-                          autoFocus
-                          className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
-                          placeholder="Search models..."
-                          value={modelSearch}
-                          onChange={(e) => setModelSearch(e.target.value)}
-                        />
-                        {modelSearch && (
-                          <button
-                            type="button"
-                            onClick={() => setModelSearch("")}
-                          >
-                            <X className="w-3 h-3 text-slate-400 hover:text-slate-600" />
-                          </button>
-                        )}
-                      </div>
-                      <div className="px-1">
-                        <button
-                          type="button"
-                          onClick={() => setFreeOnly((v) => !v)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                            freeOnly
-                              ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600"
-                          }`}
-                        >
-                          <span
-                            className={`w-2 h-2 rounded-full ${freeOnly ? "bg-white" : "bg-slate-300 dark:bg-slate-600"}`}
-                          />
-                          Only free models
-                        </button>
-                      </div>
-                    </div>
-                    <ul className="max-h-72 overflow-y-auto py-1">
-                      {filteredModels.length === 0 ? (
-                        <li className="px-4 py-3 text-sm text-slate-400 text-center">
-                          No models found
-                        </li>
-                      ) : (
-                        filteredModels.map((m) => (
-                          <li key={m.id}>
-                            <button
-                              type="button"
-                              className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition ${model === m.id ? "bg-indigo-50 dark:bg-indigo-900/20" : ""}`}
-                              onClick={() => {
-                                setModel(m.id);
-                                setDropdownOpen(false);
-                                setModelSearch("");
-                              }}
-                            >
-                              <div className="min-w-0">
-                                <span
-                                  className={`block text-sm font-medium truncate ${model === m.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-800 dark:text-slate-200"}`}
-                                >
-                                  {m.name}
-                                </span>
-                                <span className="block text-xs text-slate-400 font-mono truncate">
-                                  {m.id}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 ml-4">
-                                {formatContext(m.context_length) && (
-                                  <span className="text-xs text-slate-400 whitespace-nowrap">
-                                    {formatContext(m.context_length)} ctx
-                                  </span>
-                                )}
-                                {formatPrice(m.pricing?.prompt) && (
-                                  <span
-                                    className={`text-xs font-medium whitespace-nowrap px-1.5 py-0.5 rounded ${formatPrice(m.pricing?.prompt) === "free" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}
-                                  >
-                                    {formatPrice(m.pricing?.prompt)}
-                                  </span>
-                                )}
-                                {model === m.id && (
-                                  <CheckCircle2 className="w-4 h-4 text-indigo-500" />
-                                )}
-                              </div>
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
-                )}
+            {/* Model Section */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Bot className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  AI Model
+                </h3>
               </div>
 
+              <div className="flex gap-2">
+                <div className="relative flex-1" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    id="model-selector"
+                    className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-950/50 hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-left focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    onClick={() => {
+                      if (models.length > 0) {
+                        setDropdownOpen((o) => !o);
+                      } else {
+                        fetchModels();
+                      }
+                    }}
+                  >
+                    <div className="min-w-0">
+                      {selectedModel ? (
+                        <div>
+                          <span className="block text-sm font-medium text-slate-900 dark:text-white truncate">
+                            {selectedModel.name}
+                          </span>
+                          <span className="block text-xs text-slate-400 font-mono truncate">
+                            {selectedModel.id}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-500 font-mono truncate">
+                          {model || "Select a model..."}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={`w-4 h-4 text-slate-400 shrink-0 ml-2 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {dropdownOpen && models.length > 0 && (
+                    <div className="absolute z-[100] mt-2 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl shadow-slate-900/20 overflow-hidden">
+                      <div className="p-2 space-y-1.5 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                          <input
+                            type="text"
+                            autoFocus
+                            className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
+                            placeholder="Search models..."
+                            value={modelSearch}
+                            onChange={(e) => setModelSearch(e.target.value)}
+                          />
+                          {modelSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setModelSearch("")}
+                            >
+                              <X className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="px-1">
+                          <button
+                            type="button"
+                            onClick={() => setFreeOnly((v) => !v)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                              freeOnly
+                                ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600"
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${freeOnly ? "bg-white" : "bg-slate-300 dark:bg-slate-600"}`}
+                            />
+                            Only free models
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="max-h-72 overflow-y-auto py-1">
+                        {filteredModels.length === 0 ? (
+                          <li className="px-4 py-3 text-sm text-slate-400 text-center">
+                            No models found
+                          </li>
+                        ) : (
+                          filteredModels.map((m) => (
+                            <li key={m.id}>
+                              <button
+                                type="button"
+                                className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition ${model === m.id ? "bg-indigo-50 dark:bg-indigo-900/20" : ""}`}
+                                onClick={() => {
+                                  setModel(m.id);
+                                  setDropdownOpen(false);
+                                  setModelSearch("");
+                                }}
+                              >
+                                <div className="min-w-0">
+                                  <span
+                                    className={`block text-sm font-medium truncate ${model === m.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-800 dark:text-slate-200"}`}
+                                  >
+                                    {m.name}
+                                  </span>
+                                  <span className="block text-xs text-slate-400 font-mono truncate">
+                                    {m.id}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-4">
+                                  {formatContext(m.context_length) && (
+                                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                                      {formatContext(m.context_length)} ctx
+                                    </span>
+                                  )}
+                                  {formatPrice(m.pricing?.prompt) && (
+                                    <span
+                                      className={`text-xs font-medium whitespace-nowrap px-1.5 py-0.5 rounded ${formatPrice(m.pricing?.prompt) === "free" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}
+                                    >
+                                      {formatPrice(m.pricing?.prompt)}
+                                    </span>
+                                  )}
+                                  {model === m.id && (
+                                    <CheckCircle2 className="w-4 h-4 text-indigo-500" />
+                                  )}
+                                </div>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  title="Load models from OpenRouter"
+                  onClick={fetchModels}
+                  disabled={modelsLoading}
+                  className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${modelsLoading ? "animate-spin" : ""}`}
+                  />
+                </button>
+              </div>
+
+              {modelsError && (
+                <p className="text-xs text-rose-500">
+                  {modelsError}. Make sure your API key is saved first.
+                </p>
+              )}
+
+              {models.length === 0 && !modelsLoading && (
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  Current model:{" "}
+                  <code className="text-indigo-500">
+                    {model || "tngtech/deepseek-r1t2-chimera:free"}
+                  </code>
+                  . Click the refresh button to load available models from
+                  OpenRouter.
+                </p>
+              )}
+              {models.length > 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  {models.length} models loaded from OpenRouter.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95 cursor-pointer"
+              >
+                Save Cloud Configuration
+              </button>
+              {statusOpenRouter && (
+                <span
+                  className={`text-sm font-bold ${statusOpenRouter.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
+                >
+                  {statusOpenRouter}
+                </span>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Local AI Model (Ollama / LM Studio) */}
+        <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <form onSubmit={handleSaveOllama} className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Bot className="w-4 h-4 text-violet-500" />
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Local LLM (LM Studio / Ollama)
+                </h3>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Server URL
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
+                  value={ollamaBaseUrl}
+                  onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  OpenAI-compatible endpoint of your local LM Studio or Ollama server. Leave blank to use the default (<code className="text-violet-500">http://localhost:11434/v1</code>).
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Model name
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                  placeholder="llama3.1:8b"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  Model identifier as shown in LM Studio or by <code className="text-violet-500">ollama list</code>. Used for CV tailoring.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                title="Load models from OpenRouter"
-                onClick={fetchModels}
-                disabled={modelsLoading}
-                className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleTestOllama}
+                disabled={ollamaTestLoading}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <RefreshCw
-                  className={`w-4 h-4 ${modelsLoading ? "animate-spin" : ""}`}
-                />
+                <RefreshCw className={`w-3 h-3 ${ollamaTestLoading ? "animate-spin" : ""}`} />
+                Test connection
               </button>
+              {ollamaTestStatus && (
+                <span className={`text-xs font-medium ${ollamaTestStatus.startsWith("Error") || ollamaTestStatus.startsWith("Network") ? "text-rose-500" : ollamaTestStatus.includes("not found") ? "text-amber-500" : "text-emerald-500"}`}>
+                  {ollamaTestStatus}
+                </span>
+              )}
             </div>
 
-            {modelsError && (
-              <p className="text-xs text-rose-500">
-                {modelsError}. Make sure your API key is saved first.
-              </p>
-            )}
-
-            {models.length === 0 && !modelsLoading && (
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                Current model:{" "}
-                <code className="text-indigo-500">
-                  {model || "tngtech/deepseek-r1t2-chimera:free"}
-                </code>
-                . Click the refresh button to load available models from
-                OpenRouter.
-              </p>
-            )}
-            {models.length > 0 && (
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                {models.length} models loaded from OpenRouter.
-              </p>
-            )}
-          </div>
-
-          <div className="border-t border-slate-100 dark:border-slate-800" />
-
-          {/* Ollama / LM Studio Section */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Bot className="w-4 h-4 text-violet-500" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Local LLM (LM Studio / Ollama)
-              </h3>
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Server URL
-              </label>
-              <input
-                type="text"
-                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
-                value={ollamaBaseUrl}
-                onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                placeholder="http://localhost:11434/v1"
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                OpenAI-compatible endpoint of your local LM Studio or Ollama server. Leave blank to use the default (<code className="text-violet-500">http://localhost:11434/v1</code>).
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Model name
-              </label>
-              <input
-                type="text"
-                className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
-                value={ollamaModel}
-                onChange={(e) => setOllamaModel(e.target.value)}
-                placeholder="llama3.1:8b"
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                Model identifier as shown in LM Studio or by <code className="text-violet-500">ollama list</code>. Used for CV tailoring.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleTestOllama}
-              disabled={ollamaTestLoading}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-3 h-3 ${ollamaTestLoading ? "animate-spin" : ""}`} />
-              Test connection
-            </button>
-            {ollamaTestStatus && (
-              <span className={`text-xs font-medium ${ollamaTestStatus.startsWith("Error") || ollamaTestStatus.startsWith("Network") ? "text-rose-500" : ollamaTestStatus.includes("not found") ? "text-amber-500" : "text-emerald-500"}`}>
-                {ollamaTestStatus}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="submit"
-              className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95 cursor-pointer"
-            >
-              Save Configuration
-            </button>
-            {status && (
-              <span
-                className={`text-sm font-bold ${status.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition active:scale-95 cursor-pointer"
               >
-                {status}
-              </span>
-            )}
-          </div>
-        </form>
+                Save Local Configuration
+              </button>
+              {statusOllama && (
+                <span
+                  className={`text-sm font-bold ${statusOllama.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
+                >
+                  {statusOllama}
+                </span>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
 
       {/* Notification Templates */}

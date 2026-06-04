@@ -30,7 +30,7 @@ router = APIRouter()
 
 
 class SystemSettingsUpdate(BaseModel):
-    openrouter_model: str
+    openrouter_model: Optional[str] = None
     openrouter_api_key: Optional[str] = None
     ollama_model: Optional[str] = None
     ollama_base_url: Optional[str] = None
@@ -71,9 +71,10 @@ def update_admin_settings(
     try:
         db_settings = db.query(SystemSettings).first()
         if not db_settings:
-            db_settings = SystemSettings(openrouter_model=settings.openrouter_model)
+            model_val = settings.openrouter_model or "tngtech/deepseek-r1t2-chimera:free"
+            db_settings = SystemSettings(openrouter_model=model_val)
             db.add(db_settings)
-        else:
+        elif settings.openrouter_model is not None:
             db_settings.openrouter_model = settings.openrouter_model
         if settings.openrouter_api_key is not None:
             db_settings.openrouter_api_key = settings.openrouter_api_key or None
