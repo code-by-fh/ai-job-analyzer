@@ -87,7 +87,10 @@ def check_platforms_for_crawl():
         now_utc = datetime.now(timezone.utc)
 
         # Load platforms that are active and either never crawled or interval passed
-        platforms = db.query(JobPlatform).filter(JobPlatform.is_active == True).all()
+        platforms = db.query(JobPlatform).filter(
+            JobPlatform.is_active == True,
+            JobPlatform.setup_status == 'active',
+        ).all()
 
         triggered_count = 0
         SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")

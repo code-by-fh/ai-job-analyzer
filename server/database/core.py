@@ -125,15 +125,6 @@ class SystemSettings(Base):
     ollama_base_url = Column(String, nullable=True)
 
 
-class DomainUrlPattern(Base):
-    __tablename__ = "domain_url_patterns"
-    id = Column(Integer, primary_key=True, index=True)
-    domain = Column(String, unique=True, index=True, nullable=False)
-    url_pattern = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
 class JobPlatform(Base):
     __tablename__ = "job_platforms"
     id = Column(Integer, primary_key=True, index=True)
@@ -141,9 +132,9 @@ class JobPlatform(Base):
     url = Column(String, index=True)
     name = Column(String)
     favicon_url = Column(String, nullable=True)
-    crawl_interval_minutes = Column(Integer, default=1440)  # Default: 24h (fallback)
-    schedule_time = Column(String, nullable=True)   # "HH:MM" UTC, e.g. "08:30"
-    schedule_days = Column(JSON, nullable=True)     # [0..6] Mon=0 Sun=6
+    crawl_interval_minutes = Column(Integer, default=1440)
+    schedule_time = Column(String, nullable=True)
+    schedule_days = Column(JSON, nullable=True)
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
@@ -155,6 +146,8 @@ class JobPlatform(Base):
     mailjet_recipients = Column(JSON, nullable=True)
     smtp_template = Column(Text, nullable=True)
     smtp_recipients = Column(JSON, nullable=True)
+    setup_status = Column(String, nullable=False, default='pending_setup')
+    url_pattern = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -339,6 +332,8 @@ class PlatformUpdate(BaseModel):
     mailjet_recipients: Optional[List[str]] = None
     smtp_template: Optional[str] = None
     smtp_recipients: Optional[List[str]] = None
+    setup_status: Optional[str] = None
+    url_pattern: Optional[str] = None
 
 
 class PlatformResponse(BaseModel):
@@ -362,6 +357,8 @@ class PlatformResponse(BaseModel):
     smtp_recipients: Optional[List[str]] = None
     job_count: int = 0
     seen_count: int = 0
+    setup_status: str = 'active'
+    url_pattern: Optional[str] = None
 
     class Config:
         orm_mode = True

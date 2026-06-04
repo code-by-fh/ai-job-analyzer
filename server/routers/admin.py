@@ -15,7 +15,6 @@ from database.core import (
     CompanyProfile,
     JobStatusHistory,
     JobDocument,
-    DomainUrlPattern,
     NotificationTemplate,
     NotificationTemplateCreate,
     NotificationTemplateUpdate,
@@ -262,7 +261,6 @@ def wipe_database(
             db.query(JobEntry).delete(synchronize_session=False)
             db.query(JobPlatform).delete(synchronize_session=False)
             db.query(CompanyProfile).delete(synchronize_session=False)
-            db.query(DomainUrlPattern).delete(synchronize_session=False)
         else:
             # Delete ONLY for admin user
             admin_id = current_user.id
@@ -298,20 +296,6 @@ def wipe_database(
             db.query(CompanyProfile).filter(
                 CompanyProfile.domain.notin_(active_domains)
             ).delete(synchronize_session=False)
-
-            # Delete unused URL patterns
-            from urllib.parse import urlparse
-
-            active_urls = db.query(JobPlatform.url).all()
-            active_platform_domains = [
-                urlparse(u[0]).netloc for u in active_urls if u[0]
-            ]
-            if active_platform_domains:
-                db.query(DomainUrlPattern).filter(
-                    DomainUrlPattern.domain.notin_(active_platform_domains)
-                ).delete(synchronize_session=False)
-            else:
-                db.query(DomainUrlPattern).delete(synchronize_session=False)
 
         db.commit()
         return {"status": "success"}

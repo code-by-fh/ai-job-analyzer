@@ -21,6 +21,23 @@ from core.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _is_cancelled(r, job_id):
+    """Return True if the crawl job was cancelled or its tracking state is gone.
+
+    Checks a dedicated cancellation marker that — unlike the main crawl_job hash —
+    is never recreated by hincrby/hset/lpush. This makes the check robust against
+    a late-finishing task resurrecting the deleted job key.
+    """
+    if not job_id:
+        return False
+    try:
+        if r.exists(f"crawl_job:{job_id}:cancelled"):
+            return True
+        return not r.exists(f"crawl_job:{job_id}")
+    except Exception:
+        return False
+
+
 _PRIVATE_RANGES = [
     # loopback
     (0x7F000000, 0x7FFFFFFF),
@@ -77,21 +94,23 @@ def get_html_with_browser(url: str) -> str | None:
     logger.info(f"[Browser] Launching stealth browser for: {url}")
     start_time = time.time()
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-            ],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-        )
-        page = context.new_page()
-        stealth_sync(page)
+        browser = None
+        context = None
         try:
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                ],
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+            )
+            page = context.new_page()
+            stealth_sync(page)
             logger.info(f"[Browser] Navigating to {url}...")
             page.goto(url, timeout=60000, wait_until="domcontentloaded")
             try:
@@ -106,7 +125,18 @@ def get_html_with_browser(url: str) -> str | None:
             logger.error(f"[Browser] Playwright error fetching {url}: {e}", exc_info=True)
             return None
         finally:
-            browser.close()
+            # Close context then browser, each guarded so a failure in one step
+            # never leaves the other (and its Chromium processes) dangling.
+            if context is not None:
+                try:
+                    context.close()
+                except Exception as ctx_e:
+                    logger.warning(f"[Browser] Error closing context: {ctx_e}")
+            if browser is not None:
+                try:
+                    browser.close()
+                except Exception as br_e:
+                    logger.warning(f"[Browser] Error closing browser: {br_e}")
             logger.info("[Browser] Closed.")
 
 
@@ -180,6 +210,11 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
                 ),
             )
 
+        if _is_cancelled(r, job_id):
+            logger.info(f"[fetch_links] Job {job_id} was cancelled — skipping.")
+            r.delete("system:crawling")
+            return None
+
         r.setex("system:crawling", 600, "true")
 
         html = get_html(start_url)
@@ -214,6 +249,11 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
             all_links.add(full_url)
 
         logger.info(f"Found {len(all_links)} internal links on {start_url}")
+        if all_links:
+            sample = list(all_links)[:20]
+            logger.info(f"[fetch_links] Sample links (up to 20): {sample}")
+        else:
+            logger.warning(f"[fetch_links] No internal <a href> links found — page may be SPA-rendered without href attributes")
         return [start_url, list(all_links), user_id, job_id, platform_id]
 
     except Exception as e:
@@ -239,6 +279,8 @@ def schedule_crawls_task(args):
     user_id = 1
 
     try:
+        r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+
         if len(args) >= 3:
             filtered_links, user_id = args[0], args[1]
             job_id = args[2] if len(args) > 2 else None
@@ -246,11 +288,13 @@ def schedule_crawls_task(args):
         else:
             filtered_links, user_id = args
 
+        if _is_cancelled(r, job_id):
+            logger.info(f"[schedule_crawls] Job {job_id} was cancelled — skipping.")
+            r.delete("system:crawling")
+            return
+
         if not filtered_links:
-            logger.info("Keine relevanten Links gefunden (filtered_links is empty).")
-            r = redis.from_url(
-                os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-            )
+            logger.info("Keine relevanten Links gefunden (filtered_links is empty.")
 
             if job_id:
                 total_found_bytes = r.hget(f"crawl_job:{job_id}", "total_found")
@@ -280,7 +324,6 @@ def schedule_crawls_task(args):
         logger.info(
             f"Scheduling {len(filtered_links)} detailed crawls for User {user_id}..."
         )
-        r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
 
         if job_id:
             # Use total_found already set by dedup step, or fall back to len(filtered_links)
@@ -385,12 +428,24 @@ def schedule_crawls_task(args):
                 r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
             return
 
+        # Re-check right before dispatch: a cancel may have arrived while we
+        # were setting up Redis state above.
+        if _is_cancelled(r, job_id):
+            logger.info(f"[schedule_crawls] Job {job_id} cancelled before dispatch — skipping.")
+            r.delete("system:crawling")
+            return
+
         for link in filtered_links:
-            celery_app.send_task(
+            result = celery_app.send_task(
                 "scraper.scrape_detail",
                 args=[link, user_id, job_id, platform_id],
                 queue="scraper_queue",
             )
+            # Track the real Celery task id so a cancel can revoke queued tasks.
+            if job_id:
+                r.sadd(f"crawl_job:{job_id}:task_ids", result.id)
+        if job_id:
+            r.expire(f"crawl_job:{job_id}:task_ids", 3600)
 
         logger.info(f"All {len(filtered_links)} tasks scheduled.")
 
@@ -447,11 +502,19 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
 
     try:
         # Bail out immediately if the crawl job was cancelled
-        if job_id and not r.exists(f"crawl_job:{job_id}"):
+        if _is_cancelled(r, job_id):
             logger.info(f"[TASK] Crawl job {job_id} cancelled — skipping {url}")
             return
 
         html = get_html(url)
+
+        # Second checkpoint: the browser load can take 30-60s. If a cancel arrived
+        # in the meantime, stop here — before any AI work, DB writes or hincrby that
+        # would resurrect the deleted crawl job and keep the pipeline alive.
+        if _is_cancelled(r, job_id):
+            logger.info(f"[TASK] Crawl job {job_id} cancelled during fetch — discarding {url}")
+            return
+
         if not html:
             logger.warning(f"Skipping {url} due to download failure.")
             if job_id:

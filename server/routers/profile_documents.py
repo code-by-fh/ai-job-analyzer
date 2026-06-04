@@ -1,9 +1,10 @@
 """Profile-wide document store (references / certificates) + template listing."""
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response
+from sqlalchemy.orm import Session
 
-from database.core import SessionLocal, ProfileDocument, UserProfile, User
-from core.auth import get_current_user
+from database.core import ProfileDocument, UserProfile, User
+from core.auth import get_current_user, get_db
 from services.storage import get_storage_service
 from services.document_renderer import list_templates
 from core.logger import get_logger
@@ -41,18 +42,17 @@ def get_templates(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/profile/documents")
-def list_profile_documents(current_user: User = Depends(get_current_user)):
-    db = SessionLocal()
-    try:
-        docs = (
-            db.query(ProfileDocument)
-            .filter(ProfileDocument.user_id == current_user.id)
-            .order_by(ProfileDocument.created_at.desc())
-            .all()
-        )
-        return [_serialize(d) for d in docs]
-    finally:
-        db.close()
+def list_profile_documents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    docs = (
+        db.query(ProfileDocument)
+        .filter(ProfileDocument.user_id == current_user.id)
+        .order_by(ProfileDocument.created_at.desc())
+        .all()
+    )
+    return [_serialize(d) for d in docs]
 
 
 @router.post("/profile/documents")
@@ -61,18 +61,19 @@ async def upload_profile_document(
     doc_type: str = Form(...),
     label: str = Form(""),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     if doc_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid doc_type: {doc_type}")
-    db = SessionLocal()
-    try:
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
-        mime = file.content_type or "application/octet-stream"
-        if mime not in ALLOWED_MIME_TYPES:
-            raise HTTPException(status_code=415, detail=f"File type not allowed: {mime}")
 
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    mime = file.content_type or "application/octet-stream"
+    if mime not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=415, detail=f"File type not allowed: {mime}")
+
+    try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
         storage = get_storage_service(profile) if profile else None
         if storage:
@@ -103,54 +104,56 @@ async def upload_profile_document(
         db.rollback()
         logger.error(f"Profile document upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 
 @router.delete("/profile/documents/{doc_id}")
-def delete_profile_document(doc_id: int, current_user: User = Depends(get_current_user)):
-    db = SessionLocal()
-    try:
-        doc = (
-            db.query(ProfileDocument)
-            .filter(ProfileDocument.id == doc_id, ProfileDocument.user_id == current_user.id)
-            .first()
-        )
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        db.delete(doc)
-        db.commit()
-        return {"status": "deleted"}
-    finally:
-        db.close()
+def delete_profile_document(
+    doc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = (
+        db.query(ProfileDocument)
+        .filter(ProfileDocument.id == doc_id, ProfileDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    db.delete(doc)
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.get("/profile/documents/{doc_id}/download")
-def download_profile_document(doc_id: int, current_user: User = Depends(get_current_user)):
-    return _serve(doc_id, current_user, disposition="attachment")
+def download_profile_document(
+    doc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return _serve(doc_id, current_user, db, disposition="attachment")
 
 
 @router.get("/profile/documents/{doc_id}/view")
-def view_profile_document(doc_id: int, current_user: User = Depends(get_current_user)):
-    return _serve(doc_id, current_user, disposition="inline")
+def view_profile_document(
+    doc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return _serve(doc_id, current_user, db, disposition="inline")
 
 
-def _serve(doc_id: int, current_user: User, disposition: str):
-    db = SessionLocal()
-    try:
-        doc = (
-            db.query(ProfileDocument)
-            .filter(ProfileDocument.id == doc_id, ProfileDocument.user_id == current_user.id)
-            .first()
-        )
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        if not doc.filename.startswith("db://") or doc.content is None:
-            raise HTTPException(status_code=400, detail="File not available for direct download")
-        return Response(
-            content=doc.content,
-            media_type=doc.mime_type or "application/octet-stream",
-            headers={"Content-Disposition": f'{disposition}; filename="{doc.original_filename}"'},
-        )
-    finally:
-        db.close()
+def _serve(doc_id: int, current_user: User, db: Session, disposition: str):
+    doc = (
+        db.query(ProfileDocument)
+        .filter(ProfileDocument.id == doc_id, ProfileDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.filename.startswith("db://") or doc.content is None:
+        raise HTTPException(status_code=400, detail="File not available for direct download")
+    return Response(
+        content=doc.content,
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'{disposition}; filename="{doc.original_filename}"'},
+    )

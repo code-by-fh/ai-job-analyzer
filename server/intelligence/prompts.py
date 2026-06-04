@@ -2,30 +2,6 @@ import json
 from typing import List, Dict, Any, Optional
 
 
-def get_detect_url_pattern_messages(
-    base_url: str, sample: list
-) -> List[Dict[str, str]]:
-    system_prompt = """You are a URL analysis expert for job platforms.
-    Analyze the URL list and identify the URL path prefix that exclusively identifies job detail pages (individual job postings), not listing, category, or overview pages.
-
-    Reply ONLY with valid JSON (no markdown):
-    {
-      "pattern": "/jobs/",
-      "job_urls": ["https://...", "https://..."]
-    }
-
-    - "pattern": URL path prefix of job detail pages (e.g. "/jobs/", "/stellenangebote/", "/career/detail/")
-    - "job_urls": All URLs from the given list that match this pattern
-    """
-    return [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": f"Base URL: {base_url}\nURL list:\n{json.dumps(sample)}",
-        },
-    ]
-
-
 def get_generate_platform_name_messages(url: str) -> List[Dict[str, str]]:
     system_prompt = """
         Act as a branding expert. Your task is to generate a unique, context-aware identifier based on a job platform URL.
@@ -316,8 +292,8 @@ Return EXACTLY this structure:
 Return ONLY valid JSON.
 """
 
-    filled_prompt = (prompt
-        .replace("{company}", company_name)
+    filled_prompt = (
+        prompt.replace("{company}", company_name)
         .replace("{region}", region)
         .replace("{job_title}", job_title)
         .replace("{industry}", industry)
@@ -529,8 +505,8 @@ Return EXACTLY this structure:
 Return ONLY valid JSON.
 """
 
-    filled_prompt = (prompt
-        .replace("{company}", company_name)
+    filled_prompt = (
+        prompt.replace("{company}", company_name)
         .replace("{region}", region)
         .replace("{perspective}", perspective)
         .replace("{language}", language)
@@ -606,6 +582,7 @@ def get_extract_job_details_messages(
 
 def get_tailored_cv_messages(cv_data, job_title, job_description, language="de"):
     import json as _json
+
     lang_note = "Antworte auf Deutsch." if language == "de" else "Respond in English."
     system = (
         "You are a CV editor. You receive a candidate's structured CV as JSON and a "

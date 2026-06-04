@@ -16,7 +16,6 @@ from urllib.parse import urlparse
 import redis as _redis_sync
 
 from intelligence.prompts import (
-    get_detect_url_pattern_messages,
     get_generate_platform_name_messages,
     get_analyze_job_messages,
     get_generate_application_messages,
@@ -239,32 +238,6 @@ def format_cv_for_prompt(cv_json) -> str:
     text += f"\nEDUCATION:\n{cv_json.get('education', '')}"
     return text
 
-
-def detect_url_pattern_with_ai(
-    base_url: str, urls_list: list, model: str, api_key: str
-) -> tuple:
-    """
-    Uses AI to detect the job-detail URL path pattern for a domain.
-    Returns (pattern: str, job_urls: list[str]).
-    Only URLs present in urls_list are returned (anti-hallucination).
-    """
-    sample = urls_list[:150]
-    client = get_ai_client(api_key)
-    messages = get_detect_url_pattern_messages(base_url, sample)
-    
-    response = _call_openrouter(
-        client=client,
-        model=model,
-        messages=messages,
-        temperature=0.0,
-        func_name="detect_url_pattern_with_ai",
-    )
-    content = response.choices[0].message.content.strip()
-    data = extract_json(content)
-    pattern = data.get("pattern", "")
-    urls_set = set(urls_list)
-    job_urls = [url for url in data.get("job_urls", []) if url in urls_set]
-    return pattern, job_urls
 
 
 def generate_platform_name(

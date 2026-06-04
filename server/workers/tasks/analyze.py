@@ -42,9 +42,14 @@ def analyze_job_task(job_data):
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
 
-    # Bail out immediately if the crawl job was cancelled
+    # Bail out immediately if the crawl job was cancelled.
+    # Check the dedicated cancellation marker (resurrection-safe) as well as the
+    # main key, so a job cancelled mid-pipeline never gets analyzed or notified.
     crawl_job_id = job_data.get("crawl_job_id")
-    if crawl_job_id and not r.exists(f"crawl_job:{crawl_job_id}"):
+    if crawl_job_id and (
+        r.exists(f"crawl_job:{crawl_job_id}:cancelled")
+        or not r.exists(f"crawl_job:{crawl_job_id}")
+    ):
         logger.info(f"[TASK] Crawl job {crawl_job_id} cancelled — skipping analysis for {job_id}")
         return
 
