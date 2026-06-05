@@ -35,7 +35,7 @@ export default function StepCard({
           : t(STATUS_META[status]?.labelKey ?? ("statusRejected" as any))}
       </p>
       <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">
-        {guidance.nextAction}
+        {t(guidance.nextActionKey)}
       </p>
       <StepActions
         job={job}
@@ -169,9 +169,10 @@ function StepActions({
   }
 
   // APPLIED, REJECTED, FAILED: informational nudge only
+  const currentGuidance = STATUS_GUIDANCE[status];
   return (
     <p className="text-xs text-slate-500 dark:text-slate-400">
-      {STATUS_GUIDANCE[status]?.nudge}
+      {currentGuidance ? t(currentGuidance.nudgeKey) : ""}
     </p>
   );
 }

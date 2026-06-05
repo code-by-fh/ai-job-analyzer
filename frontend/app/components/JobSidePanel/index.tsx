@@ -13,6 +13,7 @@ import JobInterviewTab from "../JobCard/JobInterviewTab";
 import JobCompanyTab from "../JobCard/JobCompanyTab";
 import JobDocumentsTab from "../JobCard/JobDocumentsTab";
 import type { JobSidePanelProps } from "./types";
+import Portal from "../Portal";
 
 const CONTENT_TAB_IDS: NonNullable<TabType>[] = [
   "overview",
@@ -76,7 +77,7 @@ export default function JobSidePanel({
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
   const currentStatus = (job.status || "OPEN") as JobStatus;
   return (
-    <>
+    <Portal>
       {/* Backdrop — z-[55] sits above sidebar/bottom-nav (z-50) so they get blurred */}
       <div
         className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
@@ -203,6 +204,6 @@ export default function JobSidePanel({
         </div>
 
       </div>
-    </>
+    </Portal>
   );
 }
