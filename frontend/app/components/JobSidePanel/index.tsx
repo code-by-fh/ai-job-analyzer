@@ -11,7 +11,6 @@ import JobOverviewTab from "../JobCard/JobOverviewTab";
 import JobApplicationTab from "../JobCard/JobApplicationTab";
 import JobInterviewTab from "../JobCard/JobInterviewTab";
 import JobCompanyTab from "../JobCard/JobCompanyTab";
-import JobStatusTab from "../JobCard/JobStatusTab";
 import JobDocumentsTab from "../JobCard/JobDocumentsTab";
 import type { JobSidePanelProps } from "./types";
 
@@ -20,13 +19,13 @@ const CONTENT_TABS: { id: NonNullable<TabType>; label: string }[] = [
   { id: "application", label: "Bewerbung" },
   { id: "interview", label: "Interview" },
   { id: "company", label: "Firma" },
-  { id: "status", label: "Status" },
   { id: "documents", label: "Dokumente" },
 ];
 
 function defaultContentTab(status: string): NonNullable<TabType> {
   if (status === "DRAFTED") return "application";
   if (status === "INTERVIEW") return "interview";
+  if (status === "OFFER" || status === "ACCEPTED") return "overview";
   return "overview";
 }
 
@@ -83,14 +82,14 @@ export default function JobSidePanel({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — z-[55] sits above sidebar/bottom-nav (z-50) so they get blurred */}
       <div
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+        className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed inset-y-0 right-0 z-50 w-[420px] flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl animate-in slide-in-from-right duration-300">
+      <div className="fixed inset-y-0 right-0 z-[60] w-[35vw] min-w-[360px] max-w-[600px] flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl animate-in slide-in-from-right duration-300">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
@@ -190,14 +189,6 @@ export default function JobSidePanel({
               )}
               {activeContentTab === "company" && (
                 <JobCompanyTab job={job} apiBase={apiBase} />
-              )}
-              {activeContentTab === "status" && (
-                <JobStatusTab
-                  job={job}
-                  apiBase={apiBase}
-                  onStatusUpdate={onStatusUpdate}
-                  setActiveTab={(tab) => tab && setActiveContentTab(tab)}
-                />
               )}
               {activeContentTab === "documents" && (
                 <JobDocumentsTab job={job} apiBase={apiBase} />
