@@ -1,37 +1,131 @@
-## Application Building Context
+# Development Rules
 
-The project context lives in `context/`. To keep session
-overhead low, read **conditionally** — not everything every time.
+## 1. Load Context
 
-**Always at session start:**
+### At the Start of Every Session
 
-- `context/progress-tracker.md` — current phase, completed
-  work, open questions, and next steps.
+Always read:
 
-**On demand — read the file whose domain your task touches:**
+* `context/progress-tracker.md`
 
-- `context/project-overview.md` — product definition, goals,
-  features, scope. Read when scoping a feature or unsure if
-  something is in scope.
-- `context/architecture.md` — system structure, boundaries,
-  storage model, invariants. Read before any structural or
-  cross-boundary change.
-- `context/ui-context.md` — theme, colors, typography,
-  component conventions. Read for any frontend/UI work.
-- `context/code-standards.md` — implementation rules and
-  conventions. Read before non-trivial backend/frontend code.
-- `context/ai-workflow-rules.md` — development workflow,
-  scoping rules, delivery approach. Read before multi-step
-  or multi-file changes.
+  * current status
+  * completed work
+  * open questions
+  * next steps
 
-For a trivial change (typo, one-line fix, obvious bug),
-`progress-tracker.md` alone is enough.
+### Read Additional Files Only When Relevant
 
-## Keeping Context in Sync
+* `context/project-overview.md` → product goals, scope, features
+* `context/architecture.md` → system structure, boundaries, data model
+* `context/ui-context.md` → design and UI conventions
+* `context/code-standards.md` → coding standards and conventions
+* `context/ai-workflow-rules.md` → development workflow and process
 
-Update `context/progress-tracker.md` after each meaningful
-implementation change.
+For trivial changes (e.g. typos, one-line fixes, obvious bugs), `progress-tracker.md` is sufficient.
 
-If implementation changes the architecture, scope, or
-standards documented in the context files, update the
-relevant file before continuing.
+---
+
+## 2. Think Before Coding
+
+* Do not make hidden assumptions.
+* State assumptions explicitly.
+* If multiple interpretations exist, present them.
+* If a simpler solution exists, say so.
+* Push back on unnecessary complexity.
+* If something is unclear, stop and ask.
+
+Never silently choose an interpretation when requirements are ambiguous.
+
+---
+
+## 3. Keep It Simple
+
+* Implement only what was requested.
+* No speculative features.
+* No unnecessary abstractions.
+* No configurability unless requested.
+* No handling of unrealistic edge cases.
+* Prefer the simplest solution that solves the problem.
+
+Ask yourself:
+
+> Would a senior engineer consider this overengineered?
+
+If yes, simplify it.
+
+---
+
+## 4. Make Surgical Changes
+
+* Change only what is necessary.
+* Do not refactor unrelated code.
+* Do not "clean up" surrounding code unless required.
+* Follow the existing code style and patterns.
+* Leave unrelated issues untouched.
+
+Allowed:
+
+* Remove imports, variables, functions, or code made unused by your changes.
+
+Not allowed:
+
+* Removing pre-existing dead code unless explicitly requested.
+
+Every changed line should directly support the requested task.
+
+---
+
+## 5. Work Toward Verifiable Goals
+
+For non-trivial tasks, define a brief plan:
+
+1. Task → verification
+2. Task → verification
+3. Task → verification
+
+Success must be measurable.
+
+Examples:
+
+* Bug fix → reproduce the bug, then verify it no longer occurs.
+* Validation → create tests for invalid input and make them pass.
+* Refactor → verify behavior remains unchanged before and after.
+
+Avoid:
+
+* "Make it work."
+
+Prefer:
+
+* "Test X passes."
+* "Bug Y no longer occurs."
+* "Requirement Z is verified."
+
+---
+
+## 6. Keep Context Up to Date
+
+After every meaningful implementation change:
+
+* Update `context/progress-tracker.md`.
+
+**Format for progress-tracker updates:**
+
+* Set the Phase line to the current focus in one sentence.
+* In the Status Board: mark the feature row ✅, add the relevant file paths, and note test count if tests exist.
+* Add ADRs only for decisions that are non-obvious or would be revisited otherwise.
+* Open Questions: list only unresolved decisions that block future work. Remove entries once resolved.
+
+If the change affects architecture, scope, standards, or documented behavior:
+
+* Update the relevant context file before continuing.
+
+**Which file to update:**
+
+| Changed area | File to update |
+| --- | --- |
+| Architecture, DB schema, process model, boundaries | `context/architecture.md` |
+| Coding patterns, libraries, safety rules | `context/code-standards.md` |
+| Scope, features, hard invariants | `context/project-overview.md` |
+| Design system, UI conventions | `context/ui-context.md` |
+| Workflow, verification steps | `context/ai-workflow-rules.md` |

@@ -1,41 +1,43 @@
 ## Progress Tracker
 
-### 1. Current Status (As of 2026-06-04)
+### 1. Current Status (As of 2026-06-05)
 
-**Phase:** Pipeline Panel implementiert. JobDetailModal ersetzt durch JobSidePanel (Slide-in, URL-sync `?job=<id>`, Pipeline-Tabs, StepCard-CTAs). Vollständige `/jobs/[id]`-Route hinzugefügt. Fokus jetzt: Automated Tests für Auth & Jobs, Security Hardening.
+**Phase:** Core feature set complete. Active focus: automated tests for Auth & Jobs (currently 0% coverage — see risk below) and security hardening.
+
+> ⚠️ **Risk:** `routers/auth.py` and `routers/jobs.py` have 0% automated test coverage. These are the two most security-critical routers. Any change to auth or job logic is unverified until this is addressed.
 
 ### 2. Status Board
 
 | Feature Block | Status / Files | Key Details |
 | --- | --- | --- |
-| **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin-UI, geteilte AI Model Settings (Cloud & Lokal) mit separaten Forms/Save-Buttons. |
-| **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notizen, Bulk-Aktionen, History, Uploads. Matching-Threshold archiviert neue Jobs mit `match_score < Wert` automatisch. |
-| **AI Layer** | ✅ Completed (`intelligence/`) | Matching, Anschreiben, Interview-Prep, Firmenprofile via OpenRouter. |
-| **Platforms & Beat** | ✅ Completed & Tested (`routers/platforms.py`, `tests/test_platforms_router.py`) | CRUD, Intervalle, Scheduler, Deferred Setup-Wizard (URL-basiert), URL-Pattern-Inferenz (zeichenweiser Common-Prefix). 15 Tests grün. |
-| **Application Package** | ✅ Completed & Tested (`workers/tasks/package.py`, `routers/profile_documents.py`, `tests/test_profile_documents_router.py`) | Ein-Klick CV + Anschreiben → PDF, Profil-Dokumente. |
+| **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin UI, split Cloud & Local AI Model Settings with separate forms and save buttons. |
+| **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notes, Bulk actions, History, Uploads. Matching threshold automatically archives new jobs with `match_score < threshold`. |
+| **AI Layer** | ✅ Completed (`intelligence/`) | Matching, Cover letters, Interview prep, Company profiles via OpenRouter. |
+| **Platforms & Beat** | ✅ Completed & Tested (`routers/platforms.py`, `tests/test_platforms_router.py`) | CRUD, Intervals, Scheduler, Deferred setup wizard (URL-based), URL pattern inference (character-wise common prefix). 15 tests green. |
+| **Application Package** | ✅ Completed & Tested (`workers/tasks/package.py`, `routers/profile_documents.py`, `tests/test_profile_documents_router.py`) | One-click CV + Cover letter → PDF, Profile documents. |
 | **Template Editor** | ✅ Completed (`routers/templates.py`, `services/template_filler.py`, `services/document_renderer.py`) | DocumentTemplate CRUD; slot-filler; Playwright PDF; two-column in-browser editor. |
-| **Scraper Worker** | ✅ Completed (`workers/scraper_worker.py`) | playwright-stealth + headless=False + Xvfb. noVNC auf Port 6080 (`http://localhost:6080/vnc.html`). SSRF-Schutz (`_is_safe_url`). |
-| **Companies** | ✅ Completed (`routers/companies.py`) | Domain-spezifische Views & Deep-Dive Analysen. |
+| **Scraper Worker** | ✅ Completed (`workers/scraper_worker.py`) | playwright-stealth + headless=False + Xvfb. noVNC on port 6080 (`http://localhost:6080/vnc.html`). SSRF protection (`_is_safe_url`). |
+| **Companies** | ✅ Completed (`routers/companies.py`) | Domain-specific views & deep-dive analyses. |
 | **Dual Storage** | ✅ Completed (`services/storage.py`) | DB-Blob (`LargeBinary`) vs. Google Drive OAuth. |
-| **Notifications** | ✅ Completed & Tested (`routers/settings.py`, `tests/test_settings_router.py`) | 5 Kanäle: Gmail, Pushover, Resend, Mailjet, SMTP + Templates. 49 Tests grün. |
+| **Notifications** | ✅ Completed & Tested (`routers/settings.py`, `tests/test_settings_router.py`) | 5 channels: Gmail, Pushover, Resend, Mailjet, SMTP + Templates. 49 tests green. |
 | **Real-time Engine** | ✅ Completed (`routers/websocket.py`) | Cookie-authed `/ws`, Live-Updates via `useCrawl` / `CrawlStatus`. |
-| **Pipeline Panel** | ✅ Completed (`components/JobSidePanel/`, `hooks/useJobPanel.ts`, `app/jobs/[id]/page.tsx`) | JobSidePanel ersetzt JobDetailModal: 420px Slide-in, PipelineTabs, StepCard-CTAs, URL-sync `?job=<id>`, Deep-Link-Restore, vollständige `/jobs/[id]`-Route. |
+| **Pipeline Panel** | ✅ Completed (`components/JobSidePanel/`, `hooks/useJobPanel.ts`, `app/jobs/[id]/page.tsx`) | JobSidePanel replaces JobDetailModal: 420px slide-in, PipelineTabs, StepCard-CTAs, URL sync `?job=<id>`, deep-link restore, full `/jobs/[id]` route. |
 
 ### 3. Next Up & Backlog
 
-* [ ] **Automated Tests:** Auth & Jobs (bisher 0% Coverage).
-* [ ] **Security Hardening:** Review von SSRF-Vektoren, JWT-Validierung, Admin-Scopes.
-* [ ] **Application Package Integration:** Online-Submission Hook + Direct-Mail Gateway (post-MVP).
+* [ ] **Automated Tests:** Auth & Jobs (currently 0% Coverage). ⚠️ Critical — unverified changes to these routers carry high regression risk.
+* [ ] **Security Hardening:** Review of SSRF vectors, JWT validation, admin scopes.
+* [ ] **Application Package Integration:** Online submission hook + direct mail gateway (post-MVP).
 
 ### 4. Key Architectural Decisions (ADRs)
 
-* **OpenRouter Config:** Liegt in DB (`system_settings`), nicht in `.env` (dynamische Modell-Wechsel via UI).
-* **Process Isolation:** Separates Queue-Modell (`ai_queue` vs. `scraper_queue`), Playwright-Crawls blockieren nicht AI-Tasks.
-* **Single-Container Deployment:** Alle 4 Backend-Prozesse via `supervisord` in einem Docker-Container.
-* **Deferred Platform Creation:** Plattform wird erst beim Abschluss des Setup-Wizards angelegt (kein `pending_setup`-Overhead).
-* **URL-Pattern-Inferenz:** Zeichenweiser Common-Prefix (`os.path.commonprefix`) mit Trim auf letzte natürliche Trennstelle — robuster als segment-weiser Ansatz für Boards mit ID im Pfad.
+* **OpenRouter Config:** Stored in DB (`system_settings`), not in `.env` (dynamic model switches via UI).
+* **Process Isolation:** Separate queue model (`ai_queue` vs. `scraper_queue`); Playwright crawls do not block AI tasks.
+* **Single-Container Deployment:** All 4 backend processes via `supervisord` in a single Docker container.
+* **Deferred Platform Creation:** Platform is only created upon completion of the setup wizard (no `pending_setup` overhead).
+* **URL-Pattern Inference:** Character-wise common prefix (`os.path.commonprefix`) with trim to the last natural separator — more robust than a segment-wise approach for boards with IDs in the path.
 
 ### 5. Open Questions
 
-* **Monolith vs. Microservices:** Soll die supervisord-Struktur langfristig in eigenständige Docker-Services zerlegt werden?
-* **Notification Overrides:** Benachrichtigungs-Einstellungen sind global + per-Plattform konfigurierbar — bleibt das Override-Modell so?
+* **Monolith vs. Microservices:** Should the supervisord structure be split into independent Docker services in the long run?
+* **Notification Overrides:** Notification settings are global + per-platform configurable — does this override model remain?

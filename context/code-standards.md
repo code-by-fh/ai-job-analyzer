@@ -1,46 +1,62 @@
-## 💻 Code Standards (Token-Optimized)
+# Code Standards
 
-### 1. General & Architecture
+## General
 
-* **Kapselung:** Ein Router/Modul pro Backend-Domain, eine Komponente pro Frontend-Datei. Business-/AI-Logik strikt in `intelligence/` und `services/`.
-* **Zero Secrets:** Keine Hardcoded-Secrets. System-Konfig via `.env` (`.env.example`). User-Secrets in DB, Maskierung im API-Read via `_SECRET_FIELDS` (`routers/deps.py`).
-* **Validierung:** Input-Validierung an *jeder* Systemgrenze (Bodys, Queries, Uploads, API-Responses).
-* **Asynchronität:** Request-Handler blockieren verboten. Alles zeitintensive (AI, Scraping, PDFs, Mail) via `celery_app.send_task()`.
+* Keep code simple, readable, and maintainable.
+* Follow the project's formatting and linting rules.
+* Avoid duplicated code and unnecessary complexity.
+* Validate all external input at system boundaries.
 
-### 2. Frontend (Next.js 16, React 19, TS)
+## Security
 
-* **TypeScript:** `"strict": true`, Verbot von `any`. Globale Typen strikt in `app/lib/types.ts`.
-* **Architektur:** App Router (`app/`). Server Components als Standard. `"use client"` nur für Interaktivität. Fetching & Pagination kapseln in `app/hooks/`.
-* **State & Auth:** Globaler State nur über bestehende Provider (`Language` → `Auth` → `Notification`). Authentifizierte Requests *nur* via `fetchWithAuth` (Auto-Refresh).
-* **Tooling:** Logging über `pino` (`app/lib/logger.ts`). Path-Aliases (`@/*`) erzwingt. Husky + lint-staged führen pre-commit `eslint --fix` & `prettier` aus.
+* Never commit secrets, credentials, or API keys.
+* Use environment variables for system configuration.
+* Never expose sensitive data in logs or API responses.
+* Apply authorization checks before accessing or modifying user-owned resources.
 
-### 3. Backend (FastAPI, Python)
+## Frontend
 
-* **Typisierung:** PEP 8 + Type Hints. Request/Response-Bodys zwingend als Pydantic v2 Modelle.
-* **DI & Auth:** Dependency Injection via `Depends` (`get_db`, `get_current_user`). Vor *jeder* Mutation/Read zwingend Auth + Ownership prüfen (`...where(Model.user_id == current_user.id)`), bei Misserfolg `HTTP 404`.
-* **Hardening:** Admin-Routen via `get_current_admin_user`. Sensitive Endpunkte per `slowapi` ratelimiten (erfordert `request: Request`). Uploads limitieren (`ALLOWED_MIME_TYPES`, `MAX_FILE_SIZE`).
-* **Lifecycle:** Manuelle DB-Sessions im `finally`-Block schließen (oder `get_db` nutzen). Startup-Fail bei fehlender `SECRET_KEY`. Logging via `core/logger`.
+* **Strict TypeScript:** Use strict TypeScript typing; the use of `any` is strictly prohibited.
+* **Component Patterns:** Use React 19 functional components with arrow functions. Prefer hand-rolled components styled with Tailwind v4 utility classes over external UI libraries.
+* **Separation of Concerns:** Keep business, state-management, and API fetching logic outside UI components. Move them into custom React hooks (e.g., `useJobPanel.ts`).
+* **Reusable Types:** Prefer reusable and shared types located in a centralized definitions file.
+* **Data Fetching:** Always use `fetchWithAuth` from `AuthProvider` for all authenticated API calls — never use `fetch` directly. No SWR or React Query; all server state lives in custom hooks with `useState` + `useEffect`/`useCallback`. Error state is managed as `string | null` via `useState`.
+* **Error Handling (Frontend):** Catch errors in hooks, not in components. Expose an error string to the component; never `console.error` alone. On `res.ok === false`, read `res.json()` and surface `detail` from the FastAPI error response.
 
-### 4. Styling & UI
+## Backend (FastAPI / Python)
 
-* **Engine:** Tailwind CSS 4 Utilities. Dark Mode via `.dark` Klasse und `dark:` Modifier.
-* **Design System:** Design-Vorgaben aus `ui-context.md` (Geist-Font, Radien). Design-Tokens nutzen: `.glass-panel`, `.glass-card`, `.text-gradient`. Keine Inline-Hex-Codes.
-* **Icons:** Ausschließlich `lucide-react`.
+* **Type Hinting:** Use strict Python type hints on all function signatures and parameters.
+* **Request/Response Models:** Always validate request payloads and document response shapes using Pydantic schemas (using `response_model` or typed return values).
+* **Dependency Injection:** Use FastAPI's `Depends` wrapped with `Annotated` for injecting database sessions, configurations, and current user credentials (e.g., `db: Annotated[Session, Depends(get_db)]`).
+* **Async vs Sync Routes:** 
+  - Do not use `async def` for endpoints that perform blocking synchronous operations (e.g., synchronous database queries via SQLAlchemy, file operations, or heavy computing). Use standard `def` routes so FastAPI can delegate them to its external thread pool.
+  - Use `async def` only when all I/O operations inside the handler are asynchronous (e.g., async HTTP requests, async WebSockets, or async database calls).
+* **Surgical Handlers:** Keep route handlers extremely thin. Handlers should parse inputs, trigger asynchronous background tasks (Celery) or invoke backend services, and return quickly.
+* **Error Handling (Backend):** Use `raise HTTPException(status_code=status.HTTP_<CODE>, detail="...")` for all client errors. Always use `status.*` constants (e.g. `status.HTTP_404_NOT_FOUND`), not raw integers. For unexpected server errors, catch the exception, log it, and re-raise as `HTTP_500_INTERNAL_SERVER_ERROR` with a generic message — never leak stack traces or internal state in the `detail` field.
 
-### 5. Data & Storage
+  | Situation | Status Code |
+  | --- | --- |
+  | Resource not found | `404 NOT_FOUND` |
+  | Auth failed / token invalid | `401 UNAUTHORIZED` |
+  | Authenticated but not allowed | `403 FORBIDDEN` |
+  | Validation / bad input | `400 BAD_REQUEST` |
+  | Unexpected server error | `500 INTERNAL_SERVER_ERROR` |
 
-* **SQLAlchemy 2.0:** Single Source of Truth für Metadaten in `database/core.py`.
-* **Alembic:** Schema-Änderungen *nur* über neue Migrations-Dateien. Bestehende Migrationen oder Live-DB niemals manuell editieren.
-* **Artifacts:** Große Texte in `Text`-Spalten. Binärdateien/PDFs via `active_storage_service` entweder in DB-Blob (`JobDocument.content`, `LargeBinary`) oder Google Drive – niemals im lokalen Filesystem.
+## Data & Database
 
----
+* **Migrations:** Manage all database schema changes strictly through Alembic migrations. Do not modify databases manually or use `Base.metadata.create_all()` in application code paths.
+* **Storage Abstraction:** Store files and attachments only through the approved storage service abstraction (`services/storage.py`), supporting dual-storage (PostgreSQL LargeBinary or Google Drive OAuth).
 
-## 🚨 Pre-Commit Checklist (Strict)
+## Review Checklist
 
-* [ ] Keine Secrets im Code? Neue sensitive DB-Felder in `_SECRET_FIELDS` maskiert?
-* [ ] Inputs an den Grenzen validiert (Pydantic / Upload-Limits / TS-Interfaces)?
-* [ ] Backend: Jedes Query-Ergebnis per `user_id == current_user.id` abgesichert (sonst 404)?
-* [ ] Keine Blocking-Calls (LLM, Scraper, PDF) im API-Handler? (An Celery übergeben?)
-* [ ] Frontend: `any` eliminiert? `pino` genutzt? `fetchWithAuth` für geschützte Routen aktiv?
-* [ ] Styling: Tailwind 4 + Glass-Utilities sauber umgesetzt (keine Hex-Overwrites)?
-* [ ] DB: Neue Alembic-Migration generiert? Blob/Drive-Storage korrekt zugewiesen?
+* [ ] No secrets or keys committed?
+* [ ] Input validation present at boundaries (Pydantic/TypeScript)?
+* [ ] Authorization and owner check (`user_id == current_user.id`) enforced on all queries/mutations?
+* [ ] Proper async/sync def routing chosen for backend endpoints?
+* [ ] Types defined correctly without using `any`?
+* [ ] Business logic separated from controllers/components?
+* [ ] No unnecessary complexity or duplication?
+* [ ] Backend errors use `status.*` constants and never leak internal details in `detail`?
+* [ ] Frontend API calls use `fetchWithAuth` (not raw `fetch`)?
+* [ ] Frontend error state surfaced via hook return, not swallowed in `console.error`?
+

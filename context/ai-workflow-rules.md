@@ -1,72 +1,86 @@
 # AI Workflow Rules
 
-## Approach
+Developer workflow rules and procedures for building and modifying features in this repository.
 
-Build incrementally against the specs in `context/`. Implement what the context
-files define — don't infer or invent behavior. Read the context files
-**conditionally** as defined in `CLAUDE.md`: always start with
-`progress-tracker.md`, then read the file whose domain your task touches
-(`project-overview` for scope, `architecture` for structure, `ui-context` for
-UI, `code-standards` for conventions, this file for workflow). Don't read all
-six for a trivial change.
+## 1. Incremental Approach
+* **Read Context Conditionally:** Start every session by reading [progress-tracker.md](/context/progress-tracker.md). Only open additional context files (`project-overview`, `architecture`, `ui-context`, `code-standards`) if the task directly touches their respective domain.
+* **Spec Compliance:** Implement only what is explicitly specified. Do not extrapolate, infer, or invent behavior not defined in the context files.
+* **Monorepo Structure:** Respect folder and service boundaries between `frontend/` (Next.js/Tailwind) and `server/` (FastAPI/Celery/PostgreSQL/RabbitMQ/Redis).
 
-Monorepo: `frontend/` (Next.js/React/TS/Tailwind) + `server/` (FastAPI/Celery/
-SQLAlchemy/Alembic), infra via `docker-compose.yml`. Respect the boundaries in
-`architecture.md`.
+## 2. Work Isolation & Splitting
+* **One Unit at a Time:** Perform changes in small, logical, and testable iterations. Do not touch multiple domain boundaries in a single step.
+* **Separation of Concerns:** Split changes that cross boundaries:
+  - Frontend UI changes **and** backend/worker changes must be shipped and verified separately.
+  - Database schema migrations **and** feature logic must be landed and verified separately.
+  - Changes across multiple unrelated REST routers or domains.
+* **Scope Boundary:** If a change cannot be verified end-to-end quickly, it is too large. Split it.
 
-## Scoping
+## 3. Requirements & Documentation Alignment
+* **Ambiguity Resolution:** If a feature requirement is missing or ambiguous, do not make assumptions. File it as an open question in `progress-tracker.md` or update the relevant context file before writing code.
+* **Documentation Sync:** Update matching context documents when implementing changes:
+  - Architecture, boundaries, database schemas, or storage updates ➔ [architecture.md](/context/architecture.md)
+  - Coding patterns, libraries, safety standards, or project rules ➔ [code-standards.md](/context/code-standards.md)
+  - Scope boundaries or feature list changes ➔ [project-overview.md](/context/project-overview.md)
+  - After completing every unit of work ➔ [progress-tracker.md](/context/progress-tracker.md)
 
-- One feature unit at a time; prefer small, verifiable increments.
-- Don't combine unrelated boundaries in one step. Boundaries: scraper API
-  (`scraper_api.py`), AI service (`intelligence/`), Celery workers/beat
-  (`workers/`), REST routers (`routers/`), frontend (`frontend/`), DB schema
-  (`database/`).
+## 4. Commit & Branch Conventions
 
-## When to Split Work
+* **Branch strategy:** All work happens on `main` (single-developer project). No feature branches unless explicitly requested.
+* **Commit message format:** `<type>(<scope>): <short description>` — lowercase, no period at end.
+  - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+  - Scope: component or domain (e.g. `pipeline`, `auth`, `jobs`, `settings`)
+  - Examples: `feat(pipeline): add JobSidePanel`, `fix(auth): correct token refresh logic`, `docs: update progress tracker`
+* **One commit per logical unit:** Do not mix feature work and documentation updates in the same commit. `docs:` commits are separate.
 
-Split a step that combines:
+## 6. Protected Files
+Do not modify the following files unless explicitly requested by the user:
+* **Database migrations:** Never modify existing Alembic migrations under `server/database/migrations/versions/*`. Always create a new revision.
+* **Configuration files:** `server/database/alembic.ini` and `server/database/migrations/env.py`.
+* **Generated directories:** `frontend/.next/` and `frontend/node_modules/`.
+* **Lockfiles:** Do not edit `package-lock.json` manually; modify only using `npm` commands.
 
-- Frontend UI **and** backend/worker changes — ship and verify each side alone.
-- Multiple unrelated routers/domains.
-- A migration **and** feature logic — land + verify the migration first.
-- Behavior not defined in the context files — define it first (see below).
+## 5. Definition of Done & Verification Commands
 
-If it can't be verified end to end quickly, the scope is too broad — split it.
+A task is considered complete only when the following verification steps are successfully executed and pass:
 
-## Handling Missing Requirements
+### A. Verification Checklist — by Change Type
 
-- Don't invent product behavior absent from the context files.
-- If a requirement is ambiguous, resolve it in the relevant context file before
-  coding.
-- If a requirement is missing, add it as an open question in `progress-tracker.md`
-  first.
+**Frontend-only changes** (no backend/DB changes):
+* [ ] `npm run lint` passes.
+* [ ] `npm run build` passes without errors.
+* [ ] Feature verified visually in the browser (golden path + responsive breakpoint).
 
-## Protected Files (don't touch unless instructed)
+**Backend-only changes** (no frontend/DB changes):
+* [ ] `pytest` runs and all existing tests pass.
+* [ ] Relevant smoke/verify scripts pass.
+* [ ] No architectural invariants violated.
 
-- Applied Alembic migrations (`database/migrations/versions/*`) — add a new
-  revision, never edit an existing one.
-- `frontend/.next/`, `frontend/node_modules/` — generated.
-- Lockfiles (`package-lock.json`) — only via the package manager.
-- `database/alembic.ini`, `database/migrations/env.py` — Alembic config.
+**Database schema changes:**
+* [ ] New Alembic migration created (`alembic revision --autogenerate`).
+* [ ] `alembic upgrade head` applies cleanly.
+* [ ] `pytest` passes with the migrated schema.
 
-## Keeping Docs in Sync
+**Full-stack changes:** all of the above apply.
 
-Update the matching context file when implementation changes:
+**All changes:**
+* [ ] **Documentation Sync:** Context files updated; work logged in `progress-tracker.md`.
+* [ ] **Architectural Integrity:** No invariants from [architecture.md](/context/architecture.md) violated.
 
-- Architecture / boundaries / storage → `architecture.md`.
-- Conventions / standards → `code-standards.md`.
-- Feature scope / behavior → `project-overview.md`.
-- After every meaningful change → `progress-tracker.md`.
+### B. Standard Verification Commands
 
-## Definition of Done (per unit)
 
-- [ ] Unit works end to end within its scope.
-- [ ] No `architecture.md` invariant violated.
-- [ ] `progress-tracker.md` updated; any new context defined in its file.
-- [ ] Frontend: `cd frontend && npm run build` and `npm run lint` pass (don't
-      bypass the husky pre-commit hook).
-- [ ] Schema: new Alembic migration created + applied
-      (`alembic -c database/alembic.ini upgrade head`, from `server/`).
-- [ ] Backend: relevant `server/scripts/` check passes — `smoke_test.py`, and
-      `verify_admin_settings.py` / `verify_password.py` / `verify_usermanagement.py`
-      when relevant (run against the running API).
+
+Developers and AI agents MUST run the following commands to verify compliance. 
+
+> [!NOTE]
+> When executing Python commands (`pytest`, `alembic`, or running scripts) in the `server/` directory, make sure to activate the virtual environment (`.venv\Scripts\Activate.ps1` on Windows or `source .venv/bin/activate` on Linux/macOS) or prefix the command with the virtual environment Python interpreter (e.g. `.venv\Scripts\python` or `.venv/bin/python`).
+
+| Service / Area | Action | Command | Working Directory |
+| --- | --- | --- | --- |
+| **Frontend** | Run Linter | `npm run lint` | `frontend/` |
+| **Frontend** | Production Build | `npm run build` | `frontend/` |
+| **Database** | Apply Migrations | `alembic -c database/alembic.ini upgrade head` | `server/` |
+| **Backend Tests** | Run Test Suite | `pytest` | `server/` |
+| **Smoke Tests** | Run Smoke Script | `python scripts/smoke_test.py` | `server/` |
+| **Admin Settings** | Verify Configs | `python scripts/verify_admin_settings.py` | `server/` |
+| **Security/Auth** | Verify Password/User | `python scripts/verify_password.py` and `python scripts/verify_usermanagement.py` | `server/` |

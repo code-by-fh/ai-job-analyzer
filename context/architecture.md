@@ -1,57 +1,62 @@
-## 🚀 Architecture Context (Token-Optimized)
+# AI Job Agent - System Architecture
 
-### 1. Stack & Process Model
+Factual and concise system architecture documentation for developers and AI agents.
 
-* **Architektur:** *Keine* Microservices. Ein einzelner Docker-Container (`server`), gesteuert über `supervisord` mit **4 logischen Prozessen**:
-1. `main.py` (Port 8080): Haupt-REST-API, Auth, WebSockets.
-2. `scraper_api.py` (Port 8081, intern): Crawl-Orchestrierung.
-3. Celery Worker 1 (`ai_queue`): AI-Tasks + Celery Beat (`-B` Scheduler).
-4. Celery Worker 2 (`scraper_queue`): Playwright/BS4 Scraping.
+## 1. Process Model & Stack
+* **Container Orchestration:** A single container manages services via `supervisord` with the following active processes:
+  1. `uvicorn` (Port 8080): Main FastAPI backend (`main.py`) serving REST endpoints, WebSockets (`/ws`), and JWT authentication.
+  2. `scraper_api`: Internal FastAPI service (`scraper_api.py`, internal Port 8081) for validation and crawl control.
+  3. `celery` (`ai_queue`): Processes AI assessment, document packaging, notifications, and runs the Celery Beat (`-B`) scheduler.
+  4. `scraper_celery` (`scraper_queue`): Executes headless Playwright/BeautifulSoup4 crawls.
+  5. `xvfb`, `x11vnc`, `novnc` (Port 6080): Virtual frame buffer and VNC interface for visual scraper monitoring.
+* **Services Stack:**
+  - **Database:** PostgreSQL 15 (SQLAlchemy 2.0 ORM, Alembic migrations).
+  - **Message Broker & Task Queue:** RabbitMQ (Celery Broker).
+  - **Cache & Pub/Sub:** Redis (Celery Backend, WS messaging, crawl progress state, crawl deduplication).
+  - **LLMs:** Cloud models via OpenRouter (job analysis, cover letter, research) and local models via Ollama (tailored CV generation).
+  - **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4. No component libraries (fully hand-rolled).
 
-* **LLM Services:** OpenRouter (extern; Models: Claude 3.5 Sonnet Matching/Research, Claude 3 Haiku Interview). Ein interner `ollama` Service läuft lokal (Docker Compose); exempt von `_is_safe_url` (nur ausgehendes Scraping ist eingeschränkt). Verwendet OpenAI-kompatible API für CV-Generierung.
+## 2. Directory Layout & Key Boundaries
+* `server/core/` — Cross-cutting concerns: `auth.py` (JWT & Token Versioning), `connection_manager.py` (WebSockets), `celery_config.py`, and `logger.py`.
+* `server/database/` — Database interface: `core.py` (SQLAlchemy models and Pydantic schemas) and Alembic migrations under `migrations/`.
+* `server/routers/` — FastAPI endpoints:
+  - `auth.py`: JWT login, refresh, logout (invalidates token version `tv`).
+  - `jobs.py`: CRUD for job applications, notes, re-scoring, and package generation triggers.
+  - `platforms.py`: CRUD for platform targets, deferred crawl setup, pattern inference.
+  - `settings.py` / `admin.py`: Global configuration, Cloud/Local AI configs, notifications, and storage credentials.
+  - `profile_documents.py` / `templates.py` / `companies.py`: Manages profile documents, template CRUD, and company analytics.
+  - `websocket.py`: Custom WS authentication and pub/sub routing.
+* `server/workers/` — Asynchronous queues:
+  - `worker.py`: Entrypoint for the AI/General Celery app (`ai_queue`).
+  - `scraper_worker.py`: Entrypoint for the Crawling Celery app (`scraper_queue`).
+  - `tasks/`: Task modules for analysis (`analyze.py`), packaging (`package.py`), research (`research.py`), scheduling (`scheduling.py`), and link validation (`urls.py`).
+  - `notifications/`: Adapters for email/push dispatch (`email.py`, `push.py`, `templates.py`).
+  - **Retry policy:** Only `research.py` tasks define explicit retries (`max_retries=2`, `countdown=30–60s`). All other task modules have no retry policy — failures are logged and the task moves to a failed state. Uniform retry handling is an open gap.
+* `server/services/` — Internal business logic:
+  - `template_filler.py`: DOM-based slots filler (`data-slot` / `data-repeat` replacements).
+  - `document_renderer.py`: Converts HTML to PDF via Playwright (`html_to_pdf_playwright`) with an `xhtml2pdf` fallback.
+  - `job_documents.py` / `storage.py` / `submission.py`: Handles local Postgres LargeBinary vs. Google Drive OAuth active storage services.
+* `frontend/app/` — Next.js Application:
+  - `components/editor/`: Two-column browser-based document editor (`DocumentEditor.tsx`, `BlockInspector.tsx`, `StylePanel.tsx`).
+  - `components/JobSidePanel/`: Slide-in panel for job details and actions, synchronized with `?job=<id>`.
+  - `jobs/[id]/page.tsx`: Dedicated full page for deep-linked jobs.
 
-* **Frontend:** Next.js 16 (App Router), React 19, Tailwind v4.
-* **Infrastruktur:** PostgreSQL 15 (SQLAlchemy 2.0, Alembic), Redis (Crawl-Status, Pub/Sub, Celery Backend), RabbitMQ (Celery Broker).
+## 3. Database Schema Overview
+From [core.py](/server/database/core.py):
+* `users` — Authentication credentials, role settings, and session tracking (`token_version`).
+* `jobs` — Crawled postings, matching scores/reasoning, and editable `cv_html` / `cover_letter_html` blocks (the single source of truth for PDF rendering).
+* `user_settings` — User preferences, CV data JSON, notification configurations (SMTP, Pushover, Resend, Mailjet), and active storage credentials.
+* `system_settings` — Global default models and API endpoints/keys for OpenRouter and Ollama.
+* `job_platforms` — Registered sites, cron schedules, matching URL patterns, and notification overrides.
+* `document_templates` — Raw HTML layouts for resumes and cover letters (seeded with "Classic" structures).
+* `company_profiles` — Extracted tech stacks, salary benchmarks, and cultural summaries for domains.
+* `job_documents` — File attachments linked to a job (kind: `UPLOADED`, `GENERATED_CV`, `GENERATED_LETTER`, `ATTACHED_CERT`, `ATTACHED_REFERENCE`).
+* `profile_documents` — General candidate certificates or references (types: `REFERENCE`, `CERTIFICATE`).
+* `job_status_history` — State history tracking transitions (e.g. `OPEN` -> `DRAFTED` -> `APPLIED`).
 
-### 2. Boundary Map
-
-* `server/main.py` & `routers/` — REST-Endpunkte (Auth-geschützt, `user_id`-isoliert).
-* `server/scraper_api.py` — Validierung & Dispatching von Crawl-Jobs. Läuft als eigener uvicorn-Prozess (`127.0.0.1:8081`, supervisord). Interne Aufrufer nutzen `SCRAPER_SERVICE_URL`; das Frontend erreicht ihn über den Reverse-Proxy `GET/POST /scraper/{path}` in `main.py`.
-* `server/intelligence/` — Einziger LLM-Integrationspunkt (OpenRouter).
-* `server/workers/` — Asynchrone Tasks. `worker.py` ist nur noch dünner Celery-Entrypoint/Aggregator (`-A workers.worker.celery_app`), der `workers/tasks/*` (analyze, application, research, scheduling, urls; gemeinsame Crawl-Completion in `crawl_status.py`) und `workers/notifications/*` (email, push, templates) re-exportiert. `scraper_worker.py` für Crawls.
-* `server/routers/templates.py` — DocumentTemplate CRUD (global is_admin + user-scoped).
-* `server/services/template_filler.py` — Pure fill + validate: HTML template + data dict → filled HTML (data-slot / data-repeat).
-* `server/services/document_renderer.py` — Extended: `html_to_pdf_playwright` via Playwright (SSRF-blocked); legacy Jinja2+xhtml2pdf path retained as fallback.
-* `server/services/job_documents.py` — Dual-Storage-Helper für generierte JobDocuments (same-kind replacement).
-* `server/workers/tasks/package.py` — Sequentielle Paket-Orchestrierung (CV → Anschreiben → Profil-Docs). Nutzt Slot-Filler + Playwright wenn numerische template-ref; Legacy-Pfad bei String-Keys.
-* `server/routers/profile_documents.py` — Profil-weiter Dokumentenspeicher (CRUD Zeugnisse/Zertifikate).
-* `frontend/app/components/editor/` — Two-column browser editor (DocumentEditor + BlockInspector (dnd-kit) + StylePanel).
-* `server/core/` — Cross-cutting Infra (JWT-Auth, WebSocket-Manager, Logger).
-* `server/database/` — SQLAlchemy-Modelle + Alembic-Migrationen.
-
-### 3. Data & Storage Layer
-
-* **PostgreSQL (Source of Truth):** User, Jobs, Settings, Platforms, Company Profiles, ProfileDocuments, DocumentTemplates.
-* **document_templates table:** Global (is_admin=true) + user-scoped HTML templates. Seeded with "Classic" CV and COVER_LETTER templates on migration.
-* **jobs.cv_html / jobs.cover_letter_html:** Per-job editable HTML — single source of truth for the browser editor and Playwright PDF export.
-* **ProfileDocument (neue Tabelle):** Profil-weiter Speicher für Zeugnisse/Zertifikate, Dual-Storage (DB-Blob oder Drive).
-* **Documents (Dual):** DB Blob (`LargeBinary`) **oder** Google Drive (OAuth2), gesteuert via `active_storage_service`.
-* **Redis (Ephemeral):** Crawl-Hashes (1h TTL), Active-Sets, WebSocket Pub/Sub (`job_updates`).
-
-### 4. Security & Auth Model
-
-* **Cookie JWT:** Access (15m) & Refresh (7d) via HttpOnly, SameSite=Lax Cookies.
-* **Revocation:** Token enthält Version (`tv`). `get_current_user` gleicht `tv` mit DB ab. Logout erhöht `tv` (gilt für REST + WS).
-* **RBAC:** `is_admin` Boolean steuert Admin-Routen (`get_current_admin_user`).
-* **Data Isolation:** Jede Query erzwingt `user_id == current_user.id`.
-* **Secrets:** LLM-Keys & API-Credentials werden in DB/Env gehalten, niemals im Image. Maskierung via `_SECRET_FIELDS` bei Read.
-
----
-
-## 🛑 Hard Invariants (Strict Checklist)
-
-1. **No Inline Heavy-Work:** API-Handler triggern für Scraping, AI und PDFs *ausschließlich* Celery-Jobs und liefern eine Job-ID zurück. Live-Updates laufen via Redis Pub/Sub über WebSockets (`/ws`).
-2. **Auth First:** Jede Query/Mutation validiert zwingend Auth + Ownership (`user_id`).
-3. **Migrations Only:** Schema-Änderungen erfordern zwingend eine neue Alembic-Migration. `create_all` ist nur ein Fallback.
-4. **SSRF Protection:** Jeder ausgehende Scraping- oder Web-Request muss zwingend über `scraper_worker._is_safe_url` validiert werden (Verbot von Loopback, Private & Link-Local IPs).
-5. **Token Versioning:** REST- und WebSocket-Verbindungen müssen beide die Token-Version (`tv`) validieren.
+## 4. Hard Security & Logic Invariants
+1. **Async Execution:** Heavy tasks (scraping, PDF generation, LLM generation) must run inside Celery queues. HTTP endpoints must only enqueue tasks and return task IDs.
+2. **Tenant Isolation:** Every database query must query with explicit owner validation: `user_id == current_user.id`.
+3. **Token Versioning:** Login sessions validate the token version (`tv`). Logout increments `tv` in the `users` table to instantly revoke all active REST and WebSocket sessions.
+4. **SSRF Guard:** Outbound scraper connections must be validated via `_is_safe_url` to restrict private, link-local, and loopback IP addresses (excluding internal Ollama connections).
+5. **No DB-Metadata creation:** Always use Alembic migrations to mutate schemas. Never call `Base.metadata.create_all()` in production code paths.
