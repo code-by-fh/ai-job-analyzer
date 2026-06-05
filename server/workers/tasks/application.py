@@ -147,7 +147,16 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
         }
         if letter_template_html:
             job.cover_letter_html = fill_template(letter_template_html, letter_data)
-            letter_pdf = html_to_pdf(job.cover_letter_html)
+            try:
+                letter_pdf = html_to_pdf(job.cover_letter_html)
+            except OSError as e:
+                logger.warning(f"html_to_pdf failed, falling back to classic renderer: {e}")
+                letter_pdf = render_cover_letter_pdf(
+                    letter_markdown=application_text,
+                    template_key="classic",
+                    sender_name=candidate_name,
+                    company=job.company or "",
+                )
         else:
             letter_pdf = render_cover_letter_pdf(
                 letter_markdown=application_text,
