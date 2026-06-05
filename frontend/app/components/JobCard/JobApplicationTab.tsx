@@ -111,7 +111,7 @@ export default function JobApplicationTab({
 
   // ── Letter document state ─────────────────────────────────────────────────
   const [letterDoc, setLetterDoc] = useState<JobDocument | null>(null);
-  const [letterDocLoading, setLetterDocLoading] = useState(true);
+  const [letterDocLoading, setLetterDocLoading] = useState(false);
   const [letterBlobUrl, setLetterBlobUrl] = useState<string | null>(null);
   const [letterBlobLoading, setLetterBlobLoading] = useState(false);
 
@@ -126,6 +126,7 @@ export default function JobApplicationTab({
   // isGenerating fires for both letter and CV package generation (job.status === "GENERATING").
   // isLetterGenerating is only true when the letter is generating, not the CV.
   const isLetterGenerating = isGenerating && !cvGenerationPending.current;
+  const letterGeneratingPrevRef = useRef(isLetterGenerating);
 
   const [isCvEditing, setIsCvEditing] = useState(false);
   const [cvDraftContent, setCvDraftContent] = useState(job.cv_draft || "");
@@ -167,11 +168,12 @@ export default function JobApplicationTab({
     }
   }, [isLetterGenerating, job.application_draft, job.id]);
 
-  // Reload letter doc when letter generation completes
+  // Reload letter doc when letter generation completes (true → false transition only)
   useEffect(() => {
-    if (!isLetterGenerating && job.application_draft) {
+    if (letterGeneratingPrevRef.current && !isLetterGenerating && job.application_draft) {
       loadLetterDocument();
     }
+    letterGeneratingPrevRef.current = isLetterGenerating;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLetterGenerating]);
 
@@ -395,14 +397,23 @@ export default function JobApplicationTab({
     a.remove();
   };
 
-  const handleDownloadLetterDoc = () => {
+  const handleDownloadLetterDoc = async () => {
     if (!letterDoc) return;
-    const a = document.createElement("a");
-    a.href = `${apiBase}/jobs/${job.id}/documents/${letterDoc.id}/download`;
-    a.download = letterDoc.original_filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    try {
+      const res = await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/${letterDoc.id}/download`
+      );
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = letterDoc.original_filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {}
   };
 
   const openEditor = useCallback(
@@ -591,24 +602,14 @@ export default function JobApplicationTab({
                       {copied ? "Kopiert" : "Kopieren"}
                     </span>
                   </button>
-                  {letterDoc ? (
-                    <button
-                      onClick={handleDownloadLetterDoc}
-                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>PDF</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleDownloadLetter}
-                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>PDF</span>
-                    </button>
-                  )}
-                  {job.cover_letter_html && !isLetterGenerating && (
+                  <button
+                    onClick={letterDoc ? handleDownloadLetterDoc : handleDownloadLetter}
+                    className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>PDF</span>
+                  </button>
+                  {job.cover_letter_html && (
                     <button
                       onClick={() => openEditor("cover_letter")}
                       className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
