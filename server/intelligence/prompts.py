@@ -74,6 +74,11 @@ def get_generate_application_messages(
     user_language: str = "de",
     improvement_notes: Optional[str] = None,
     existing_draft: Optional[str] = None,
+    candidate_name: str = "",
+    candidate_location: str = "",
+    candidate_skills: str = "",
+    candidate_languages: Optional[list] = None,
+    candidate_preferences: str = "",
 ) -> List[Dict[str, str]]:
 
     lang = "English" if user_language == "en" else "German"
@@ -98,7 +103,11 @@ IMPORTANT: Respond EXCLUSIVELY in {lang}!!!""".strip()
 {improvement_notes}
 
 ### CONTEXT (for reference only — do not rewrite unless relevant to the improvements)
-Position: {job_title} at {job_company}"""
+Position: {job_title} at {job_company}
+Applicant: {candidate_name}
+Location: {candidate_location}
+Skills: {candidate_skills}
+Languages: {", ".join(candidate_languages) if candidate_languages else ""}"""
 
     # --- FRESH GENERATION MODE ---
     else:
@@ -131,7 +140,12 @@ Description:
 {job_description}
 
 ### APPLICANT PROFILE
+Name: {candidate_name}
 Current Role: {profile_role}
+Location: {candidate_location}
+Skills: {candidate_skills}
+Languages: {", ".join(candidate_languages) if candidate_languages else ""}
+Preferences: {candidate_preferences}
 CV Data:
 {cv_text}"""
 
@@ -580,10 +594,11 @@ def get_extract_job_details_messages(
     ]
 
 
-def get_tailored_cv_messages(cv_data, job_title, job_description, language="de"):
+def get_tailored_cv_messages(cv_data, job_title, job_description, language="de", cv_notes: str = ""):
     import json as _json
 
     lang_note = "Antworte auf Deutsch." if language == "de" else "Respond in English."
+    notes_section = f"\n\nIMPROVEMENT NOTES (apply when reordering/rewriting descriptions):\n{cv_notes}" if cv_notes else ""
     system = (
         "You are a CV editor. You receive a candidate's structured CV as JSON and a "
         "job posting. Reorder and re-emphasize the existing content to best match the "
@@ -595,7 +610,7 @@ def get_tailored_cv_messages(cv_data, job_title, job_description, language="de")
     user = (
         f"JOB TITLE:\n{job_title}\n\nJOB DESCRIPTION:\n{job_description[:6000]}\n\n"
         f"CANDIDATE CV JSON:\n{_json.dumps(cv_data, ensure_ascii=False)}\n\n"
-        "Return the tailored CV as JSON only."
+        f"Return the tailored CV as JSON only.{notes_section}"
     )
     return [
         {"role": "system", "content": system},
