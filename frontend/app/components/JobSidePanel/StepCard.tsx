@@ -1,5 +1,6 @@
-import { Sparkles, Send, Zap, Archive } from "lucide-react";
-import { STATUS_GUIDANCE } from "../JobCard/constants";
+import { Sparkles, Send, Zap, Archive, CheckCircle2 } from "lucide-react";
+import { STATUS_GUIDANCE, STATUS_PIPELINE, STATUS_META } from "../JobCard/constants";
+import { useLanguage } from "../LanguageProvider";
 import type { JobStatus } from "../JobStatusBadge";
 import type { StepCardProps } from "./types";
 
@@ -10,15 +11,28 @@ export default function StepCard({
   onStatusUpdate,
   onArchive,
 }: StepCardProps) {
+  const { t } = useLanguage();
   const status = (job.status || "OPEN") as JobStatus;
   const guidance = STATUS_GUIDANCE[status];
+  const currentIndex = STATUS_PIPELINE.indexOf(status);
+  const total = STATUS_PIPELINE.length;
+  const nextStatus =
+    currentIndex >= 0 && currentIndex < total - 1
+      ? STATUS_PIPELINE[currentIndex + 1]
+      : null;
+  // Show forward button for DRAFTED, APPLIED, INTERVIEW — not for OPEN (has "Bewerben"),
+  // OFFER (has explicit accept/reject), ACCEPTED (last step), or exit statuses.
+  const showErledigt =
+    nextStatus !== null && status !== "OPEN" && status !== "OFFER";
 
   if (!guidance) return null;
 
   return (
     <div className={`rounded-xl border p-4 ${guidance.bgCls}`}>
       <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${guidance.accentCls}`}>
-        Aktueller Schritt
+        {currentIndex >= 0
+          ? `Schritt ${currentIndex + 1} von ${total} · ${t(STATUS_META[status].labelKey)}`
+          : t(STATUS_META[status]?.labelKey ?? ("statusRejected" as any))}
       </p>
       <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">
         {guidance.nextAction}
@@ -31,6 +45,15 @@ export default function StepCard({
         onStatusUpdate={onStatusUpdate}
         onArchive={onArchive}
       />
+      {showErledigt && nextStatus && (
+        <button
+          onClick={() => onStatusUpdate(job.id, nextStatus as JobStatus)}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Erledigt → {t(STATUS_META[nextStatus].labelKey)} ✓
+        </button>
+      )}
     </div>
   );
 }
@@ -143,7 +166,7 @@ function StepActions({
     );
   }
 
-  // APPLIED, REJECTED, FAILED: informational only, footer handles advancement
+  // APPLIED, REJECTED, FAILED: informational nudge only
   return (
     <p className="text-xs text-slate-500 dark:text-slate-400">
       {STATUS_GUIDANCE[status]?.nudge}
