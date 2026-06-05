@@ -200,7 +200,7 @@ export default function Listings({
     isArchived,
   });
 
-  const { selectedJob, openPanel, closePanel, updateSelectedJob } = useJobPanel({
+  const { selectedJob, openPanel, closePanel, updateSelectedJob, syncFromJobs } = useJobPanel({
     token,
     logout,
     onJobUpdate: (updated) =>
@@ -509,6 +509,13 @@ export default function Listings({
       // Silently handle - user is already canceling
     }
   };
+
+  // Keep panel in sync when the jobs list is updated externally (status change, WS update, etc.)
+  useEffect(() => {
+    if (!selectedJob) return;
+    const updated = jobs.find((j) => j.id === selectedJob.id);
+    if (updated && updated !== selectedJob) syncFromJobs(updated);
+  }, [jobs]);
 
   useEffect(() => {
     if (!token) return;

@@ -55,7 +55,7 @@ export default function JobDetailPage() {
 
   const handleStatusUpdate = useCallback(
     async (id: string, status: JobStatus) => {
-      const res = await fetchWithAuth(`${apiBase}/jobs/${id}/status`, {
+      const res = await fetchWithAuth(`${apiBase}/jobs/${id}/update-status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

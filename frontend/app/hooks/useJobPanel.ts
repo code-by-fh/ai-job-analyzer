@@ -53,8 +53,7 @@ export function useJobPanel({ token, logout, onJobUpdate }: UseJobPanelOptions) 
     router.replace(`/listings${qs ? `?${qs}` : ""}`, { scroll: false });
   }, [router, searchParams]);
 
-  // Call this when a job is updated inside the panel (e.g. status change)
-  // to keep both panel state and the Kanban list in sync.
+  // Call this when a job is updated inside the panel — propagates to the jobs list.
   const updateSelectedJob = useCallback(
     (updated: Job) => {
       setSelectedJob(updated);
@@ -63,5 +62,10 @@ export function useJobPanel({ token, logout, onJobUpdate }: UseJobPanelOptions) 
     [onJobUpdate],
   );
 
-  return { selectedJob, openPanel, closePanel, updateSelectedJob };
+  // Call this when the jobs list changes externally — syncs panel without feedback loop.
+  const syncFromJobs = useCallback((updated: Job) => {
+    setSelectedJob(updated);
+  }, []);
+
+  return { selectedJob, openPanel, closePanel, updateSelectedJob, syncFromJobs };
 }
