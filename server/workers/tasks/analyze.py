@@ -137,8 +137,10 @@ def analyze_job_task(job_data):
 
         if profile:
             cv_text = format_cv_for_prompt(profile.cv_data)
+            spoken = getattr(profile, "spoken_languages", None) or []
+            lang_part = f"\nSpoken Languages: {', '.join(spoken)}" if spoken else ""
             profile_str = (
-                f"Rolle: {profile.role}, Skills: {profile.skills}\nDetails:\n{cv_text}"
+                f"Rolle: {profile.role}, Skills: {profile.skills}{lang_part}\nDetails:\n{cv_text}"
             )
         else:
             logger.warning("No user profile found. Using default fallback profile.")

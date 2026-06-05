@@ -2,7 +2,7 @@
 
 ### 1. Current Status (As of 2026-06-05)
 
-**Phase:** Infrastructure updated: removed Playwright deps, integrated WeasyPrint for external render service. Next: automated tests for Auth & Jobs (currently 0% coverage — see risk below) and security hardening.
+**Phase:** Added spoken_languages field to user profile — stored in DB, included in AI job analysis and company research prompts, editable in frontend profile page.
 
 > ⚠️ **Risk:** `routers/auth.py` and `routers/jobs.py` have 0% automated test coverage. These are the two most security-critical routers. Any change to auth or job logic is unverified until this is addressed.
 
@@ -22,6 +22,7 @@
 | **Notifications** | ✅ Completed & Tested (`routers/settings.py`, `tests/test_settings_router.py`) | 5 channels: Gmail, Pushover, Resend, Mailjet, SMTP + Templates. 49 tests green. |
 | **Real-time Engine** | ✅ Completed (`routers/websocket.py`) | Cookie-authed `/ws`, Live-Updates via `useCrawl` / `CrawlStatus`. |
 | **Pipeline Panel** | ✅ Completed (`components/JobSidePanel/`, `hooks/useJobPanel.ts`, `app/jobs/[id]/page.tsx`) | JobSidePanel replaces JobDetailModal: 420px slide-in, PipelineTabs, StepCard-CTAs, URL sync `?job=<id>`, deep-link restore, full `/jobs/[id]` route. |
+| **Spoken Languages** | ✅ Completed (`database/core.py`, `routers/settings.py`, `workers/tasks/analyze.py`, `workers/tasks/research.py`, `frontend/app/profile/page.tsx`) | `spoken_languages` JSON column in `user_settings`; migration `k3c4d5e6f7a8`; comma-sep input in profile Target tab; sent to AI in job analysis and company research prompts. |
 
 ### 3. Next Up & Backlog
 

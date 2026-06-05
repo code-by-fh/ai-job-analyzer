@@ -118,6 +118,9 @@ def generate_company_profile(self, domain: str, user_id: int):
                 parts.append(f"Aktuelle Rolle: {user_profile.role}")
             if user_profile.skills:
                 parts.append(f"Skills: {user_profile.skills}")
+            spoken = getattr(user_profile, "spoken_languages", None) or []
+            if spoken:
+                parts.append(f"Spoken Languages: {', '.join(spoken)}")
             if user_profile.cv_data:
                 parts.append(format_cv_for_prompt(user_profile.cv_data))
             user_profile_str = "\n".join(parts)

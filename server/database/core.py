@@ -109,6 +109,7 @@ class UserProfile(Base):
     )  # NONE, PUSHOVER, RESEND, MAILJET
     language = Column(String, default="de")
     timezone = Column(String, default="Europe/Berlin")
+    spoken_languages = Column(JSON, default=[], nullable=True)
 
     # Storage Settings
     active_storage_service = Column(String, default="NONE")  # NONE, GOOGLE_DRIVE
@@ -289,6 +290,7 @@ class SettingsData(BaseModel):
     active_notification_service: str = "NONE"
     language: str = "de"
     timezone: str = "Europe/Berlin"
+    spoken_languages: List[str] = []
     cv_template: Optional[str] = None
     cover_letter_template: Optional[str] = None
     active_storage_service: str = "NONE"

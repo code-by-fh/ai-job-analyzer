@@ -26,6 +26,7 @@ import {
   Trash2,
   FilePlus,
   LayoutTemplate,
+  Languages,
 } from "lucide-react";
 import type { DocumentTemplate } from "../lib/types";
 
@@ -73,6 +74,7 @@ export default function Profile() {
     min_salary: "",
     location: "",
     preferences: "",
+    spoken_languages: "",
     cv_data: {
       experience: [] as any[],
       projects: [] as any[],
@@ -98,12 +100,14 @@ export default function Profile() {
         .then((res) => res.json())
         .then(async (data) => {
           const profileData = data.profile || {};
+          const spokenArr: string[] = profileData.spoken_languages || [];
           setFormData({
             role: profileData.role || "",
             skills: profileData.skills || "",
             min_salary: profileData.min_salary || "",
             location: profileData.location || "",
             preferences: profileData.preferences || "",
+            spoken_languages: spokenArr.join(", "),
             cv_data: profileData.cv_data || {
               experience: [],
               projects: [],
@@ -258,11 +262,16 @@ export default function Profile() {
   const handleSubmit = async () => {
     setSaveStatus("saving");
     try {
+      const spokenLanguages = formData.spoken_languages
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          spoken_languages: spokenLanguages,
           cv_template: cvTemplate,
           cover_letter_template: coverLetterTemplate,
         }),
@@ -299,6 +308,7 @@ export default function Profile() {
         min_salary: data.min_salary || prev.min_salary || "",
         location: data.location || prev.location || "",
         preferences: prev.preferences || "",
+        spoken_languages: prev.spoken_languages || "",
         cv_data: data.cv_data || {
           experience: [],
           projects: [],
@@ -605,6 +615,17 @@ export default function Profile() {
                   onChange={handleChange}
                   className={inputCls}
                   rows={1}
+                />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
+              <Field label={t("spokenLanguages")} icon={<Languages size={14} />}>
+                <input
+                  name="spoken_languages"
+                  value={formData.spoken_languages}
+                  onChange={handleChange}
+                  className={inputCls}
+                  placeholder={t("spokenLanguagesPlaceholder")}
                 />
               </Field>
             </div>

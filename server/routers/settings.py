@@ -180,6 +180,7 @@ def save_settings(
     profile.preferences = settings.preferences
     profile.cv_data = settings.cv_data.model_dump()
     profile.job_urls = settings.job_urls
+    profile.spoken_languages = settings.spoken_languages
 
     if settings.cv_template is not None:
         profile.cv_template = settings.cv_template

@@ -335,6 +335,8 @@ export const translations = {
 
     // Language Preference
     languagePreference: "Language Preference",
+    spokenLanguages: "Spoken Languages",
+    spokenLanguagesPlaceholder: "e.g. German (native), English (fluent)",
 
     // Timezone
     timezonePreference: "Timezone",
@@ -947,6 +949,8 @@ export const translations = {
 
     // Language Preference
     languagePreference: "Spracheinstellung",
+    spokenLanguages: "Gesprochene Sprachen",
+    spokenLanguagesPlaceholder: "z.B. Deutsch (Muttersprache), Englisch (fließend)",
 
     // Timezone
     timezonePreference: "Zeitzone",
