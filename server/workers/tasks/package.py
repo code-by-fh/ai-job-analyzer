@@ -16,7 +16,7 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
 )
-from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf_playwright
+from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf
 from services.job_documents import store_generated_document
 from services.storage import get_storage_service
 from services.template_filler import fill_template
@@ -97,7 +97,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         if cv_template_html:
             job.cv_html = fill_template(cv_template_html, tailored)
-            cv_pdf = html_to_pdf_playwright(job.cv_html)
+            cv_pdf = html_to_pdf(job.cv_html)
         else:
             cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
         store_generated_document(
@@ -126,7 +126,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                 "body": letter_text,
             }
             job.cover_letter_html = fill_template(letter_template_html, letter_data)
-            letter_pdf = html_to_pdf_playwright(job.cover_letter_html)
+            letter_pdf = html_to_pdf(job.cover_letter_html)
         else:
             letter_pdf = render_cover_letter_pdf(
                 letter_markdown=letter_text,
@@ -243,7 +243,7 @@ def render_document_pdf_task(job_id: str, kind: str, user_id: int):
             else None
         )
 
-        pdf = html_to_pdf_playwright(html)
+        pdf = html_to_pdf(html)
         doc_kind = "GENERATED_CV" if kind == "cv" else "GENERATED_LETTER"
         prefix = "Lebenslauf" if kind == "cv" else "Anschreiben"
         store_generated_document(
