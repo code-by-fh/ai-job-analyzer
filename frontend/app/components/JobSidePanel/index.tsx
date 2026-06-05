@@ -89,7 +89,7 @@ export default function JobSidePanel({
       />
 
       {/* Panel */}
-      <div className="fixed inset-y-0 right-0 z-[60] w-[35vw] min-w-[360px] max-w-[600px] flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl animate-in slide-in-from-right duration-300">
+      <div className="fixed inset-y-0 right-0 z-[60] w-[80vw] max-w-3xl flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl animate-in slide-in-from-right duration-300">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
