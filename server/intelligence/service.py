@@ -314,12 +314,12 @@ def generate_application(
     api_key: str = None,
     improvement_notes: str = None,
     existing_draft: str = None,
+    candidate_name: str = "",
+    candidate_location: str = "",
+    candidate_skills: str = "",
+    candidate_languages: list = None,
+    candidate_preferences: str = "",
 ) -> str:
-    """
-    Calls AI to generate a cover letter draft. Returns the raw string content.
-    If improvement_notes and existing_draft are provided, only the requested
-    changes are applied to the existing draft instead of regenerating from scratch.
-    """
     client = get_ai_client(api_key)
 
     messages = get_generate_application_messages(
@@ -331,8 +331,13 @@ def generate_application(
         user_language=user_language,
         improvement_notes=improvement_notes,
         existing_draft=existing_draft,
+        candidate_name=candidate_name,
+        candidate_location=candidate_location,
+        candidate_skills=candidate_skills,
+        candidate_languages=candidate_languages or [],
+        candidate_preferences=candidate_preferences,
     )
-    
+
     response = _call_openrouter(
         client=client,
         model=model,
@@ -498,21 +503,28 @@ def generate_tailored_cv(
     language: str = "de",
     model: str = None,
     db=None,
+    skills: str = "",
+    spoken_languages=None,
+    location: str = "",
+    cv_notes: str = "",
 ) -> dict:
-    """Use local Ollama to reorder/emphasize the candidate's CV for a job.
-
-    Returns a dict with the same shape as the CV template expects. Never invents
-    facts; on any failure the original cv_data is returned with name/role filled.
-    """
     base = dict(cv_data or {})
     base.setdefault("experience", [])
     base.setdefault("projects", [])
     base.setdefault("education", "")
     base["name"] = candidate_name or base.get("name", "")
     base["role"] = candidate_role or base.get("role", "")
+    if skills and not base.get("skills"):
+        base["skills"] = skills
+    if spoken_languages:
+        base["spoken_languages"] = (
+            spoken_languages if isinstance(spoken_languages, list) else [spoken_languages]
+        )
+    if location:
+        base["location"] = location
 
     client = get_ollama_client(db)
-    messages = get_tailored_cv_messages(base, job_title, job_description, language)
+    messages = get_tailored_cv_messages(base, job_title, job_description, language, cv_notes=cv_notes)
     try:
         response = _call_openrouter(
             client=client,
@@ -526,7 +538,6 @@ def generate_tailored_cv(
         logger.error(f"Ollama tailored CV failed, using untailored CV: {e}")
         return base
 
-    # Merge: tailored content wins, but guarantee required keys + name/role.
     tailored.setdefault("experience", base["experience"])
     tailored.setdefault("projects", base["projects"])
     tailored.setdefault("education", base["education"])
