@@ -48,9 +48,12 @@ def test_html_to_pdf_returns_pdf_bytes():
     try:
         pytest.importorskip("weasyprint", reason="WeasyPrint not available in this environment")
     except OSError as e:
-        pytest.skip(f"WeasyPrint system libraries not available: {e}")
+        pytest.skip(f"WeasyPrint system libraries not available at import: {e}")
     from services.document_renderer import html_to_pdf
     html = "<html><body><h1>Test CV</h1></body></html>"
-    pdf = html_to_pdf(html)
+    try:
+        pdf = html_to_pdf(html)
+    except OSError as e:
+        pytest.skip(f"WeasyPrint system libraries not available: {e}")
     assert isinstance(pdf, bytes)
     assert pdf[:4] == b"%PDF"

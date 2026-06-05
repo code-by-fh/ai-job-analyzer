@@ -13,9 +13,9 @@ def fetch_html(url: str, wait_for: str | None = None, timeout: int = 60) -> str 
     """Fetch rendered HTML for *url* from the render API.
 
     Returns the HTML string, or None if the request fails.
-    The render API is called with a page-level timeout so the browser
-    stops waiting after *timeout* seconds — the HTTP client waits up
-    to _HTTP_TIMEOUT seconds for the whole request.
+    *timeout* is the page-level timeout sent to the render API (browser stops waiting
+    after *timeout* seconds). Keep *timeout* below RENDER_API_HTTP_TIMEOUT (default 90)
+    or the HTTP connection will close before the browser finishes.
     """
     payload: dict = {"url": url, "timeout": timeout}
     if wait_for:
