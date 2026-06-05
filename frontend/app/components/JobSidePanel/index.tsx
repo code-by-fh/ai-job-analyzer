@@ -69,7 +69,7 @@ export default function JobSidePanel({
     <>
       {/* Backdrop — z-[55] sits above sidebar/bottom-nav (z-50) so they get blurred */}
       <div
-        className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+        className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
         onClick={onClose}
       />
 
@@ -94,14 +94,14 @@ export default function JobSidePanel({
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => router.push(`/jobs/${job.id}`)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-lg transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-lg transition-all active:scale-95 cursor-pointer"
             >
               <ExternalLink className="w-3 h-3" />
               Seite öffnen
             </button>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-90"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-90 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -144,7 +144,7 @@ export default function JobSidePanel({
                     key={tab.id}
                     onClick={() => setActiveContentTab(tab.id)}
                     className={[
-                      "px-3 py-2 text-[11px] font-semibold whitespace-nowrap border-b-2 transition-all",
+                      "px-3 py-2 text-[11px] font-semibold whitespace-nowrap border-b-2 transition-all cursor-pointer",
                       activeContentTab === tab.id
                         ? "border-slate-700 dark:border-slate-300 text-slate-900 dark:text-white"
                         : "border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400",

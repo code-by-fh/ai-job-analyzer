@@ -48,7 +48,7 @@ export default function StepCard({
       {showErledigt && nextStatus && (
         <button
           onClick={() => onStatusUpdate(job.id, nextStatus as JobStatus)}
-          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
         >
           <CheckCircle2 className="w-3.5 h-3.5" />
           Erledigt → {t(STATUS_META[nextStatus].labelKey)} ✓
@@ -72,14 +72,14 @@ function StepActions({
       <div className="flex gap-2">
         <button
           onClick={() => onStatusUpdate(job.id, "DRAFTED")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
         >
           <Send className="w-3.5 h-3.5" />
           Bewerben
         </button>
         <button
           onClick={() => onArchive(job.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95 cursor-pointer"
         >
           <Archive className="w-3.5 h-3.5" />
           Archivieren
@@ -107,7 +107,7 @@ function StepActions({
     return (
       <button
         onClick={() => onGenerate(job)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
       >
         <Sparkles className="w-3.5 h-3.5" />
         CV & Anschreiben generieren
@@ -131,7 +131,7 @@ function StepActions({
             { method: "POST", credentials: "include" },
           );
         }}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
       >
         <Zap className="w-3.5 h-3.5" />
         Interview Prep generieren
@@ -144,13 +144,13 @@ function StepActions({
       <div className="flex gap-2">
         <button
           onClick={() => onStatusUpdate(job.id, "ACCEPTED")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
         >
           Angebot annehmen
         </button>
         <button
           onClick={() => onStatusUpdate(job.id, "REJECTED")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all active:scale-95 cursor-pointer"
         >
           Ablehnen
         </button>
