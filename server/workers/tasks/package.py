@@ -102,7 +102,11 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         if cv_template_html:
             job.cv_html = fill_template(cv_template_html, tailored)
-            cv_pdf = html_to_pdf(job.cv_html)
+            try:
+                cv_pdf = html_to_pdf(job.cv_html)
+            except OSError as e:
+                logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
+                cv_pdf = render_cv_pdf(tailored, template_key="classic")
         else:
             cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
         store_generated_document(
@@ -140,7 +144,16 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                 "skills": profile.skills or "",
             }
             job.cover_letter_html = fill_template(letter_template_html, letter_data)
-            letter_pdf = html_to_pdf(job.cover_letter_html)
+            try:
+                letter_pdf = html_to_pdf(job.cover_letter_html)
+            except OSError as e:
+                logger.warning(f"html_to_pdf failed for cover letter, falling back to classic renderer: {e}")
+                letter_pdf = render_cover_letter_pdf(
+                    letter_markdown=job.application_draft,
+                    template_key="classic",
+                    sender_name=candidate_name,
+                    company=job.company or "",
+                )
         else:
             letter_pdf = render_cover_letter_pdf(
                 letter_markdown=letter_text,
