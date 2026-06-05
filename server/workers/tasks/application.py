@@ -2,6 +2,7 @@
 
 import os
 import json
+import datetime
 
 import redis
 from openai import (
@@ -14,9 +15,29 @@ from openai import (
 
 from core.celery_config import celery_app
 from core.logger import get_logger
-from database.core import SessionLocal, JobEntry, UserProfile
+from database.core import SessionLocal, JobEntry, UserProfile, User, DocumentTemplate
 from intelligence.service import get_model, get_api_key, format_cv_for_prompt, generate_application
 from services.storage import get_storage_service
+from services.template_filler import fill_template
+from services.document_renderer import render_cover_letter_pdf, html_to_pdf
+from services.job_documents import store_generated_document
+
+
+def _resolve_letter_template_html(db, template_ref):
+    """Return HTML for a numeric template ID, or None for legacy path."""
+    if not template_ref or not str(template_ref).isdigit():
+        return None
+    t = db.query(DocumentTemplate).filter(
+        DocumentTemplate.id == int(template_ref),
+        DocumentTemplate.doc_type == "COVER_LETTER",
+    ).first()
+    return t.html if t else None
+
+
+def _safe_name(value):
+    cleaned = "".join(c for c in (value or "Job") if c.isalnum() or c in " -_")
+    return cleaned.replace(" ", "_") or "Job"
+
 
 logger = get_logger(__name__)
 
@@ -77,14 +98,14 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
 
         logger.info(f"Data loaded. Job: {job.title}, User: {profile.role}")
 
+        user = db.query(User).filter(User.id == target_user_id).first()
+        candidate_name = user.username if user else ""
         user_language = getattr(profile, "language", "de") if profile else "de"
         cv_text = format_cv_for_prompt(profile.cv_data)
 
-        logger.info(" Sende Anfrage an OpenAI für Anschreiben...")
+        logger.info("Sending request to AI for cover letter...")
         model = get_model(db)
         api_key = get_api_key(db)
-        # When improvement notes are given, pass the existing draft so the AI
-        # only applies the requested changes instead of rewriting from scratch.
         existing_draft = job.application_draft if improvement_notes else None
 
         application_text = generate_application(
@@ -98,18 +119,52 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
             api_key=api_key,
             improvement_notes=improvement_notes,
             existing_draft=existing_draft,
+            candidate_name=candidate_name,
+            candidate_location=profile.location or "",
+            candidate_skills=profile.skills or "",
+            candidate_languages=profile.spoken_languages or [],
+            candidate_preferences=profile.preferences or "",
         )
-        logger.info("Received AI response for application letter.")
+        logger.info("Received AI response for cover letter.")
 
-        # Check if job was cancelled before saving
         db.refresh(job)
         if job.status != "GENERATING":
-            logger.info(
-                f"Job {job_id} was cancelled (status: {job.status}), discarding generated result."
-            )
+            logger.info(f"Job {job_id} cancelled, discarding result.")
             return
 
         job.application_draft = application_text
+
+        # --- Render cover letter PDF from template ---
+        letter_template_html = _resolve_letter_template_html(db, profile.cover_letter_template)
+        letter_data = {
+            "sender_name": candidate_name,
+            "company": job.company or "",
+            "body": application_text,
+            "location": profile.location or "",
+            "date": datetime.date.today().strftime("%d.%m.%Y"),
+            "role": profile.role or "",
+            "skills": profile.skills or "",
+        }
+        if letter_template_html:
+            job.cover_letter_html = fill_template(letter_template_html, letter_data)
+            letter_pdf = html_to_pdf(job.cover_letter_html)
+        else:
+            letter_pdf = render_cover_letter_pdf(
+                letter_markdown=application_text,
+                template_key=profile.cover_letter_template or "classic",
+                sender_name=candidate_name,
+                company=job.company or "",
+            )
+
+        storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
+        store_generated_document(
+            db, job.id, target_user_id, letter_pdf,
+            original_filename=f"Anschreiben_{_safe_name(job.company)}.pdf",
+            mime_type="application/pdf",
+            kind="GENERATED_LETTER",
+            storage=storage,
+        )
+
         job.status = "DRAFTED"
         db.commit()
         logger.info(f"Application letter for job {job_id} saved to DB.")
@@ -121,31 +176,12 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
                     "job_id": job.id,
                     "status": "DRAFTED",
                     "application_draft": job.application_draft,
+                    "cover_letter_generated": True,
                     "user_id": job.user_id,
                 }
             ),
         )
         logger.info(f" WebSocket Event 'job_update' für {job.id} gesendet.")
-
-        # --- AUTO-UPLOAD (External Storage) ---
-        if profile and profile.active_storage_service != "NONE":
-            storage = get_storage_service(profile)
-            if storage:
-                try:
-                    import asyncio
-                    filename = f"Anschreiben_{job.company.replace(' ', '_')}_{job.title.replace(' ', '_')}.txt"
-                    # Using run_until_complete is tricky in worker threads,
-                    # but for MVP we wrap the call if we are not in an loop
-                    success = asyncio.run(storage.upload_file(
-                        content=application_text,
-                        filename=filename
-                    ))
-                    if success:
-                        logger.info(f"Auto-Upload to {profile.active_storage_service} successful: {filename}")
-                    else:
-                        logger.warning(f"Auto-Upload to {profile.active_storage_service} failed")
-                except Exception as upload_err:
-                    logger.error(f"External storage upload error: {upload_err}")
 
     except (
         AuthenticationError,
