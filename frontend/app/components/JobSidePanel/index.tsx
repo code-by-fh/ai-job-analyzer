@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { X, ExternalLink } from "lucide-react";
 import type { TabType } from "../JobCard/types";
 import type { JobStatus } from "../JobStatusBadge";
-import { STATUS_PIPELINE } from "../JobCard/constants";
 import PipelineTabs from "./PipelineTabs";
 import StepCard from "./StepCard";
 import JobOverviewTab from "../JobCard/JobOverviewTab";
@@ -66,20 +65,6 @@ export default function JobSidePanel({
 
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
   const currentStatus = (job.status || "OPEN") as JobStatus;
-  const currentIndex = STATUS_PIPELINE.indexOf(currentStatus);
-  const isFirstStep = currentIndex <= 0;
-  const isLastStep = currentIndex >= STATUS_PIPELINE.length - 1;
-
-  const handleStepForward = () => {
-    if (isLastStep) return;
-    onStatusUpdate(job.id, STATUS_PIPELINE[currentIndex + 1] as JobStatus);
-  };
-
-  const handleStepBack = () => {
-    if (isFirstStep) return;
-    onStatusUpdate(job.id, STATUS_PIPELINE[currentIndex - 1] as JobStatus);
-  };
-
   return (
     <>
       {/* Backdrop — z-[55] sits above sidebar/bottom-nav (z-50) so they get blurred */}
@@ -142,6 +127,15 @@ export default function JobSidePanel({
               onArchive={onArchive || (() => {})}
             />
 
+            {/* Stellendetails divider */}
+            <div className="flex items-center gap-3 -mx-4 px-4">
+              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                Stellendetails
+              </span>
+              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+            </div>
+
             {/* Content tab bar */}
             <div className="border-b border-slate-200 dark:border-slate-800 -mx-4 px-4">
               <div className="flex overflow-x-auto">
@@ -197,25 +191,6 @@ export default function JobSidePanel({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex gap-2 px-4 py-3 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
-          {!isFirstStep && (
-            <button
-              onClick={handleStepBack}
-              className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95"
-            >
-              ← Zurück
-            </button>
-          )}
-          {!isLastStep && currentStatus !== "OFFER" && (
-            <button
-              onClick={handleStepForward}
-              className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm"
-            >
-              Schritt erledigt ✓
-            </button>
-          )}
-        </div>
       </div>
     </>
   );
