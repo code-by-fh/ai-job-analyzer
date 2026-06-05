@@ -210,6 +210,7 @@ export default function JobDetailPage() {
               onTabChange={(tab) => tab && setActiveContentTab(tab)}
               onStatusUpdate={handleStatusUpdate}
               onArchive={handleArchive}
+              defaultExpanded
             />
           )}
           {activeContentTab === "application" && (

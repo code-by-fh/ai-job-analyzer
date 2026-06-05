@@ -164,6 +164,7 @@ export default function JobSidePanel({
                   onTabChange={(tab) => tab && setActiveContentTab(tab)}
                   onStatusUpdate={onStatusUpdate}
                   onArchive={onArchive}
+                  defaultExpanded
                 />
               )}
               {activeContentTab === "application" && (

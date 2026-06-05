@@ -53,6 +53,7 @@ interface JobOverviewTabProps {
   ) => void;
   onStatusUpdate?: (jobId: string, status: JobStatus) => void;
   onArchive?: (jobId: string) => void;
+  defaultExpanded?: boolean;
 }
 
 export default function JobOverviewTab({
@@ -60,10 +61,11 @@ export default function JobOverviewTab({
   onTabChange,
   onStatusUpdate,
   onArchive,
+  defaultExpanded = false,
 }: JobOverviewTabProps) {
   const { t } = useLanguage();
   const [isStatusOpen, setIsStatusOpen] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(false);
   const [elapsed, setElapsed] = useState(0);
