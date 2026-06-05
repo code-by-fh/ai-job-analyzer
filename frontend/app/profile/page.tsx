@@ -770,7 +770,7 @@ export default function Profile() {
       <div className="glass-card rounded-2xl p-6 sm:p-8 mt-6">
         <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
           <FilePlus size={20} className="text-indigo-500" />
-          Bewerbungsunterlagen
+          {t("applicationDocuments")}
         </h2>
 
         {docsLoading ? (
@@ -783,18 +783,19 @@ export default function Profile() {
             {/* Arbeitszeugnisse */}
             <div>
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
-                Arbeitszeugnisse
+                {t("workReferences")}
               </h3>
               <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
                 <UploadCloud size={16} />
-                Datei hochladen
+                {t("uploadFiles")}
                 <input
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
+                  multiple
                   className="hidden"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadProfileDoc(f, "REFERENCE");
+                    const files = Array.from(e.target.files || []);
+                    files.forEach((f) => uploadProfileDoc(f, "REFERENCE"));
                     e.target.value = "";
                   }}
                 />
@@ -824,7 +825,7 @@ export default function Profile() {
                   ))}
                 {profileDocs.filter((d) => d.doc_type === "REFERENCE").length === 0 && (
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                    Noch keine Arbeitszeugnisse hochgeladen.
+                    {t("noWorkReferences")}
                   </p>
                 )}
               </div>
@@ -833,18 +834,19 @@ export default function Profile() {
             {/* Zertifikate */}
             <div>
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
-                Zertifikate
+                {t("certifications")}
               </h3>
               <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
                 <UploadCloud size={16} />
-                Datei hochladen
+                {t("uploadFiles")}
                 <input
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
+                  multiple
                   className="hidden"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadProfileDoc(f, "CERTIFICATE");
+                    const files = Array.from(e.target.files || []);
+                    files.forEach((f) => uploadProfileDoc(f, "CERTIFICATE"));
                     e.target.value = "";
                   }}
                 />
@@ -874,7 +876,7 @@ export default function Profile() {
                   ))}
                 {profileDocs.filter((d) => d.doc_type === "CERTIFICATE").length === 0 && (
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                    Noch keine Zertifikate hochgeladen.
+                    {t("noCertificates")}
                   </p>
                 )}
               </div>

@@ -21,6 +21,7 @@
 * **Separation of Concerns:** Keep business, state-management, and API fetching logic outside UI components. Move them into custom React hooks (e.g., `useJobPanel.ts`).
 * **Reusable Types:** Prefer reusable and shared types located in a centralized definitions file.
 * **Data Fetching:** Always use `fetchWithAuth` from `AuthProvider` for all authenticated API calls — never use `fetch` directly. No SWR or React Query; all server state lives in custom hooks with `useState` + `useEffect`/`useCallback`. Error state is managed as `string | null` via `useState`.
+* **Internationalization (i18n):** All user-facing strings must use `t("key")` from `useLanguage()`. Never hardcode German or English text directly in JSX. New keys must be added to both `en` and `de` in `frontend/app/lib/languages.ts` before use.
 * **Error Handling (Frontend):** Catch errors in hooks, not in components. Expose an error string to the component; never `console.error` alone. On `res.ok === false`, read `res.json()` and surface `detail` from the FastAPI error response.
 
 ## Backend (FastAPI / Python)
@@ -59,4 +60,5 @@
 * [ ] Backend errors use `status.*` constants and never leak internal details in `detail`?
 * [ ] Frontend API calls use `fetchWithAuth` (not raw `fetch`)?
 * [ ] Frontend error state surfaced via hook return, not swallowed in `console.error`?
+* [ ] All new UI strings added to both `en` and `de` in `languages.ts` and referenced via `t()`?
 

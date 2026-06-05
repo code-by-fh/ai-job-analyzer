@@ -359,6 +359,12 @@ export const translations = {
     targetJob: "Target Job",
     resume: "Resume",
     universityPlaceholder: "University, Degree...",
+    applicationDocuments: "Application Documents",
+    workReferences: "Work References",
+    certifications: "Certificates",
+    uploadFiles: "Upload Files",
+    noWorkReferences: "No work references uploaded yet.",
+    noCertificates: "No certificates uploaded yet.",
 
     // Settings - Notification Adapters
     deliveryMethods: "Delivery Methods",
@@ -973,6 +979,12 @@ export const translations = {
     targetJob: "Ziel-Job",
     resume: "Lebenslauf",
     universityPlaceholder: "Universität, Abschluss...",
+    applicationDocuments: "Bewerbungsunterlagen",
+    workReferences: "Arbeitszeugnisse",
+    certifications: "Zertifikate",
+    uploadFiles: "Dateien hochladen",
+    noWorkReferences: "Noch keine Arbeitszeugnisse hochgeladen.",
+    noCertificates: "Noch keine Zertifikate hochgeladen.",
 
     // Settings - Notification Adapters
     deliveryMethods: "Zustellungs-Methoden",
