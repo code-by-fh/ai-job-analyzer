@@ -47,7 +47,7 @@ def _html_to_pdf(html: str) -> bytes:
 
 def html_to_pdf(html: str) -> bytes:
     """Render HTML string to PDF bytes using WeasyPrint."""
-    import weasyprint
+    import weasyprint  # Deferred: WeasyPrint requires GTK libs not available on all hosts
     return weasyprint.HTML(string=html).write_pdf()
 
 
