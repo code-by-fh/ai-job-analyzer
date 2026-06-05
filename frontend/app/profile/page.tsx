@@ -9,7 +9,7 @@ import { useLanguage } from "../components/LanguageProvider";
 import { useNotification } from "../components/NotificationProvider";
 import { logger } from "../lib/logger";
 
-type Tab = "target" | "resume";
+type Tab = "target" | "resume" | "documents";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 import {
@@ -521,39 +521,27 @@ export default function Profile() {
 
       {/* Tab Navigation */}
       <div className="flex gap-2 mb-8 bg-slate-100/50 dark:bg-slate-800/40 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 shadow-sm">
-        {(["target", "resume"] as Tab[]).map((tab) => (
+        {([
+          { id: "target", label: t("targetJob"), icon: <Target size={16} /> },
+          { id: "resume", label: t("resume"), icon: <FileText size={16} /> },
+          { id: "documents", label: t("applicationDocuments"), icon: <FilePlus size={16} /> },
+        ] as { id: Tab; label: string; icon: React.ReactNode }[]).map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-300 cursor-pointer group relative ${
-              activeTab === tab
+              activeTab === tab.id
                 ? "bg-white dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-md shadow-indigo-500/5 ring-1 ring-slate-200/50 dark:ring-indigo-500/30"
                 : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50"
             }`}
           >
             <div className="flex items-center justify-center gap-2.5 relative z-10">
-              {tab === "target" ? (
-                <Target
-                  size={16}
-                  className={
-                    activeTab === tab
-                      ? "text-indigo-500 dark:text-indigo-400"
-                      : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors"
-                  }
-                />
-              ) : (
-                <FileText
-                  size={16}
-                  className={
-                    activeTab === tab
-                      ? "text-indigo-500 dark:text-indigo-400"
-                      : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors"
-                  }
-                />
-              )}
-              {tab === "target" ? t("targetJob") : t("resume")}
+              <span className={activeTab === tab.id ? "text-indigo-500 dark:text-indigo-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors"}>
+                {tab.icon}
+              </span>
+              {tab.label}
             </div>
-            {activeTab === tab && (
+            {activeTab === tab.id && (
               <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
             )}
           </button>
@@ -703,190 +691,195 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Template Gallery */}
-      <div className="glass-card rounded-2xl p-6 space-y-6 mt-8">
-        <h2 className="font-bold text-lg tracking-tight flex items-center gap-2">
-          <LayoutTemplate className="w-5 h-5 text-indigo-500" />
-          Dokument-Templates
-        </h2>
+      {/* TAB: Documents */}
+      {activeTab === "documents" && (
+        <div className="space-y-6">
+          {/* Template Gallery */}
+          <div className="glass-card rounded-2xl p-6 space-y-6">
+            <h2 className="font-bold text-lg tracking-tight flex items-center gap-2">
+              <LayoutTemplate className="w-5 h-5 text-indigo-500" />
+              Dokument-Templates
+            </h2>
 
-        {(["CV", "COVER_LETTER"] as const).map((docType) => {
-          const label = docType === "CV" ? "Lebenslauf" : "Anschreiben";
-          const currentVal = docType === "CV" ? cvTemplate : coverLetterTemplate;
-          const setter = docType === "CV" ? setCvTemplate : setCoverLetterTemplate;
-          const filtered = docTemplates.filter((t) => t.doc_type === docType);
+            {(["CV", "COVER_LETTER"] as const).map((docType) => {
+              const label = docType === "CV" ? "Lebenslauf" : "Anschreiben";
+              const currentVal = docType === "CV" ? cvTemplate : coverLetterTemplate;
+              const setter = docType === "CV" ? setCvTemplate : setCoverLetterTemplate;
+              const filtered = docTemplates.filter((tmpl) => tmpl.doc_type === docType);
 
-          return (
-            <div key={docType} className="space-y-3">
-              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                {label}
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {filtered.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setter(String(t.id))}
-                    className={`rounded-xl border-2 p-3 text-left transition-all active:scale-95 ${
-                      currentVal === String(t.id)
-                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
-                        : "border-slate-200 dark:border-slate-800 hover:border-indigo-300"
-                    }`}
-                  >
-                    <div className="text-xs font-bold truncate">{t.name}</div>
-                    {t.is_admin && (
-                      <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">
-                        Standard
-                      </div>
+              return (
+                <div key={docType} className="space-y-3">
+                  <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    {label}
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {filtered.map((tmpl) => (
+                      <button
+                        key={tmpl.id}
+                        onClick={() => setter(String(tmpl.id))}
+                        className={`rounded-xl border-2 p-3 text-left transition-all active:scale-95 ${
+                          currentVal === String(tmpl.id)
+                            ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
+                            : "border-slate-200 dark:border-slate-800 hover:border-indigo-300"
+                        }`}
+                      >
+                        <div className="text-xs font-bold truncate">{tmpl.name}</div>
+                        {tmpl.is_admin && (
+                          <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">
+                            Standard
+                          </div>
+                        )}
+                      </button>
+                    ))}
+
+                    {/* Upload button */}
+                    <label
+                      className={`rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-3 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors ${
+                        uploadingTemplate ? "opacity-50 pointer-events-none" : ""
+                      }`}
+                    >
+                      <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
+                      <span className="text-xs text-slate-500">HTML hochladen</span>
+                      <input
+                        type="file"
+                        accept=".html,.htm"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleUploadTemplate(f, docType);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Bewerbungsunterlagen */}
+          <div className="glass-card rounded-2xl p-6 sm:p-8">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <FilePlus size={20} className="text-indigo-500" />
+              {t("applicationDocuments")}
+            </h2>
+
+            {docsLoading ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+                <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                Dokumente werden geladen…
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Arbeitszeugnisse */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
+                    {t("workReferences")}
+                  </h3>
+                  <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                    <UploadCloud size={16} />
+                    {t("uploadFiles")}
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        files.forEach((f) => uploadProfileDoc(f, "REFERENCE"));
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <div className="mt-3 space-y-2">
+                    {profileDocs
+                      .filter((d) => d.doc_type === "REFERENCE")
+                      .map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={15} className="text-indigo-400 shrink-0" />
+                            <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
+                              {doc.original_filename}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => deleteProfileDoc(doc.id)}
+                            className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
+                            title="Löschen"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    {profileDocs.filter((d) => d.doc_type === "REFERENCE").length === 0 && (
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                        {t("noWorkReferences")}
+                      </p>
                     )}
-                  </button>
-                ))}
+                  </div>
+                </div>
 
-                {/* Upload button */}
-                <label
-                  className={`rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-3 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors ${
-                    uploadingTemplate ? "opacity-50 pointer-events-none" : ""
-                  }`}
-                >
-                  <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs text-slate-500">HTML hochladen</span>
-                  <input
-                    type="file"
-                    accept=".html,.htm"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUploadTemplate(f, docType);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
+                {/* Zertifikate */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
+                    {t("certifications")}
+                  </h3>
+                  <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                    <UploadCloud size={16} />
+                    {t("uploadFiles")}
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        files.forEach((f) => uploadProfileDoc(f, "CERTIFICATE"));
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <div className="mt-3 space-y-2">
+                    {profileDocs
+                      .filter((d) => d.doc_type === "CERTIFICATE")
+                      .map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={15} className="text-indigo-400 shrink-0" />
+                            <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
+                              {doc.original_filename}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => deleteProfileDoc(doc.id)}
+                            className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
+                            title="Löschen"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    {profileDocs.filter((d) => d.doc_type === "CERTIFICATE").length === 0 && (
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                        {t("noCertificates")}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Bewerbungsunterlagen */}
-      <div className="glass-card rounded-2xl p-6 sm:p-8 mt-6">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-          <FilePlus size={20} className="text-indigo-500" />
-          {t("applicationDocuments")}
-        </h2>
-
-        {docsLoading ? (
-          <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-            <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-            Dokumente werden geladen…
+            )}
           </div>
-        ) : (
-          <div className="space-y-8">
-            {/* Arbeitszeugnisse */}
-            <div>
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
-                {t("workReferences")}
-              </h3>
-              <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-                <UploadCloud size={16} />
-                {t("uploadFiles")}
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    files.forEach((f) => uploadProfileDoc(f, "REFERENCE"));
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <div className="mt-3 space-y-2">
-                {profileDocs
-                  .filter((d) => d.doc_type === "REFERENCE")
-                  .map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText size={15} className="text-indigo-400 shrink-0" />
-                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
-                          {doc.original_filename}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => deleteProfileDoc(doc.id)}
-                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
-                        title="Löschen"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ))}
-                {profileDocs.filter((d) => d.doc_type === "REFERENCE").length === 0 && (
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                    {t("noWorkReferences")}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Zertifikate */}
-            <div>
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-3">
-                {t("certifications")}
-              </h3>
-              <label className="flex items-center gap-2 cursor-pointer w-fit px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-                <UploadCloud size={16} />
-                {t("uploadFiles")}
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    files.forEach((f) => uploadProfileDoc(f, "CERTIFICATE"));
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <div className="mt-3 space-y-2">
-                {profileDocs
-                  .filter((d) => d.doc_type === "CERTIFICATE")
-                  .map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText size={15} className="text-indigo-400 shrink-0" />
-                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">
-                          {doc.original_filename}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => deleteProfileDoc(doc.id)}
-                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
-                        title="Löschen"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ))}
-                {profileDocs.filter((d) => d.doc_type === "CERTIFICATE").length === 0 && (
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                    {t("noCertificates")}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Sticky Save Bar */}
-      <div className="sticky bottom-4 mt-8 flex justify-end pointer-events-none">
+      {activeTab !== "documents" && <div className="sticky bottom-4 mt-8 flex justify-end pointer-events-none">
         <div className="glass-card rounded-2xl px-4 py-3 flex items-center gap-4 shadow-xl pointer-events-auto">
           {saveStatus !== "idle" && (
             <span
@@ -913,7 +906,7 @@ export default function Profile() {
             {saveStatus === "saving" ? "..." : t("saveChanges")}
           </button>
         </div>
-      </div>
+      </div>}
     </PageWrapper>
   );
 }
