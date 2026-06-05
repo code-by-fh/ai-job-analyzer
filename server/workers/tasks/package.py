@@ -2,6 +2,7 @@
 
 import os
 import json
+import datetime
 
 import redis
 
@@ -51,7 +52,7 @@ def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str |
 
 
 @celery_app.task(name="ai.generate_application_package")
-def generate_application_package_task(job_id, user_id=None, include_profile_documents=True):
+def generate_application_package_task(job_id, user_id=None, include_profile_documents=True, cv_notes=None):
     logger.info(f"[TASK] Generating application package for Job {job_id}, User {user_id}")
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
@@ -92,6 +93,10 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             language=language,
             model=get_ollama_model(db),
             db=db,
+            skills=profile.skills or "",
+            spoken_languages=profile.spoken_languages or [],
+            location=profile.location or "",
+            cv_notes=cv_notes or "",
         )
         job.cv_draft = _cv_dict_to_markdown(tailored)
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
@@ -116,6 +121,11 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             user_language=language,
             model=get_model(db),
             api_key=get_api_key(db),
+            candidate_name=candidate_name,
+            candidate_location=profile.location or "",
+            candidate_skills=profile.skills or "",
+            candidate_languages=profile.spoken_languages or [],
+            candidate_preferences=profile.preferences or "",
         )
         job.application_draft = letter_text
         letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
@@ -124,6 +134,10 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                 "sender_name": candidate_name,
                 "company": job.company or "",
                 "body": letter_text,
+                "location": profile.location or "",
+                "date": datetime.date.today().strftime("%d.%m.%Y"),
+                "role": profile.role or "",
+                "skills": profile.skills or "",
             }
             job.cover_letter_html = fill_template(letter_template_html, letter_data)
             letter_pdf = html_to_pdf(job.cover_letter_html)
