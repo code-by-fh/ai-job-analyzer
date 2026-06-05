@@ -596,6 +596,20 @@ export const translations = {
     // General Settings Tab
     general: "General",
     interfaceLanguage: "Interface Language",
+
+    // Job Side Panel
+    openPage: "Open page",
+    jobDetails: "Job Details",
+    panelStep: "Step",
+    panelOf: "of",
+    apply: "Apply",
+    applicationDraftReady: "Documents ready — check the \"Application\" tab.",
+    interviewPrepReady: "Preparation ready — see the \"Interview\" tab.",
+    generateInterviewPrep: "Generate interview prep",
+    acceptOffer: "Accept offer",
+    decline: "Decline",
+    jobAcceptedCongrats: "🎉 Congratulations! The job is yours.",
+    markDone: "Done",
   },
   de: {
     // Navigation
@@ -1213,6 +1227,20 @@ export const translations = {
     // General Settings Tab
     general: "Allgemein",
     interfaceLanguage: "Oberflächensprache",
+
+    // Job Side Panel
+    openPage: "Seite öffnen",
+    jobDetails: "Stellendetails",
+    panelStep: "Schritt",
+    panelOf: "von",
+    apply: "Bewerben",
+    applicationDraftReady: "Dokumente bereit — prüfe den Inhalt im Tab \"Bewerbung\".",
+    interviewPrepReady: "Vorbereitung bereit — siehe Tab \"Interview\".",
+    generateInterviewPrep: "Interview Prep generieren",
+    acceptOffer: "Angebot annehmen",
+    decline: "Ablehnen",
+    jobAcceptedCongrats: "🎉 Glückwunsch! Der Job ist deiner.",
+    markDone: "Erledigt",
   },
 };
 

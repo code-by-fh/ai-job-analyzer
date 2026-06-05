@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { X, ExternalLink } from "lucide-react";
 import type { TabType } from "../JobCard/types";
 import type { JobStatus } from "../JobStatusBadge";
+import { useLanguage } from "../LanguageProvider";
 import PipelineTabs from "./PipelineTabs";
 import StepCard from "./StepCard";
 import JobOverviewTab from "../JobCard/JobOverviewTab";
@@ -13,12 +14,12 @@ import JobCompanyTab from "../JobCard/JobCompanyTab";
 import JobDocumentsTab from "../JobCard/JobDocumentsTab";
 import type { JobSidePanelProps } from "./types";
 
-const CONTENT_TABS: { id: NonNullable<TabType>; label: string }[] = [
-  { id: "overview", label: "Übersicht" },
-  { id: "application", label: "Bewerbung" },
-  { id: "interview", label: "Interview" },
-  { id: "company", label: "Firma" },
-  { id: "documents", label: "Dokumente" },
+const CONTENT_TAB_IDS: NonNullable<TabType>[] = [
+  "overview",
+  "application",
+  "interview",
+  "company",
+  "documents",
 ];
 
 function defaultContentTab(status: string): NonNullable<TabType> {
@@ -42,7 +43,16 @@ export default function JobSidePanel({
   onArchive,
 }: JobSidePanelProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [activeContentTab, setActiveContentTab] = useState<NonNullable<TabType>>("overview");
+
+  const contentTabs: { id: NonNullable<TabType>; label: string }[] = [
+    { id: "overview", label: t("overview") },
+    { id: "application", label: t("application") },
+    { id: "interview", label: t("statusInterview") },
+    { id: "company", label: t("companyProfile") },
+    { id: "documents", label: t("documents") },
+  ];
 
   // Reset content tab when a different job is opened
   useEffect(() => {
@@ -97,7 +107,7 @@ export default function JobSidePanel({
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-lg transition-all active:scale-95 cursor-pointer"
             >
               <ExternalLink className="w-3 h-3" />
-              Seite öffnen
+              {t("openPage")}
             </button>
             <button
               onClick={onClose}
@@ -131,7 +141,7 @@ export default function JobSidePanel({
             <div className="flex items-center gap-3 -mx-4 px-4">
               <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                Stellendetails
+                {t("jobDetails")}
               </span>
               <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
             </div>
@@ -139,7 +149,7 @@ export default function JobSidePanel({
             {/* Content tab bar */}
             <div className="border-b border-slate-200 dark:border-slate-800 -mx-4 px-4">
               <div className="flex overflow-x-auto">
-                {CONTENT_TABS.map((tab) => (
+                {contentTabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveContentTab(tab.id)}
