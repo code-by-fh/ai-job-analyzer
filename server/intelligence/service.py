@@ -317,7 +317,7 @@ def generate_application(
     candidate_name: str = "",
     candidate_location: str = "",
     candidate_skills: str = "",
-    candidate_languages: list = None,
+    candidate_languages: Optional[list] = None,
     candidate_preferences: str = "",
 ) -> str:
     client = get_ai_client(api_key)
@@ -504,7 +504,7 @@ def generate_tailored_cv(
     model: str = None,
     db=None,
     skills: str = "",
-    spoken_languages=None,
+    spoken_languages: Optional[list] = None,
     location: str = "",
     cv_notes: str = "",
 ) -> dict:
