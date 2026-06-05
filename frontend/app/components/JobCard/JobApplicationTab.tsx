@@ -93,8 +93,6 @@ export default function JobApplicationTab({
   const [showRegenInput, setShowRegenInput] = useState(false);
   const [regenNote, setRegenNote] = useState("");
   const [isSubmittingRegen, setIsSubmittingRegen] = useState(false);
-  const [showCvRegenInput, setShowCvRegenInput] = useState(false);
-  const [cvRegenNote, setCvRegenNote] = useState("");
 
   // ── Anschreiben timer / phases ────────────────────────────────────────────
   const [elapsed, setElapsed] = useState(0);
@@ -432,11 +430,10 @@ export default function JobApplicationTab({
     [job.id, apiBase]
   );
 
-  const handleRegenCv = async (notes?: string) => {
+  const handleRegenCv = async () => {
     cvGenerationPending.current = true;
     localStorage.setItem(`gen_cv_${job.id}`, Date.now().toString());
     setCvGenerating(true);
-    setShowCvRegenInput(false);
     try {
       const baseUrl = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
       const res = await fetchWithAuth(
@@ -444,7 +441,7 @@ export default function JobApplicationTab({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ include_profile_documents: false, cv_notes: notes || null }),
+          body: JSON.stringify({ include_profile_documents: false }),
         },
       );
       if (!res.ok) {
@@ -765,19 +762,9 @@ export default function JobApplicationTab({
               </button>
               {!isCvEditing && (
                 <button
-                  onClick={() => {
-                    if (job.cv_draft) {
-                      setShowCvRegenInput((v) => !v);
-                    } else {
-                      handleRegenCv();
-                    }
-                  }}
+                  onClick={handleRegenCv}
                   disabled={cvGenerating || isLetterGenerating}
-                  className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-40 ${
-                    showCvRegenInput
-                      ? "text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20"
-                      : "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                  }`}
+                  className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
                 >
                   {cvGenerating ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -851,41 +838,6 @@ export default function JobApplicationTab({
               )}
             </div>
           </div>
-
-          {/* CV regen input */}
-          {showCvRegenInput && !isCvEditing && (
-            <div className="bg-emerald-50 dark:bg-emerald-500/5 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 space-y-3">
-              <p className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-widest">
-                Verbesserungshinweis (Lebenslauf)
-              </p>
-              <textarea
-                value={cvRegenNote}
-                onChange={(e) => setCvRegenNote(e.target.value)}
-                placeholder="Z.B. 'Python-Erfahrung stärker hervorheben' oder 'Projekte an den Anfang'"
-                rows={3}
-                className="w-full text-sm bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-500/30 rounded-lg p-3 text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-y"
-              />
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => { setShowCvRegenInput(false); setCvRegenNote(""); }}
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={() => handleRegenCv(cvRegenNote)}
-                  disabled={cvGenerating}
-                  className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  {cvGenerating ? (
-                    <><Loader2 className="w-3 h-3 animate-spin" /> Wird gestartet…</>
-                  ) : (
-                    <><RefreshCw className="w-3 h-3" /> Neu generieren</>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Content */}
           {cvGenerating ? (

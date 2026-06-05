@@ -12,9 +12,7 @@ from database.core import SessionLocal, JobEntry, UserProfile, ProfileDocument, 
 from intelligence.service import (
     get_model,
     get_api_key,
-    get_ollama_model,
     format_cv_for_prompt,
-    generate_tailored_cv,
     generate_application,
 )
 from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf
@@ -52,7 +50,7 @@ def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str |
 
 
 @celery_app.task(name="ai.generate_application_package")
-def generate_application_package_task(job_id, user_id=None, include_profile_documents=True, cv_notes=None):
+def generate_application_package_task(job_id, user_id=None, include_profile_documents=True):
     logger.info(f"[TASK] Generating application package for Job {job_id}, User {user_id}")
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
@@ -83,32 +81,19 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         language = getattr(profile, "language", "de") or "de"
         storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
 
-        # --- 1. Tailored CV (Ollama, local) ---
-        tailored = generate_tailored_cv(
-            cv_data=profile.cv_data,
-            job_title=job.title,
-            job_description=(job.description or "")[:10000],
-            candidate_name=candidate_name,
-            candidate_role=profile.role,
-            language=language,
-            model=get_ollama_model(db),
-            db=db,
-            skills=profile.skills or "",
-            spoken_languages=profile.spoken_languages or [],
-            location=profile.location or "",
-            cv_notes=cv_notes or "",
-        )
-        job.cv_draft = _cv_dict_to_markdown(tailored)
+        # --- 1. CV from template + profile data (no AI tailoring) ---
+        cv_data = profile.cv_data or {}
+        job.cv_draft = _cv_dict_to_markdown(cv_data)
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         if cv_template_html:
-            job.cv_html = fill_template(cv_template_html, tailored)
+            job.cv_html = fill_template(cv_template_html, cv_data)
             try:
                 cv_pdf = html_to_pdf(job.cv_html)
             except OSError as e:
                 logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
-                cv_pdf = render_cv_pdf(tailored, template_key="classic")
+                cv_pdf = render_cv_pdf(cv_data, template_key="classic")
         else:
-            cv_pdf = render_cv_pdf(tailored, template_key=profile.cv_template or "classic")
+            cv_pdf = render_cv_pdf(cv_data, template_key=profile.cv_template or "classic")
         store_generated_document(
             db, job.id, target_user_id, cv_pdf,
             original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
