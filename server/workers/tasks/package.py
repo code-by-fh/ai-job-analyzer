@@ -12,7 +12,9 @@ from database.core import SessionLocal, JobEntry, UserProfile, ProfileDocument, 
 from intelligence.service import (
     get_model,
     get_api_key,
+    get_ollama_model,
     format_cv_for_prompt,
+    generate_tailored_cv,
     generate_application,
 )
 from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf
@@ -81,8 +83,20 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         language = getattr(profile, "language", "de") or "de"
         storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
 
-        # --- 1. CV from template + profile data (no AI tailoring) ---
-        cv_data = profile.cv_data or {}
+        # --- 1. AI-completed CV → template → PDF ---
+        cv_data = generate_tailored_cv(
+            cv_data=profile.cv_data,
+            job_title=job.title,
+            job_description=(job.description or "")[:10000],
+            candidate_name=candidate_name,
+            candidate_role=profile.role,
+            language=language,
+            model=get_ollama_model(db),
+            db=db,
+            skills=profile.skills or "",
+            spoken_languages=profile.spoken_languages or [],
+            location=profile.location or "",
+        )
         job.cv_draft = _cv_dict_to_markdown(cv_data)
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         if cv_template_html:
