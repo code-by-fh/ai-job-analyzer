@@ -82,7 +82,7 @@ def _is_safe_url(url: str) -> bool:
 
 
 def get_html(url: str) -> str | None:
-    """Fetch page HTML using the Playwright stealth browser."""
+    """Fetch page HTML using the render API."""
     return get_html_with_browser(url)
 
 
