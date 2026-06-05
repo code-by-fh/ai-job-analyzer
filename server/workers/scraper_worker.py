@@ -7,13 +7,12 @@ import sys
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 import redis
 
 from core.scraper_celery_config import celery_app, REDIS_URL
 from intelligence.service import extract_job_details, get_model, get_api_key
 from database.core import SessionLocal, UserProfile, JobEntry
+from services import render_client
 
 # Logging Setup
 from core.logger import get_logger
@@ -91,53 +90,13 @@ def get_html_with_browser(url: str) -> str | None:
     if not _is_safe_url(url):
         logger.warning(f"Blocked SSRF attempt for URL: {url}")
         return None
-    logger.info(f"[Browser] Launching stealth browser for: {url}")
-    start_time = time.time()
-    with sync_playwright() as p:
-        browser = None
-        context = None
-        try:
-            browser = p.chromium.launch(
-                headless=False,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                ],
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                viewport={"width": 1920, "height": 1080},
-            )
-            page = context.new_page()
-            stealth_sync(page)
-            logger.info(f"[Browser] Navigating to {url}...")
-            page.goto(url, timeout=60000, wait_until="domcontentloaded")
-            try:
-                page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                logger.info("[Browser] networkidle timeout — proceeding with current page state")
-            content = page.content()
-            duration = time.time() - start_time
-            logger.info(f"[Browser] Fetched {len(content)} bytes from {url} in {duration:.2f}s")
-            return content
-        except Exception as e:
-            logger.error(f"[Browser] Playwright error fetching {url}: {e}", exc_info=True)
-            return None
-        finally:
-            # Close context then browser, each guarded so a failure in one step
-            # never leaves the other (and its Chromium processes) dangling.
-            if context is not None:
-                try:
-                    context.close()
-                except Exception as ctx_e:
-                    logger.warning(f"[Browser] Error closing context: {ctx_e}")
-            if browser is not None:
-                try:
-                    browser.close()
-                except Exception as br_e:
-                    logger.warning(f"[Browser] Error closing browser: {br_e}")
-            logger.info("[Browser] Closed.")
+    logger.info(f"[RenderClient] Fetching: {url}")
+    html = render_client.fetch_html(url)
+    if html:
+        logger.info(f"[RenderClient] Fetched {len(html)} bytes from {url}")
+    else:
+        logger.error(f"[RenderClient] Empty response for {url}")
+    return html
 
 
 def get_clean_content(html):
