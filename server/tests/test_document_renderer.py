@@ -1,3 +1,5 @@
+import pytest
+
 from services.document_renderer import (
     list_templates,
     render_cv_pdf,
@@ -43,6 +45,11 @@ def test_render_cv_pdf_unknown_template_falls_back_to_classic():
 
 
 def test_html_to_pdf_returns_pdf_bytes():
+    try:
+        import weasyprint  # noqa: F401
+    except (ImportError, OSError):
+        pytest.skip("WeasyPrint not available in this environment")
+
     from services.document_renderer import html_to_pdf
     html = "<html><body><h1>Test CV</h1></body></html>"
     pdf = html_to_pdf(html)
