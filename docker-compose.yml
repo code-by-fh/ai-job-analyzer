@@ -32,6 +32,16 @@ services:
     container_name: rabbitmq
     hostname: rabbitmq
 
+  botosaurus:
+    image: doublelayer/botosaurus-api-service:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - MAX_WORKERS=${BOTOSAURUS_MAX_WORKERS:-3}
+      - HEADLESS=true
+    container_name: botosaurus
+    hostname: botosaurus
+
   server:
     build: ./server
     ports:
@@ -42,7 +52,7 @@ services:
       - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
-      - RENDER_API_URL=${RENDER_API_URL:-http://host.docker.internal:8000/render}
+      - RENDER_API_URL=${RENDER_API_URL:-http://botosaurus:8000/render}
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
@@ -53,6 +63,7 @@ services:
       - database
       - rabbitmq
       - redis
+      - botosaurus
     container_name: server
     hostname: server
     extra_hosts:
