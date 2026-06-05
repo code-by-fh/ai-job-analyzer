@@ -108,6 +108,13 @@ export default function JobApplicationTab({
   const [cvGenerating, setCvGenerating] = useState(
     () => job.status === "GENERATING" && !!localStorage.getItem(`gen_cv_${job.id}`)
   );
+
+  // ── Letter document state ─────────────────────────────────────────────────
+  const [letterDoc, setLetterDoc] = useState<JobDocument | null>(null);
+  const [letterDocLoading, setLetterDocLoading] = useState(true);
+  const [letterBlobUrl, setLetterBlobUrl] = useState<string | null>(null);
+  const [letterBlobLoading, setLetterBlobLoading] = useState(false);
+
   const [cvElapsed, setCvElapsed] = useState(0);
   const [cvPhaseIndex, setCvPhaseIndex] = useState(0);
   const cvTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -159,6 +166,14 @@ export default function JobApplicationTab({
       localStorage.removeItem(`gen_app_${job.id}`);
     }
   }, [isLetterGenerating, job.application_draft, job.id]);
+
+  // Reload letter doc when letter generation completes
+  useEffect(() => {
+    if (!isLetterGenerating && job.application_draft) {
+      loadLetterDocument();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLetterGenerating]);
 
   // ── CV timer ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -218,6 +233,23 @@ export default function JobApplicationTab({
     loadCvDocument();
   }, [loadCvDocument]);
 
+  const loadLetterDocument = useCallback(async () => {
+    setLetterDocLoading(true);
+    try {
+      const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
+      if (res.ok) {
+        const docs: JobDocument[] = await res.json();
+        setLetterDoc(docs.find((d) => d.kind === "GENERATED_LETTER") ?? null);
+      }
+    } finally {
+      setLetterDocLoading(false);
+    }
+  }, [apiBase, job.id]);
+
+  useEffect(() => {
+    loadLetterDocument();
+  }, [loadLetterDocument]);
+
   // ── CV blob for inline iframe ─────────────────────────────────────────────
   useEffect(() => {
     if (!cvDoc) { setCvBlobUrl(null); return; }
@@ -235,6 +267,24 @@ export default function JobApplicationTab({
       .finally(() => setCvBlobLoading(false));
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [cvDoc, apiBase, job.id]);
+
+  // ── Letter blob for inline iframe ─────────────────────────────────────────
+  useEffect(() => {
+    if (!letterDoc) { setLetterBlobUrl(null); return; }
+    let objectUrl: string | null = null;
+    setLetterBlobLoading(true);
+    setLetterBlobUrl(null);
+    fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/${letterDoc.id}/view`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setLetterBlobUrl(objectUrl);
+      })
+      .catch(() => {})
+      .finally(() => setLetterBlobLoading(false));
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [letterDoc, apiBase, job.id]);
 
   // ── Actions: Anschreiben ──────────────────────────────────────────────────
   const handleCopy = () => {
@@ -340,6 +390,16 @@ export default function JobApplicationTab({
     const a = document.createElement("a");
     a.href = `${apiBase}/jobs/${job.id}/documents/${cvDoc.id}/download`;
     a.download = cvDoc.original_filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const handleDownloadLetterDoc = () => {
+    if (!letterDoc) return;
+    const a = document.createElement("a");
+    a.href = `${apiBase}/jobs/${job.id}/documents/${letterDoc.id}/download`;
+    a.download = letterDoc.original_filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -531,13 +591,32 @@ export default function JobApplicationTab({
                       {copied ? "Kopiert" : "Kopieren"}
                     </span>
                   </button>
-                  <button
-                    onClick={handleDownloadLetter}
-                    className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>PDF</span>
-                  </button>
+                  {letterDoc ? (
+                    <button
+                      onClick={handleDownloadLetterDoc}
+                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleDownloadLetter}
+                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </button>
+                  )}
+                  {job.cover_letter_html && !isLetterGenerating && (
+                    <button
+                      onClick={() => openEditor("cover_letter")}
+                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Editor</span>
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -609,13 +688,35 @@ export default function JobApplicationTab({
                   />
                 </div>
               ) : job.application_draft ? (
-                <div
-                  className={`bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif transition-opacity duration-300 ${isLetterGenerating ? "opacity-40 pointer-events-none select-none" : ""}`}
-                >
-                  <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
-                    <ReactMarkdown>{job.application_draft}</ReactMarkdown>
+                letterDocLoading ? (
+                  <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                    <span className="text-xs font-semibold">Lade Anschreiben…</span>
                   </div>
-                </div>
+                ) : letterDoc ? (
+                  <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden transition-opacity duration-300 ${isLetterGenerating ? "opacity-40 pointer-events-none select-none" : ""}`}>
+                    {letterBlobLoading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                      </div>
+                    ) : letterBlobUrl ? (
+                      <iframe
+                        src={letterBlobUrl}
+                        className="w-full border-0"
+                        style={{ height: "680px" }}
+                        title="Anschreiben PDF"
+                      />
+                    ) : null}
+                  </div>
+                ) : (
+                  <div
+                    className={`bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif transition-opacity duration-300 ${isLetterGenerating ? "opacity-40 pointer-events-none select-none" : ""}`}
+                  >
+                    <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
+                      <ReactMarkdown>{job.application_draft}</ReactMarkdown>
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="group flex flex-col items-center justify-center py-12 gap-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-all">
                   <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
