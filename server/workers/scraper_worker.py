@@ -2,8 +2,6 @@ import os
 import json
 import uuid
 import time
-import logging
-import sys
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -95,7 +93,7 @@ def get_html_with_browser(url: str) -> str | None:
     if html:
         logger.info(f"[RenderClient] Fetched {len(html)} bytes from {url}")
     else:
-        logger.error(f"[RenderClient] Empty response for {url}")
+        logger.warning(f"[RenderClient] Empty response for {url}")
     return html
 
 
