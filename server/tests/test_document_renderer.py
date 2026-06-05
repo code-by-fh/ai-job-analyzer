@@ -45,10 +45,7 @@ def test_render_cv_pdf_unknown_template_falls_back_to_classic():
 
 
 def test_html_to_pdf_returns_pdf_bytes():
-    try:
-        pytest.importorskip("weasyprint", reason="WeasyPrint not available in this environment")
-    except OSError as e:
-        pytest.skip(f"WeasyPrint system libraries not available: {e}")
+    pytest.importorskip("weasyprint", reason="WeasyPrint not available in this environment")
     from services.document_renderer import html_to_pdf
     html = "<html><body><h1>Test CV</h1></body></html>"
     try:
