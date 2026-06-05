@@ -87,10 +87,15 @@ def get_ai_client(api_key: str = None, db: Any = None):
 
 
 def _resolve_local_url(url: str) -> str:
-    """Replace localhost/127.0.0.1 with host.docker.internal when running inside Docker."""
-    if not os.path.exists("/.dockerenv"):
-        return url
-    return url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+    """Replace localhost/127.0.0.1 with host.docker.internal when running inside Docker.
+    Also ensures the URL ends with /v1 so the OpenAI SDK hits the correct path."""
+    if os.path.exists("/.dockerenv"):
+        url = url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+    # Normalize: strip trailing slash, then append /v1 if not already present
+    url = url.rstrip("/")
+    if not url.endswith("/v1"):
+        url += "/v1"
+    return url
 
 
 def get_ollama_base_url(db=None) -> str:
@@ -533,7 +538,12 @@ def generate_tailored_cv(
             temperature=0.3,
             func_name="generate_tailored_cv",
         )
-        tailored = extract_json(response.choices[0].message.content.strip())
+        if not response or not response.choices:
+            raise ValueError(f"Empty choices in model response: {response}")
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Empty content in model response")
+        tailored = extract_json(content.strip())
     except Exception as e:
         logger.error(f"Ollama tailored CV failed, using untailored CV: {e}")
         return base
