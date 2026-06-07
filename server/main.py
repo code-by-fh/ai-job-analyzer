@@ -62,6 +62,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Redis listener task...")
     task = asyncio.create_task(redis_listener())
 
+    # Run pending Alembic migrations
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "database", "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "database", "migrations"))
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied")
+    except Exception as e:
+        logger.error(f"Alembic migration error: {e}")
+
     # Ensure Tables Exist
     try:
         Base.metadata.create_all(bind=engine)
