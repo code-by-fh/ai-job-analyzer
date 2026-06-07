@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Dict
 
 import redis as redis_sync
 import requests
@@ -34,6 +34,7 @@ class SystemSettingsUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     ollama_model: Optional[str] = None
     ollama_base_url: Optional[str] = None
+    ai_task_routing: Optional[Dict[str, str]] = None
 
 
 class AdminWipeRequest(BaseModel):
@@ -52,12 +53,14 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
                 "openrouter_api_key_set": False,
                 "ollama_model": "llama3.1:8b",
                 "ollama_base_url": "",
+                "ai_task_routing": {},
             }
         return {
             "openrouter_model": settings.openrouter_model,
             "openrouter_api_key_set": bool(settings.openrouter_api_key),
             "ollama_model": settings.ollama_model or "llama3.1:8b",
             "ollama_base_url": settings.ollama_base_url or "",
+            "ai_task_routing": settings.ai_task_routing or {},
         }
     finally:
         db.close()
@@ -82,6 +85,8 @@ def update_admin_settings(
             db_settings.ollama_model = settings.ollama_model or "llama3.1:8b"
         if settings.ollama_base_url is not None:
             db_settings.ollama_base_url = settings.ollama_base_url or None
+        if settings.ai_task_routing is not None:
+            db_settings.ai_task_routing = settings.ai_task_routing
         db.commit()
         return {
             "status": "updated",
@@ -89,6 +94,7 @@ def update_admin_settings(
             "openrouter_api_key_set": bool(db_settings.openrouter_api_key),
             "ollama_model": db_settings.ollama_model or "llama3.1:8b",
             "ollama_base_url": db_settings.ollama_base_url or "",
+            "ai_task_routing": db_settings.ai_task_routing or {},
         }
     finally:
         db.close()
