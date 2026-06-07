@@ -664,3 +664,36 @@ def get_tailored_cv_messages(cv_data, job_title, job_description, language="de",
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
+
+
+def get_annotate_cv_template_messages(template_html: str) -> List[Dict[str, str]]:
+    """Return messages for the AI to annotate a raw HTML CV template with Jinja2 variables."""
+    system = (
+        "You are a CV template engineer. You receive a raw HTML CV template and must add "
+        "Jinja2 template variables so it can be rendered with candidate data.\n\n"
+        "AVAILABLE DATA SCHEMA:\n"
+        "  {{ name }}             — candidate full name\n"
+        "  {{ role }}             — professional title / job role\n"
+        "  {{ location }}         — city or location string\n"
+        "  {{ skills }}           — comma-separated skills string\n"
+        "  {{ spoken_languages }} — list of language strings\n"
+        "  {{ summary }}          — 2–3 sentence professional summary\n"
+        "  {{ education }}        — education block as a string\n"
+        "  experience             — list; each item has:\n"
+        "      {{ exp.role }}, {{ exp.company }}, {{ exp.duration }}, {{ exp.description }}\n"
+        "  projects               — list; each item has:\n"
+        "      {{ proj.name }}, {{ proj.tech_stack }}, {{ proj.description }}\n\n"
+        "RULES:\n"
+        "- Identify where each data field belongs by reading the template's visible text and layout.\n"
+        "- Replace placeholder or dummy text with the correct Jinja2 variable.\n"
+        "- Wrap repeating blocks with {% for exp in experience %}...{% endfor %} "
+        "or {% for proj in projects %}...{% endfor %}.\n"
+        "- Wrap optional sections with {% if field %}...{% endif %}.\n"
+        "- Keep ALL HTML tags, CSS classes, inline styles, and structural attributes EXACTLY unchanged.\n"
+        "- Return ONLY the complete annotated HTML document — no markdown fences, no explanations.\n"
+    )
+    user = f"HTML TEMPLATE TO ANNOTATE:\n{template_html}"
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
