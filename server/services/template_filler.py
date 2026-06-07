@@ -37,6 +37,14 @@ def fill_template(template_html: str, data: dict) -> str:
     return str(soup)
 
 
+def has_data_slots(html: str) -> bool:
+    """Return True if the HTML contains data-slot or data-repeat annotations."""
+    soup = BeautifulSoup(html, "html.parser")
+    return bool(
+        soup.find(attrs={"data-slot": True}) or soup.find(attrs={"data-repeat": True})
+    )
+
+
 def validate_template(template_html: str, doc_type: str) -> str:
     """Parse, sanitise and validate *template_html* for *doc_type*.
 

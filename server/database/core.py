@@ -116,10 +116,6 @@ class UserProfile(Base):
     google_drive_refresh_token = Column(String, nullable=True)
     google_drive_email = Column(String, nullable=True)
 
-    # Master CV
-    master_cv_template_id = Column(Integer, ForeignKey("document_templates.id"), nullable=True)
-    master_cv_status = Column(String, nullable=True)  # None | "processing" | "ready" | "error"
-
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -181,6 +177,7 @@ class DocumentTemplate(Base):
     doc_type = Column(String, nullable=False)  # "CV" | "COVER_LETTER"
     name = Column(String, nullable=False)
     html = Column(Text, nullable=False)
+    status = Column(String, nullable=True)  # None = ready | "processing" = AI fill in progress
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -415,6 +412,7 @@ class DocumentTemplateResponse(BaseModel):
     name: str
     is_admin: bool
     user_id: Optional[int] = None
+    status: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

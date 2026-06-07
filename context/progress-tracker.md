@@ -2,7 +2,7 @@
 
 ### 1. Current Status (As of 2026-06-07)
 
-**Phase:** Master-CV-Template — Upload HTML-Template → KI füllt Profildaten ein → Master-CV als Basis für alle Bewerbungen. Jobspezifisches Tailoring per KI bei jeder Bewerbung.
+**Phase:** CV-Template AI-Fill — Lebenslauf-Template im Dokument-Templates-Bereich hochladen → KI füllt Profildaten ein. Kein separater Master-CV-Bereich.
 
 > ⚠️ **Risk:** `routers/auth.py` and `routers/jobs.py` have 0% automated test coverage. These are the two most security-critical routers. Any change to auth or job logic is unverified until this is addressed.
 
@@ -28,7 +28,7 @@
 | **CV Improvement Notes UI** | ✅ Completed (Task 7: `frontend/app/components/JobCard/JobApplicationTab.tsx`) | Toggle button → textarea panel for CV regen notes; mirrors Anschreiben pattern; notes sent as `cv_notes` in generate-package request. Commit: 8c9b535. |
 | **CV + Cover Letter Full Generation** | ✅ Completed (`server/intelligence/prompts.py`, `service.py`, `workers/tasks/application.py`, `workers/tasks/package.py`, `routers/jobs.py`, `frontend/.../JobApplicationTab.tsx`) | Full profile fields sent to AI; both documents rendered from user-selected template via WeasyPrint with OSError fallback; GENERATED_LETTER stored as JobDocument; letter PDF shown in iframe; CV notes passed through API; 11 commits: 1607e77–ec21350. |
 | **Admin API — Task 5** | ✅ Completed (`server/routers/admin.py`) | `ai_task_routing` field added to `SystemSettingsUpdate`; GET/POST `/admin/settings` now expose `ai_task_routing` dict. Commit: 8a2bbe8. |
-| **Master-CV-Template** | ✅ Completed (`server/database/migrations/versions/n6f7a8b9c0d1_add_master_cv_fields.py`, `server/database/core.py`, `server/intelligence/prompts.py`, `server/intelligence/service.py`, `server/workers/tasks/master_cv.py`, `server/workers/worker.py`, `server/routers/profile_documents.py`, `server/workers/tasks/package.py`, `frontend/app/profile/page.tsx`, `frontend/app/lib/languages.ts`) | Upload HTML-Template → Celery-Task `ai.generate_master_cv` füllt mit KI-Profildaten → speichert als `DocumentTemplate` (`doc_type="MASTER_CV"`) → `master_cv_template_id` + `master_cv_status` in `user_settings`. Job-Package bevorzugt Master-CV und tailored es via `tailor_master_cv_for_job`. Status-Indikator (Spinner/Checkmark/Error) im Profil-Tab "Dokumente" mit 3s-Polling. |
+| **CV-Template AI-Fill** | ✅ Completed (`server/database/migrations/versions/p8q9r0s1t2u3_...py`, `server/database/core.py`, `server/routers/templates.py`, `server/workers/tasks/fill_cv_template.py`, `server/workers/worker.py`, `server/workers/tasks/package.py`, `frontend/app/profile/page.tsx`, `frontend/app/profile/components/DocumentTemplateGallery.tsx`, `frontend/app/lib/types.ts`) | CV-Template hochladen via Dokument-Templates-Gallery → Celery-Task `ai.fill_cv_template` füllt mit Profildaten → speichert als `DocumentTemplate` (`doc_type="CV"`, `status=None`). Gallery zeigt Spinner während `status="processing"`, pollt alle 3s. Für Job-Pakete: `fill_html_cv_with_ai` mit Job-Kontext. Kein separater Master-CV-Bereich mehr. |
 
 ### 3. Next Up & Backlog
 

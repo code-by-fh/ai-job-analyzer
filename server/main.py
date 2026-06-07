@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -68,7 +69,7 @@ async def lifespan(app: FastAPI):
         from alembic import command
         alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "database", "alembic.ini"))
         alembic_cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "database", "migrations"))
-        command.upgrade(alembic_cfg, "head")
+        command.upgrade(alembic_cfg, "heads")
         logger.info("Alembic migrations applied")
     except Exception as e:
         logger.error(f"Alembic migration error: {e}")
@@ -111,6 +112,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+        exc_info=exc,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 allowed_origins = [
     origin.strip()

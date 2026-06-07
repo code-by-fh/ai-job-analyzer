@@ -24,6 +24,7 @@ def _to_dict(t: DocumentTemplate) -> dict:
         "name": t.name,
         "is_admin": t.is_admin,
         "user_id": t.user_id,
+        "status": t.status,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
     }
@@ -84,6 +85,7 @@ def create_document_template(
     sanitised_html = validate_template(body.html, body.doc_type)
 
     is_admin = body.is_admin and current_user.is_admin
+    should_fill = body.doc_type.upper() == "CV" and not is_admin
     db = SessionLocal()
     try:
         t = DocumentTemplate(
@@ -92,10 +94,14 @@ def create_document_template(
             html=sanitised_html,
             is_admin=is_admin,
             user_id=None if is_admin else current_user.id,
+            status="processing" if should_fill else None,
         )
         db.add(t)
         db.commit()
         db.refresh(t)
+        if should_fill:
+            from workers.tasks.fill_cv_template import fill_cv_template_task
+            fill_cv_template_task.apply_async(args=[t.id, current_user.id], queue="ai_queue")
         return _to_dict(t)
     finally:
         db.close()

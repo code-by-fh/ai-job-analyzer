@@ -25,7 +25,6 @@ from intelligence.prompts import (
     get_deep_dive_messages,
     get_tailored_cv_messages,
     get_fill_html_cv_messages,
-    get_tailor_master_cv_for_job_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -610,40 +609,6 @@ def generate_tailored_cv(
     if base.get("spoken_languages"):
         tailored["spoken_languages"] = base["spoken_languages"]
     return tailored
-
-
-def tailor_master_cv_for_job(
-    master_cv_html: str,
-    job_title: str,
-    job_description: str,
-    language: str = "de",
-    cv_notes: str = "",
-    model: str = None,
-    db=None,
-    client=None,
-) -> str:
-    """Adapt an already-filled master CV HTML for a specific job posting."""
-    if client is None:
-        client, model = get_client_and_model("cv_tailoring", db)
-
-    messages = get_tailor_master_cv_for_job_messages(
-        master_cv_html, job_title, job_description, language, cv_notes
-    )
-    try:
-        response = _call_openrouter(
-            client=client,
-            model=model or get_ollama_model(db),
-            messages=messages,
-            temperature=0.1,
-            func_name="tailor_master_cv_for_job",
-        )
-        content = response.choices[0].message.content.strip()
-        content = re.sub(r"^```(?:html)?\n?", "", content)
-        content = re.sub(r"\n?```$", "", content)
-        return content
-    except Exception as e:
-        logger.error(f"tailor_master_cv_for_job failed, returning master CV unchanged: {e}")
-        return master_cv_html
 
 
 def fill_html_cv_with_ai(

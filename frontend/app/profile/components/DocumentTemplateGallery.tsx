@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Trash2, UploadCloud, Check, Loader2, Maximize2, X } from "lucide-react";
 import { fetchWithAuth } from "../../components/AuthProvider";
 import { useNotification } from "../../components/NotificationProvider";
@@ -36,8 +36,35 @@ export default function DocumentTemplateGallery({
   const [fullscreenId, setFullscreenId] = useState<number | null>(null);
   const [fullscreenHtml, setFullscreenHtml] = useState<string | null>(null);
   const [loadingFullscreen, setLoadingFullscreen] = useState(false);
+  const [localTemplates, setLocalTemplates] = useState<DocumentTemplate[]>(templates);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const filtered = templates.filter((t) => t.doc_type === tab);
+  useEffect(() => { setLocalTemplates(templates); }, [templates]);
+
+  useEffect(() => {
+    const processing = localTemplates.filter((t) => t.status === "processing");
+    if (processing.length === 0) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetchWithAuth(`${apiBase}/document-templates`);
+        if (!res.ok) return;
+        const updated: DocumentTemplate[] = await res.json();
+        setLocalTemplates(updated);
+        const stillProcessing = updated.filter((t) => t.status === "processing");
+        if (stillProcessing.length === 0 && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } catch {}
+    }, 3000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [localTemplates, apiBase]);
+
+  const filtered = localTemplates.filter((t) => t.doc_type === tab);
   const activeId = activeIds[tab];
 
   const loadPreview = useCallback(async (id: number) => {
@@ -83,6 +110,7 @@ export default function DocumentTemplateGallery({
       method: "DELETE",
     });
     if (res.ok) {
+      setLocalTemplates((prev) => prev.filter((t) => t.id !== id));
       onTemplateDeleted(id);
       if (previewId === id) {
         setPreviewId(null);
@@ -112,8 +140,9 @@ export default function DocumentTemplateGallery({
         return;
       }
       const created: DocumentTemplate = await res.json();
+      setLocalTemplates((prev) => [...prev, created]);
       onTemplateAdded(created);
-      loadPreview(created.id);
+      if (created.status !== "processing") loadPreview(created.id);
     } finally {
       setUploadingTemplate(false);
     }
@@ -146,8 +175,8 @@ export default function DocumentTemplateGallery({
   };
 
   const tabLabel = (t: DocTab) => (t === "CV" ? "Lebenslauf" : "Anschreiben");
-  const previewTemplate = templates.find((t) => t.id === previewId) ?? null;
-  const fullscreenTemplate = templates.find((t) => t.id === fullscreenId) ?? null;
+  const previewTemplate = localTemplates.find((t) => t.id === previewId) ?? null;
+  const fullscreenTemplate = localTemplates.find((t) => t.id === fullscreenId) ?? null;
 
   return (
     <>
@@ -187,26 +216,33 @@ export default function DocumentTemplateGallery({
             const isActive = activeId === String(tmpl.id);
             const isPreviewed = previewId === tmpl.id;
             const isSaving = savingId === tmpl.id;
+            const isProcessing = tmpl.status === "processing";
 
             return (
               <button
                 key={tmpl.id}
                 type="button"
-                onClick={() => handleSelect(tmpl)}
-                disabled={savingId !== null}
-                className={`w-full text-left px-3 py-2.5 rounded-xl border-2 transition-all group flex items-center gap-2 cursor-pointer disabled:cursor-wait ${
-                  isActive
-                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
+                onClick={() => !isProcessing && handleSelect(tmpl)}
+                disabled={savingId !== null || isProcessing}
+                className={`w-full text-left px-3 py-2.5 rounded-xl border-2 transition-all group flex items-center gap-2 ${
+                  isProcessing
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 cursor-wait"
+                    : isActive
+                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 cursor-pointer"
                     : isPreviewed
-                    ? "border-indigo-300 dark:border-indigo-500/40 bg-white dark:bg-slate-900/50"
-                    : "border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/40 bg-white dark:bg-slate-900/50"
+                    ? "border-indigo-300 dark:border-indigo-500/40 bg-white dark:bg-slate-900/50 cursor-pointer"
+                    : "border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/40 bg-white dark:bg-slate-900/50 cursor-pointer disabled:cursor-wait"
                 }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold truncate text-slate-800 dark:text-slate-100">
                     {tmpl.name}
                   </div>
-                  {isActive ? (
+                  {isProcessing ? (
+                    <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
+                      KI befüllt…
+                    </div>
+                  ) : isActive ? (
                     <div className="text-[10px] font-semibold text-indigo-500 mt-0.5 flex items-center gap-1">
                       <Check className="w-2.5 h-2.5" /> Aktiv
                     </div>
@@ -215,7 +251,9 @@ export default function DocumentTemplateGallery({
                   ) : null}
                 </div>
 
-                {isSaving ? (
+                {isProcessing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 flex-shrink-0" />
+                ) : isSaving ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400 flex-shrink-0" />
                 ) : !tmpl.is_admin ? (
                   <span

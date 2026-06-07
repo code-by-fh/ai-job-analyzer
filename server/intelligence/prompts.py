@@ -638,43 +638,6 @@ def get_fill_html_cv_messages(
     ]
 
 
-def get_tailor_master_cv_for_job_messages(
-    master_cv_html: str,
-    job_title: str,
-    job_description: str,
-    language: str = "de",
-    cv_notes: str = "",
-) -> List[Dict[str, str]]:
-    lang_note = "Schreibe auf Deutsch." if language == "de" else "Write in English."
-    notes_section = f"\n\nIMPROVEMENT NOTES:\n{cv_notes}" if cv_notes else ""
-    system = (
-        "You are a professional CV editor. You receive an already-filled HTML CV and a job posting. "
-        "Your task: adapt the CV specifically for this job.\n\n"
-        "WHAT TO CHANGE:\n"
-        "- Professional summary / 'about me' section: rewrite to target the specific position and employer\n"
-        "- Descriptions of experience entries: emphasize aspects relevant to the job requirements\n"
-        "- Skills section: reorder to put the most relevant skills first\n\n"
-        "WHAT NOT TO CHANGE:\n"
-        "- Employer names, dates, job titles, education facts\n"
-        "- HTML structure, tags, attributes, CSS classes, inline styles\n"
-        "- Contact details, name, location\n\n"
-        "STRICT RULES:\n"
-        "- Keep ALL HTML tags, attributes, CSS classes, and inline styles EXACTLY unchanged\n"
-        "- Only replace visible TEXT content inside elements\n"
-        "- Do NOT invent employers, dates, or skills not present in the CV\n"
-        "- Return ONLY the complete HTML document, no markdown fences, no explanations\n"
-        f"{lang_note}"
-    )
-    user = (
-        f"JOB POSTING:\nTitle: {job_title}\nDescription:\n{job_description[:4000]}"
-        f"{notes_section}\n\n"
-        f"HTML CV TO ADAPT:\n{master_cv_html}"
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-
 
 def get_tailored_cv_messages(cv_data, job_title, job_description, language="de", cv_notes: str = ""):
     import json as _json

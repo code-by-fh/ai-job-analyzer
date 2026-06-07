@@ -16,7 +16,6 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
     fill_html_cv_with_ai,
-    tailor_master_cv_for_job,
 )
 from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
 from services.job_documents import store_generated_document
@@ -44,7 +43,6 @@ def _build_cv(
     cv_client,
     cv_model: str,
     cv_notes: str = "",
-    is_master_cv: bool = False,
 ) -> tuple[str, bytes, dict]:
     """Return (cv_html, cv_pdf_bytes, cv_data). Pure computation — no DB writes."""
     if cv_template_html:
@@ -59,26 +57,13 @@ def _build_cv(
         if spoken_languages:
             cv_data["spoken_languages"] = spoken_languages
 
-        if is_master_cv:
-            # Master CV is already filled — tailor it for this specific job
-            cv_html = tailor_master_cv_for_job(
-                master_cv_html=cv_template_html,
-                job_title=job_title,
-                job_description=job_description[:6000],
-                language=language,
-                cv_notes=cv_notes,
-                model=cv_model,
-                client=cv_client,
-            )
-        else:
-            # Blank DocumentTemplate → AI fills with profile data + job context
-            cv_html = fill_html_cv_with_ai(
-                cv_template_html, cv_data, language,
-                job_title=job_title,
-                job_description=job_description[:6000],
-                cv_notes=cv_notes,
-                model=cv_model, client=cv_client,
-            )
+        cv_html = fill_html_cv_with_ai(
+            cv_template_html, cv_data, language,
+            job_title=job_title,
+            job_description=job_description[:6000],
+            cv_notes=cv_notes,
+            model=cv_model, client=cv_client,
+        )
     else:
         # No template → JSON tailoring + Jinja2 classic renderer
         cv_data = generate_tailored_cv(
@@ -231,19 +216,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         cv_client, cv_model = get_client_and_model("cv_tailoring", db)
         letter_client, letter_model = get_client_and_model("cover_letter", db)
 
-        is_master_cv = False
-        if profile.master_cv_template_id:
-            master_t = db.query(DocumentTemplate).filter(
-                DocumentTemplate.id == profile.master_cv_template_id,
-                DocumentTemplate.doc_type == "MASTER_CV",
-            ).first()
-            if master_t:
-                cv_template_html = master_t.html
-                is_master_cv = True
-            else:
-                cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
-        else:
-            cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
+        cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         cv_notes = getattr(job, "cv_draft", "") or ""
 
         letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
@@ -257,7 +230,6 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                 job.title or "", job.description or "", language,
                 cv_client, cv_model,
                 cv_notes,
-                is_master_cv,
             )
             letter_future = pool.submit(
                 _build_letter,

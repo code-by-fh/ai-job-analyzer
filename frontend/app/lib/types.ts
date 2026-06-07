@@ -29,6 +29,7 @@ export interface DocumentTemplate {
   name: string;
   is_admin: boolean;
   user_id: number | null;
+  status: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
