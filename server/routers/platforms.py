@@ -23,7 +23,7 @@ from database.core import (
     UserProfile,
 )
 from core.logger import get_logger
-from intelligence.service import generate_platform_name
+from intelligence.service import generate_platform_name, get_client_and_model
 from routers.deps import APPLICATION_STATUSES
 from workers.worker import (
     _send_via_mailjet_batch,
@@ -154,7 +154,8 @@ def create_platform(
         raise HTTPException(status_code=400, detail="Platform URL already exists")
 
     domain = urlparse(platform.url).netloc
-    name = generate_platform_name(platform.url, db=db)
+    client, model = get_client_and_model("platform_name", db)
+    name = generate_platform_name(url=platform.url, db=db, model=model, client=client)
 
     # Favicon URL (using Google's service)
     favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
@@ -289,7 +290,8 @@ def trigger_platform_name_generation(
     if not db_platform:
         raise HTTPException(status_code=404, detail="Platform not found")
 
-    new_name = generate_platform_name(db_platform.url, db=db)
+    client, model = get_client_and_model("platform_name", db)
+    new_name = generate_platform_name(url=db_platform.url, db=db, model=model, client=client)
     db_platform.name = new_name
     db.commit()
     return {"id": platform_id, "name": new_name}
@@ -705,10 +707,11 @@ def create_platform_with_setup(
         if request.crawl_interval_minutes is not None:
             platform.crawl_interval_minutes = request.crawl_interval_minutes
     else:
+        client, model = get_client_and_model("platform_name", db)
         platform = JobPlatform(
             user_id=current_user.id,
             url=request.url,
-            name=generate_platform_name(request.url, db=db),
+            name=generate_platform_name(url=request.url, db=db, model=model, client=client),
             favicon_url=f"https://www.google.com/s2/favicons?sz=64&domain={domain}",
             crawl_interval_minutes=request.crawl_interval_minutes,
         )
