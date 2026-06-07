@@ -51,10 +51,24 @@ def html_to_pdf(html: str) -> bytes:
     return weasyprint.HTML(string=html).write_pdf()
 
 
-def render_cv_pdf(cv_data: dict, template_key: str = "classic") -> bytes:
+def render_cv_html(cv_data: dict, template_key: str = "classic") -> str:
     template = _env.get_template(_resolve("cv", template_key))
-    html = template.render(**cv_data)
-    return _html_to_pdf(html)
+    return template.render(**cv_data)
+
+
+def render_cover_letter_html(
+    letter_markdown: str,
+    template_key: str = "classic",
+    sender_name: str = "",
+    company: str = "",
+) -> str:
+    body_html = _markdown.markdown(letter_markdown or "")
+    template = _env.get_template(_resolve("cover_letter", template_key))
+    return template.render(body_html=body_html, sender_name=sender_name, company=company)
+
+
+def render_cv_pdf(cv_data: dict, template_key: str = "classic") -> bytes:
+    return _html_to_pdf(render_cv_html(cv_data, template_key))
 
 
 def render_cover_letter_pdf(
@@ -63,7 +77,4 @@ def render_cover_letter_pdf(
     sender_name: str = "",
     company: str = "",
 ) -> bytes:
-    body_html = _markdown.markdown(letter_markdown or "")
-    template = _env.get_template(_resolve("cover_letter", template_key))
-    html = template.render(body_html=body_html, sender_name=sender_name, company=company)
-    return _html_to_pdf(html)
+    return _html_to_pdf(render_cover_letter_html(letter_markdown, template_key, sender_name, company))

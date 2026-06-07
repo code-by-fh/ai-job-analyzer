@@ -21,6 +21,7 @@ from core.auth import get_current_user
 from core.celery_config import celery_app
 from routers.deps import limiter, UPLOAD_DIR, APPLICATION_STATUSES
 from core.logger import get_logger
+from services.document_renderer import render_cover_letter_html
 
 logger = get_logger(__name__)
 
@@ -1011,8 +1012,15 @@ def get_job_html(
         ).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        html = job.cv_html if kind == "cv" else job.cover_letter_html
-        return {"html": html or ""}
+        if kind == "cv":
+            html = job.cv_html or ""
+        else:
+            html = job.cover_letter_html or ""
+            if not html and job.application_draft:
+                html = render_cover_letter_html(letter_markdown=job.application_draft)
+                job.cover_letter_html = html
+                db.commit()
+        return {"html": html}
     finally:
         db.close()
 

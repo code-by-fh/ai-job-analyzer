@@ -15,7 +15,7 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
 )
-from services.document_renderer import render_cv_pdf, render_cover_letter_pdf, html_to_pdf
+from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
 from services.job_documents import store_generated_document
 from services.storage import get_storage_service
 from services.template_filler import fill_template
@@ -97,7 +97,6 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             location=profile.location or "",
             client=cv_client,
         )
-        job.cv_draft = _cv_dict_to_markdown(cv_data)
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         if cv_template_html:
             job.cv_html = fill_template(cv_template_html, cv_data)
@@ -107,6 +106,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                 logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
                 cv_pdf = render_cv_pdf(cv_data, template_key="classic")
         else:
+            job.cv_html = render_cv_html(cv_data, template_key=profile.cv_template or "classic")
             cv_pdf = render_cv_pdf(cv_data, template_key=profile.cv_template or "classic")
         store_generated_document(
             db, job.id, target_user_id, cv_pdf,
@@ -155,6 +155,12 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                     company=job.company or "",
                 )
         else:
+            job.cover_letter_html = render_cover_letter_html(
+                letter_markdown=letter_text,
+                template_key=profile.cover_letter_template or "classic",
+                sender_name=candidate_name,
+                company=job.company or "",
+            )
             letter_pdf = render_cover_letter_pdf(
                 letter_markdown=letter_text,
                 template_key=profile.cover_letter_template or "classic",
@@ -185,7 +191,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
 
         job.status = "DRAFTED"
         db.commit()
-        _publish(r, job, "DRAFTED", application_draft=job.application_draft, cv_draft=job.cv_draft)
+        _publish(r, job, "DRAFTED", application_draft=job.application_draft)
         logger.info(f"Application package for job {job_id} complete.")
 
     except Exception as e:
@@ -203,39 +209,6 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
     finally:
         db.close()
 
-
-def _cv_dict_to_markdown(cv: dict) -> str:
-    parts = []
-    if cv.get("name"):
-        parts.append(f"# {cv['name']}")
-    if cv.get("role"):
-        parts.append(f"**{cv['role']}**\n")
-    for exp in cv.get("experience", []):
-        if not exp:
-            continue
-        if not parts or parts[-1] != "## Berufserfahrung":
-            parts.append("## Berufserfahrung")
-        parts.append(f"### {exp.get('role', '')} — {exp.get('company', '')} ({exp.get('duration', '')})")
-        if exp.get("description"):
-            parts.append(exp["description"])
-        parts.append("")
-    for proj in cv.get("projects", []):
-        if not proj:
-            continue
-        if not parts or parts[-1] != "## Projekte":
-            parts.append("## Projekte")
-        parts.append(f"### {proj.get('name', '')} ({proj.get('tech_stack', '')})")
-        if proj.get("description"):
-            parts.append(proj["description"])
-        parts.append("")
-    if cv.get("education"):
-        parts.append("## Ausbildung")
-        parts.append(cv["education"])
-    skills = cv.get("skills", [])
-    if skills:
-        parts.append("\n## Skills")
-        parts.append(", ".join(skills) if isinstance(skills, list) else str(skills))
-    return "\n".join(parts)
 
 
 def _safe(value):

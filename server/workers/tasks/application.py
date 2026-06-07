@@ -19,7 +19,7 @@ from database.core import SessionLocal, JobEntry, UserProfile, User, DocumentTem
 from intelligence.service import get_client_and_model, format_cv_for_prompt, generate_application
 from services.storage import get_storage_service
 from services.template_filler import fill_template
-from services.document_renderer import render_cover_letter_pdf, html_to_pdf
+from services.document_renderer import render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
 from services.job_documents import store_generated_document
 
 
@@ -157,6 +157,12 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
                     company=job.company or "",
                 )
         else:
+            job.cover_letter_html = render_cover_letter_html(
+                letter_markdown=application_text,
+                template_key=profile.cover_letter_template or "classic",
+                sender_name=candidate_name,
+                company=job.company or "",
+            )
             letter_pdf = render_cover_letter_pdf(
                 letter_markdown=application_text,
                 template_key=profile.cover_letter_template or "classic",
