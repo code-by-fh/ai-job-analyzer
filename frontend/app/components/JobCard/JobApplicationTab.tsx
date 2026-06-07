@@ -1,28 +1,17 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
-import ReactMarkdown from "react-markdown";
-
-const DocumentEditor = dynamic(
-  () => import("../editor/DocumentEditor"),
-  { ssr: false }
-);
 import {
-  Check,
-  Copy,
   Download,
   FileText,
   Loader2,
-  Edit2,
-  X,
   Save,
   RefreshCw,
   Zap,
   User,
   RotateCw,
+  X,
 } from "lucide-react";
-import RegenBanner from "./RegenBanner";
 import { useLanguage } from "../LanguageProvider";
 import type { Job } from "../../lib/types";
 import type { JobStatus } from "../JobStatusBadge";
@@ -70,6 +59,16 @@ const CV_PHASES = [
   { label: "PDF erstellen…", icon: "📄" },
 ];
 
+function serializeIframeHtml(iframe: HTMLIFrameElement): string {
+  const doc = iframe.contentDocument;
+  if (!doc) return "";
+  doc.body.removeAttribute("contenteditable");
+  const html = `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
+  doc.body.contentEditable = "true";
+  doc.body.style.outline = "none";
+  return html;
+}
+
 export default function JobApplicationTab({
   job,
   isGenerating,
@@ -82,39 +81,40 @@ export default function JobApplicationTab({
 }: JobApplicationTabProps) {
   const { t } = useLanguage();
 
-  // ── View toggle ───────────────────────────────────────────────────────────
   const [activeView, setActiveView] = useState<ActiveView>("letter");
 
-  // ── Anschreiben state ─────────────────────────────────────────────────────
-  const [copied, setCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [draftContent, setDraftContent] = useState(job.application_draft || "");
-  const [isSaving, setIsSaving] = useState(false);
+  // ── Anschreiben ───────────────────────────────────────────────────────────
+  const [letterDoc, setLetterDoc] = useState<JobDocument | null>(null);
+  const [letterLoading, setLetterLoading] = useState(true);
+  const [letterHtml, setLetterHtml] = useState<string | null>(null);
+  const [letterHtmlSaving, setLetterHtmlSaving] = useState(false);
+  const [letterSaveStatus, setLetterSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [letterPdfUrl, setLetterPdfUrl] = useState<string | null>(null);
+  const [letterEditMode, setLetterEditMode] = useState(false);
+  const letterIframeRef = useRef<HTMLIFrameElement>(null);
+
   const [showRegenInput, setShowRegenInput] = useState(false);
   const [regenNote, setRegenNote] = useState("");
   const [isSubmittingRegen, setIsSubmittingRegen] = useState(false);
 
-  // ── Anschreiben timer / phases ────────────────────────────────────────────
   const [elapsed, setElapsed] = useState(0);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Lebenslauf state ──────────────────────────────────────────────────────
+  // ── Lebenslauf ────────────────────────────────────────────────────────────
   const [cvDoc, setCvDoc] = useState<JobDocument | null>(null);
   const [cvLoading, setCvLoading] = useState(true);
-  const [cvBlobUrl, setCvBlobUrl] = useState<string | null>(null);
-  const [cvBlobLoading, setCvBlobLoading] = useState(false);
+  const [cvHtml, setCvHtml] = useState<string | null>(null);
+  const [cvHtmlSaving, setCvHtmlSaving] = useState(false);
+  const [cvSaveStatus, setCvSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [cvPdfUrl, setCvPdfUrl] = useState<string | null>(null);
+  const [cvEditMode, setCvEditMode] = useState(false);
+  const cvIframeRef = useRef<HTMLIFrameElement>(null);
+
   const [cvGenerating, setCvGenerating] = useState(
     () => job.status === "GENERATING" && !!localStorage.getItem(`gen_cv_${job.id}`)
   );
-
-  // ── Letter document state ─────────────────────────────────────────────────
-  const [letterDoc, setLetterDoc] = useState<JobDocument | null>(null);
-  const [letterDocLoading, setLetterDocLoading] = useState(false);
-  const [letterBlobUrl, setLetterBlobUrl] = useState<string | null>(null);
-  const [letterBlobLoading, setLetterBlobLoading] = useState(false);
-
   const [cvElapsed, setCvElapsed] = useState(0);
   const [cvPhaseIndex, setCvPhaseIndex] = useState(0);
   const cvTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -123,21 +123,143 @@ export default function JobApplicationTab({
     job.status === "GENERATING" && !!localStorage.getItem(`gen_cv_${job.id}`)
   );
 
-  // isGenerating fires for both letter and CV package generation (job.status === "GENERATING").
-  // isLetterGenerating is only true when the letter is generating, not the CV.
   const isLetterGenerating = isGenerating && !cvGenerationPending.current;
   const letterGeneratingPrevRef = useRef(isLetterGenerating);
 
-  const [isCvEditing, setIsCvEditing] = useState(false);
-  const [cvDraftContent, setCvDraftContent] = useState(job.cv_draft || "");
-  const [isCvSaving, setIsCvSaving] = useState(false);
+  // ── Load functions ────────────────────────────────────────────────────────
+  const loadLetterContent = useCallback(async () => {
+    setLetterLoading(true);
+    try {
+      const [docRes, htmlRes] = await Promise.all([
+        fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`),
+        fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/html?kind=cover_letter`),
+      ]);
+      if (docRes.ok) {
+        const docs: JobDocument[] = await docRes.json();
+        const doc = docs.find((d) => d.kind === "GENERATED_LETTER") ?? null;
+        setLetterDoc(doc);
+        if (doc) {
+          const pdfRes = await fetchWithAuth(
+            `${apiBase}/jobs/${job.id}/documents/${doc.id}/download`
+          );
+          if (pdfRes.ok) {
+            const blob = await pdfRes.blob();
+            setLetterPdfUrl((prev) => {
+              if (prev) URL.revokeObjectURL(prev);
+              return URL.createObjectURL(blob);
+            });
+          }
+        }
+      }
+      if (htmlRes.ok) {
+        const data = await htmlRes.json();
+        setLetterHtml(data.html || null);
+      }
+    } finally {
+      setLetterLoading(false);
+    }
+  }, [apiBase, job.id]);
 
-  // ── Document editor ───────────────────────────────────────────────────────
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorKind, setEditorKind] = useState<"cv" | "cover_letter">("cv");
-  const [editorHtml, setEditorHtml] = useState("");
+  const loadCvContent = useCallback(async () => {
+    setCvLoading(true);
+    try {
+      const [docRes, htmlRes] = await Promise.all([
+        fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`),
+        fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/html?kind=cv`),
+      ]);
+      if (docRes.ok) {
+        const docs: JobDocument[] = await docRes.json();
+        const doc = docs.find((d) => d.kind === "GENERATED_CV") ?? null;
+        setCvDoc(doc);
+        if (doc) {
+          const pdfRes = await fetchWithAuth(
+            `${apiBase}/jobs/${job.id}/documents/${doc.id}/download`
+          );
+          if (pdfRes.ok) {
+            const blob = await pdfRes.blob();
+            setCvPdfUrl((prev) => {
+              if (prev) URL.revokeObjectURL(prev);
+              return URL.createObjectURL(blob);
+            });
+          }
+        }
+      }
+      if (htmlRes.ok) {
+        const data = await htmlRes.json();
+        setCvHtml(data.html || null);
+      }
+    } finally {
+      setCvLoading(false);
+    }
+  }, [apiBase, job.id]);
 
-  // ── Anschreiben timer ─────────────────────────────────────────────────────
+  useEffect(() => { loadLetterContent(); }, [loadLetterContent]);
+  useEffect(() => { loadCvContent(); }, [loadCvContent]);
+
+  // ── Inject HTML into letter iframe (edit mode only) ───────────────────────
+  useEffect(() => {
+    if (!letterEditMode) return;
+    const iframe = letterIframeRef.current;
+    if (!iframe || !letterHtml) return;
+    let objectUrl: string | null = null;
+    const onLoad = () => {
+      const doc = iframe.contentDocument;
+      if (!doc?.body) return;
+      doc.body.contentEditable = "true";
+      doc.body.style.outline = "none";
+      doc.body.style.cursor = "text";
+    };
+    iframe.addEventListener("load", onLoad);
+    const blob = new Blob([letterHtml], { type: "text/html" });
+    objectUrl = URL.createObjectURL(blob);
+    iframe.src = objectUrl;
+    return () => {
+      iframe.removeEventListener("load", onLoad);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [letterHtml, letterEditMode]);
+
+  // ── Inject HTML into CV iframe (edit mode only) ───────────────────────────
+  useEffect(() => {
+    if (!cvEditMode) return;
+    const iframe = cvIframeRef.current;
+    if (!iframe || !cvHtml) return;
+    let objectUrl: string | null = null;
+    const onLoad = () => {
+      const doc = iframe.contentDocument;
+      if (!doc?.body) return;
+      doc.body.contentEditable = "true";
+      doc.body.style.outline = "none";
+      doc.body.style.cursor = "text";
+    };
+    iframe.addEventListener("load", onLoad);
+    const blob = new Blob([cvHtml], { type: "text/html" });
+    objectUrl = URL.createObjectURL(blob);
+    iframe.src = objectUrl;
+    return () => {
+      iframe.removeEventListener("load", onLoad);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [cvHtml, cvEditMode]);
+
+  // ── Blob URL cleanup on unmount ───────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      setLetterPdfUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setCvPdfUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    };
+  }, []);
+
+  // ── Exit edit mode when generation starts ─────────────────────────────────
+  useEffect(() => {
+    if (isLetterGenerating) setLetterEditMode(false);
+  }, [isLetterGenerating]);
+
+  useEffect(() => {
+    if (cvGenerating) setCvEditMode(false);
+  }, [cvGenerating]);
+
+  // ── Letter timer ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isLetterGenerating) {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -168,10 +290,9 @@ export default function JobApplicationTab({
     }
   }, [isLetterGenerating, job.application_draft, job.id]);
 
-  // Reload letter doc when letter generation completes (true → false transition only)
   useEffect(() => {
     if (letterGeneratingPrevRef.current && !isLetterGenerating && job.application_draft) {
-      loadLetterDocument();
+      loadLetterContent();
     }
     letterGeneratingPrevRef.current = isLetterGenerating;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,154 +320,80 @@ export default function JobApplicationTab({
     };
   }, [cvGenerating]);
 
-  // Clear cvGenerating when job leaves GENERATING state
   useEffect(() => {
     if (job.status !== "GENERATING" && cvGenerationPending.current) {
       cvGenerationPending.current = false;
       setCvGenerating(false);
       localStorage.removeItem(`gen_cv_${job.id}`);
-      loadCvDocument();
+      loadCvContent();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.status]);
 
-  // Sync cv_draft from job prop
-  useEffect(() => {
-    if (!isCvEditing) {
-      setCvDraftContent(job.cv_draft || "");
-    }
-  }, [job.cv_draft, isCvEditing]);
-
-  // ── Fetch CV document ─────────────────────────────────────────────────────
-  const loadCvDocument = useCallback(async () => {
-    setCvLoading(true);
+  // ── Save handlers ─────────────────────────────────────────────────────────
+  const handleLetterSave = useCallback(async () => {
+    const iframe = letterIframeRef.current;
+    if (!iframe || letterHtmlSaving) return;
+    const html = serializeIframeHtml(iframe);
+    setLetterHtmlSaving(true);
+    setLetterSaveStatus("idle");
     try {
-      const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
-      if (res.ok) {
-        const docs: JobDocument[] = await res.json();
-        setCvDoc(docs.find((d) => d.kind === "GENERATED_CV") ?? null);
-      }
-    } finally {
-      setCvLoading(false);
-    }
-  }, [apiBase, job.id]);
-
-  useEffect(() => {
-    loadCvDocument();
-  }, [loadCvDocument]);
-
-  const loadLetterDocument = useCallback(async () => {
-    setLetterDocLoading(true);
-    try {
-      const res = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
-      if (res.ok) {
-        const docs: JobDocument[] = await res.json();
-        setLetterDoc(docs.find((d) => d.kind === "GENERATED_LETTER") ?? null);
-      }
-    } finally {
-      setLetterDocLoading(false);
-    }
-  }, [apiBase, job.id]);
-
-  useEffect(() => {
-    loadLetterDocument();
-  }, [loadLetterDocument]);
-
-  // ── CV blob for inline iframe ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!cvDoc) { setCvBlobUrl(null); return; }
-    let objectUrl: string | null = null;
-    setCvBlobLoading(true);
-    setCvBlobUrl(null);
-    fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/${cvDoc.id}/view`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setCvBlobUrl(objectUrl);
-      })
-      .catch(() => {})
-      .finally(() => setCvBlobLoading(false));
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [cvDoc, apiBase, job.id]);
-
-  // ── Letter blob for inline iframe ─────────────────────────────────────────
-  useEffect(() => {
-    if (!letterDoc) { setLetterBlobUrl(null); return; }
-    let objectUrl: string | null = null;
-    setLetterBlobLoading(true);
-    setLetterBlobUrl(null);
-    fetchWithAuth(`${apiBase}/jobs/${job.id}/documents/${letterDoc.id}/view`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setLetterBlobUrl(objectUrl);
-      })
-      .catch(() => {})
-      .finally(() => setLetterBlobLoading(false));
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [letterDoc, apiBase, job.id]);
-
-  // ── Actions: Anschreiben ──────────────────────────────────────────────────
-  const handleCopy = () => {
-    if (!job.application_draft) return;
-    navigator.clipboard.writeText(job.application_draft);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleDownloadLetter = async () => {
-    try {
-      const baseUrl = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
-      const res = await fetchWithAuth(
-        `${baseUrl}/jobs/${encodeURIComponent(job.id)}/download`,
+      const putRes = await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/html?kind=cover_letter`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ html }),
+        }
       );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Download failed");
-      }
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Bewerbung_${job.company.replace(/\s+/g, "_")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      if (job.status === "OPEN" || job.status === "DRAFTED" || !job.status) {
-        onStatusUpdate(job.id, "APPLIED");
-      }
-    } catch (e: any) {
-      alert(t("downloadFailed") + ": " + (e.message || "Unknown error"));
-    }
-  };
-
-  const handleEditStart = () => {
-    setDraftContent(job.application_draft || "");
-    setIsEditing(true);
-    setShowRegenInput(false);
-  };
-
-  const handleEditCancel = () => {
-    setDraftContent(job.application_draft || "");
-    setIsEditing(false);
-  };
-
-  const handleSave = async () => {
-    if (!onUpdateJob) return;
-    setIsSaving(true);
-    try {
-      await onUpdateJob(job.id, { application_draft: draftContent });
-      setIsEditing(false);
-    } catch (e) {
-      console.error("Save error:", e);
+      if (!putRes.ok) { setLetterSaveStatus("error"); return; }
+      await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/render?kind=cover_letter`,
+        { method: "POST" }
+      );
+      setLetterSaveStatus("saved");
+      setTimeout(() => setLetterSaveStatus("idle"), 3000);
+      setLetterEditMode(false);
+      await loadLetterContent();
+    } catch {
+      setLetterSaveStatus("error");
     } finally {
-      setIsSaving(false);
+      setLetterHtmlSaving(false);
     }
-  };
+  }, [apiBase, job.id, letterHtmlSaving, loadLetterContent]);
 
+  const handleCvSave = useCallback(async () => {
+    const iframe = cvIframeRef.current;
+    if (!iframe || cvHtmlSaving) return;
+    const html = serializeIframeHtml(iframe);
+    setCvHtmlSaving(true);
+    setCvSaveStatus("idle");
+    try {
+      const putRes = await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/html?kind=cv`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ html }),
+        }
+      );
+      if (!putRes.ok) { setCvSaveStatus("error"); return; }
+      await fetchWithAuth(
+        `${apiBase}/jobs/${job.id}/documents/render?kind=cv`,
+        { method: "POST" }
+      );
+      setCvSaveStatus("saved");
+      setTimeout(() => setCvSaveStatus("idle"), 3000);
+      setCvEditMode(false);
+      await loadCvContent();
+    } catch {
+      setCvSaveStatus("error");
+    } finally {
+      setCvHtmlSaving(false);
+    }
+  }, [apiBase, job.id, cvHtmlSaving, loadCvContent]);
+
+  // ── Generate / regen ──────────────────────────────────────────────────────
   const handleRegenerate = async () => {
     if (isSubmittingRegen || isLetterGenerating) return;
     setIsSubmittingRegen(true);
@@ -364,9 +411,8 @@ export default function JobApplicationTab({
         });
       }
       setRegenNote("");
-    } catch (e) {
+    } catch {
       localStorage.removeItem(`gen_app_${job.id}`);
-      console.error("Regenerate error:", e);
     } finally {
       setIsSubmittingRegen(false);
     }
@@ -378,23 +424,10 @@ export default function JobApplicationTab({
     } else {
       try {
         const baseUrl = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
-        await fetchWithAuth(`${baseUrl}/jobs/${job.id}/cancel-generation`, {
-          method: "POST",
-        });
+        await fetchWithAuth(`${baseUrl}/jobs/${job.id}/cancel-generation`, { method: "POST" });
       } catch {}
     }
     localStorage.removeItem(`gen_app_${job.id}`);
-  };
-
-  // ── Actions: Lebenslauf ───────────────────────────────────────────────────
-  const handleDownloadCv = () => {
-    if (!cvDoc) return;
-    const a = document.createElement("a");
-    a.href = `${apiBase}/jobs/${job.id}/documents/${cvDoc.id}/download`;
-    a.download = cvDoc.original_filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
   };
 
   const handleDownloadLetterDoc = async () => {
@@ -416,19 +449,15 @@ export default function JobApplicationTab({
     } catch {}
   };
 
-  const openEditor = useCallback(
-    async (kind: "cv" | "cover_letter") => {
-      const res = await fetchWithAuth(
-        `${apiBase}/jobs/${job.id}/documents/html?kind=${kind}`
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      setEditorHtml(data.html || "");
-      setEditorKind(kind);
-      setEditorOpen(true);
-    },
-    [job.id, apiBase]
-  );
+  const handleDownloadCv = () => {
+    if (!cvDoc) return;
+    const a = document.createElement("a");
+    a.href = `${apiBase}/jobs/${job.id}/documents/${cvDoc.id}/download`;
+    a.download = cvDoc.original_filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const handleRegenCv = async () => {
     cvGenerationPending.current = true;
@@ -442,7 +471,7 @@ export default function JobApplicationTab({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ include_profile_documents: false }),
-        },
+        }
       );
       if (!res.ok) {
         cvGenerationPending.current = false;
@@ -450,34 +479,10 @@ export default function JobApplicationTab({
         setCvGenerating(false);
         alert(`Lebenslauf konnte nicht erstellt werden (HTTP ${res.status})`);
       }
-    } catch (e) {
+    } catch {
       cvGenerationPending.current = false;
       localStorage.removeItem(`gen_cv_${job.id}`);
       setCvGenerating(false);
-      console.error("Generate CV error:", e);
-    }
-  };
-
-  const handleCvEditStart = () => {
-    setCvDraftContent(job.cv_draft || "");
-    setIsCvEditing(true);
-  };
-
-  const handleCvEditCancel = () => {
-    setCvDraftContent(job.cv_draft || "");
-    setIsCvEditing(false);
-  };
-
-  const handleCvSave = async () => {
-    if (!onUpdateJob) return;
-    setIsCvSaving(true);
-    try {
-      await onUpdateJob(job.id, { cv_draft: cvDraftContent });
-      setIsCvEditing(false);
-    } catch (e) {
-      console.error("CV save error:", e);
-    } finally {
-      setIsCvSaving(false);
     }
   };
 
@@ -485,7 +490,6 @@ export default function JobApplicationTab({
   const cvPhase = CV_PHASES[cvPhaseIndex];
 
   return (
-    <>
     <div className="space-y-4 flex-1 flex flex-col">
 
       {/* ── SEGMENTED TOGGLE ─────────────────────────────────────────────────── */}
@@ -523,19 +527,19 @@ export default function JobApplicationTab({
       {/* ── ANSCHREIBEN VIEW ─────────────────────────────────────────────────── */}
       {activeView === "letter" && (
         <div className="space-y-3 flex-1 flex flex-col">
-
-          {/* Action bar */}
           <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3 py-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-              {!isEditing && !isLetterGenerating && (
+              <button
+                onClick={loadLetterContent}
+                disabled={letterLoading}
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
+                title="Aktualisieren"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${letterLoading ? "animate-spin" : ""}`} />
+              </button>
+              {!isLetterGenerating && !letterEditMode && (
                 <button
-                  onClick={() => {
-                    if (job.application_draft) {
-                      setShowRegenInput((v) => !v);
-                    } else {
-                      onGenerate(job);
-                    }
-                  }}
+                  onClick={() => letterHtml ? setShowRegenInput((v) => !v) : onGenerate(job)}
                   disabled={isSubmittingRegen}
                   className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-40 ${
                     showRegenInput
@@ -543,87 +547,60 @@ export default function JobApplicationTab({
                       : "text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10"
                   }`}
                 >
-                  {isSubmittingRegen ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {job.application_draft ? "Neu generieren" : "Generieren"}
-                  </span>
+                  {isSubmittingRegen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{letterHtml ? "Neu generieren" : "Generieren"}</span>
                 </button>
               )}
-              {!isEditing && job.application_draft && !isLetterGenerating && (
+              {letterPdfUrl && !isLetterGenerating && !letterEditMode && (
                 <button
-                  onClick={handleEditStart}
-                  className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                  onClick={() => setLetterEditMode(true)}
+                  className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
                 >
-                  <Edit2 className="w-3.5 h-3.5" />
+                  <FileText className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Bearbeiten</span>
                 </button>
               )}
-              {isEditing && (
+              {letterEditMode && (
                 <>
                   <button
-                    onClick={handleEditCancel}
-                    disabled={isSaving}
-                    className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    onClick={handleLetterSave}
+                    disabled={letterHtmlSaving}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                      letterSaveStatus === "saved"
+                        ? "text-white bg-emerald-600"
+                        : letterSaveStatus === "error"
+                          ? "text-white bg-rose-600"
+                          : "text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm shadow-indigo-500/20"
+                    }`}
+                  >
+                    {letterHtmlSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    <span className="hidden sm:inline">
+                      {letterHtmlSaving ? "Speichert…" : letterSaveStatus === "saved" ? "Gespeichert" : letterSaveStatus === "error" ? "Fehler" : "Speichern"}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setLetterEditMode(false)}
+                    disabled={letterHtmlSaving}
+                    className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
                   >
                     <X className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Abbrechen</span>
                   </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="p-2 text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-emerald-500/20 whitespace-nowrap disabled:opacity-50"
-                  >
-                    {isSaving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">Speichern</span>
-                  </button>
                 </>
               )}
-              {!isEditing && job.application_draft && !isLetterGenerating && (
-                <>
-                  <button
-                    onClick={handleCopy}
-                    className="p-2 text-slate-500 hover:text-indigo-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
-                  >
-                    {copied ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">
-                      {copied ? "Kopiert" : "Kopieren"}
-                    </span>
-                  </button>
-                  <button
-                    onClick={letterDoc ? handleDownloadLetterDoc : handleDownloadLetter}
-                    className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-indigo-500/20 whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>PDF</span>
-                  </button>
-                  {job.cover_letter_html && (
-                    <button
-                      onClick={() => openEditor("cover_letter")}
-                      className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span>Editor</span>
-                    </button>
-                  )}
-                </>
+              {letterPdfUrl && !letterEditMode && !isLetterGenerating && (
+                <button
+                  onClick={handleDownloadLetterDoc}
+                  className="p-2 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>PDF</span>
+                </button>
               )}
             </div>
           </div>
 
-          {/* Regen input — only when toggled */}
-          {showRegenInput && !isEditing && (
+          {showRegenInput && !letterEditMode && (
             <div className="bg-purple-50 dark:bg-purple-500/5 border border-purple-200 dark:border-purple-500/20 rounded-xl p-4 space-y-3">
               <p className="text-[10px] font-black text-purple-700 dark:text-purple-300 uppercase tracking-widest">
                 Verbesserungshinweis
@@ -647,18 +624,15 @@ export default function JobApplicationTab({
                   disabled={isSubmittingRegen}
                   className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-all shadow-sm cursor-pointer disabled:opacity-50"
                 >
-                  {isSubmittingRegen ? (
-                    <><Loader2 className="w-3 h-3 animate-spin" /> Wird gestartet…</>
-                  ) : (
-                    <><RefreshCw className="w-3 h-3" /> Neu generieren</>
-                  )}
+                  {isSubmittingRegen
+                    ? <><Loader2 className="w-3 h-3 animate-spin" /> Wird gestartet…</>
+                    : <><RefreshCw className="w-3 h-3" /> Neu generieren</>}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Content */}
-          {isLetterGenerating && !job.application_draft ? (
+          {isLetterGenerating ? (
             <GeneratingSpinner
               phases={GENERATION_PHASES}
               phase={phase}
@@ -666,81 +640,48 @@ export default function JobApplicationTab({
               phaseIndex={phaseIndex}
               onCancel={handleCancel}
             />
+          ) : letterLoading ? (
+            <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+              <span className="text-xs font-semibold">Lade Anschreiben…</span>
+            </div>
+          ) : letterPdfUrl && !letterEditMode ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden flex-1">
+              <embed
+                src={letterPdfUrl}
+                type="application/pdf"
+                className="w-full border-0"
+                style={{ height: "680px" }}
+              />
+            </div>
+          ) : letterPdfUrl && letterEditMode ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden">
+              <iframe
+                ref={letterIframeRef}
+                sandbox="allow-same-origin"
+                className="w-full border-0 bg-white"
+                style={{ height: "680px" }}
+                title="Anschreiben bearbeiten"
+              />
+            </div>
           ) : (
-            <>
-              {isLetterGenerating && (
-                <RegenBanner
-                  label={phase.label}
-                  icon={phase.icon}
-                  elapsed={elapsed}
-                  onCancel={handleCancel}
-                  phaseCount={GENERATION_PHASES.length}
-                  phaseIndex={phaseIndex}
-                />
-              )}
-              {isEditing ? (
-                <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl border-2 border-indigo-200 dark:border-indigo-500/30 shadow-lg">
-                  <textarea
-                    value={draftContent}
-                    onChange={(e) => setDraftContent(e.target.value)}
-                    className="w-full min-h-[500px] bg-transparent border-0 focus:ring-0 p-0 text-slate-700 dark:text-slate-200 font-serif leading-relaxed text-sm md:text-base resize-y"
-                    placeholder="Bewerbungsschreiben hier bearbeiten..."
-                  />
-                </div>
-              ) : job.application_draft ? (
-                letterDocLoading ? (
-                  <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
-                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                    <span className="text-xs font-semibold">Lade Anschreiben…</span>
-                  </div>
-                ) : letterDoc ? (
-                  <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden transition-opacity duration-300 ${isLetterGenerating ? "opacity-40 pointer-events-none select-none" : ""}`}>
-                    {letterBlobLoading ? (
-                      <div className="flex items-center justify-center py-16">
-                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                      </div>
-                    ) : letterBlobUrl ? (
-                      <iframe
-                        src={letterBlobUrl}
-                        className="w-full border-0"
-                        style={{ height: "680px" }}
-                        title="Anschreiben PDF"
-                      />
-                    ) : null}
-                  </div>
-                ) : (
-                  <div
-                    className={`bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg font-serif transition-opacity duration-300 ${isLetterGenerating ? "opacity-40 pointer-events-none select-none" : ""}`}
-                  >
-                    <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
-                      <ReactMarkdown>{job.application_draft}</ReactMarkdown>
-                    </div>
-                  </div>
-                )
-              ) : (
-                <div className="group flex flex-col items-center justify-center py-12 gap-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-all">
-                  <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                    <FileText className="w-6 h-6 text-indigo-500" />
-                  </div>
-                  <div className="text-center px-6 max-w-xs space-y-1">
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                      Noch kein Anschreiben
-                    </p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      KI-generiert und auf dein Profil abgestimmt.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => onGenerate(job)}
-                    disabled={isLetterGenerating}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 transition-all hover:-translate-y-0.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {t("generateApplication") || "Bewerbung generieren"}
-                    <Zap className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-            </>
+            <div className="group flex flex-col items-center justify-center py-12 gap-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-all">
+              <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                <FileText className="w-6 h-6 text-indigo-500" />
+              </div>
+              <div className="text-center px-6 max-w-xs space-y-1">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Noch kein Anschreiben</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">KI-generiert und auf dein Profil abgestimmt.</p>
+              </div>
+              <button
+                onClick={() => onGenerate(job)}
+                disabled={isLetterGenerating}
+                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 transition-all hover:-translate-y-0.5 cursor-pointer disabled:opacity-50"
+              >
+                {t("generateApplication") || "Bewerbung generieren"}
+                <Zap className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -748,98 +689,75 @@ export default function JobApplicationTab({
       {/* ── LEBENSLAUF VIEW ──────────────────────────────────────────────────── */}
       {activeView === "cv" && (
         <div className="space-y-3 flex-1 flex flex-col">
-
-          {/* Action bar */}
           <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3 py-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
               <button
-                onClick={loadCvDocument}
+                onClick={loadCvContent}
                 disabled={cvLoading}
                 className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
                 title="Aktualisieren"
               >
                 <RotateCw className={`w-3.5 h-3.5 ${cvLoading ? "animate-spin" : ""}`} />
               </button>
-              {!isCvEditing && (
+              {!cvGenerating && !cvEditMode && (
                 <button
                   onClick={handleRegenCv}
                   disabled={cvGenerating || isLetterGenerating}
                   className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
                 >
-                  {cvGenerating ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {job.cv_draft ? "Neu generieren" : "Generieren"}
-                  </span>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{cvHtml ? "Neu generieren" : "Generieren"}</span>
                 </button>
               )}
-              {!isCvEditing && job.cv_draft && !cvGenerating && (
+              {cvPdfUrl && !cvGenerating && !cvEditMode && (
                 <button
-                  onClick={handleCvEditStart}
-                  className="p-2 text-slate-500 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                  onClick={() => setCvEditMode(true)}
+                  className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
                 >
-                  <Edit2 className="w-3.5 h-3.5" />
+                  <FileText className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Bearbeiten</span>
                 </button>
               )}
-              {isCvEditing && (
+              {cvEditMode && (
                 <>
                   <button
-                    onClick={handleCvEditCancel}
-                    disabled={isCvSaving}
-                    className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    onClick={handleCvSave}
+                    disabled={cvHtmlSaving}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                      cvSaveStatus === "saved"
+                        ? "text-white bg-emerald-600"
+                        : cvSaveStatus === "error"
+                          ? "text-white bg-rose-600"
+                          : "text-white bg-emerald-600 hover:bg-emerald-500 shadow-sm shadow-emerald-500/20"
+                    }`}
+                  >
+                    {cvHtmlSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    <span className="hidden sm:inline">
+                      {cvHtmlSaving ? "Speichert…" : cvSaveStatus === "saved" ? "Gespeichert" : cvSaveStatus === "error" ? "Fehler" : "Speichern"}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setCvEditMode(false)}
+                    disabled={cvHtmlSaving}
+                    className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
                   >
                     <X className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Abbrechen</span>
                   </button>
-                  <button
-                    onClick={handleCvSave}
-                    disabled={isCvSaving}
-                    className="p-2 text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-emerald-500/20 whitespace-nowrap disabled:opacity-50"
-                  >
-                    {isCvSaving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">Speichern</span>
-                  </button>
                 </>
               )}
-              {!isCvEditing && cvDoc && !cvGenerating && (
+              {cvPdfUrl && !cvGenerating && !cvEditMode && (
                 <button
                   onClick={handleDownloadCv}
-                  className="p-2 text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm shadow-emerald-500/20 whitespace-nowrap"
+                  className="p-2 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>PDF</span>
                 </button>
               )}
-              {!isCvEditing && !cvGenerating && job.cv_html && (
-                <button
-                  onClick={() => openEditor("cv")}
-                  className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Editor</span>
-                </button>
-              )}
-              {!isCvEditing && !cvGenerating && job.cover_letter_html && (
-                <button
-                  onClick={() => openEditor("cover_letter")}
-                  className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-sm whitespace-nowrap"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Anschreiben</span>
-                </button>
-              )}
             </div>
           </div>
 
-          {/* Content */}
           {cvGenerating ? (
             <GeneratingSpinner
               phases={CV_PHASES}
@@ -853,41 +771,24 @@ export default function JobApplicationTab({
               <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
               <span className="text-xs font-semibold">Lade Lebenslauf…</span>
             </div>
-          ) : isCvEditing ? (
-            <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl border-2 border-emerald-200 dark:border-emerald-500/30 shadow-lg">
-              <textarea
-                value={cvDraftContent}
-                onChange={(e) => setCvDraftContent(e.target.value)}
-                className="w-full min-h-[500px] bg-transparent border-0 focus:ring-0 p-0 text-slate-700 dark:text-slate-200 font-mono leading-relaxed text-sm resize-y"
-                placeholder="Lebenslauf hier bearbeiten (Markdown)…"
+          ) : cvPdfUrl && !cvEditMode ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden flex-1">
+              <embed
+                src={cvPdfUrl}
+                type="application/pdf"
+                className="w-full border-0"
+                style={{ height: "680px" }}
               />
             </div>
-          ) : job.cv_draft ? (
-            <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg">
-              <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none prose-p:text-slate-700 dark:prose-p:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-white leading-relaxed">
-                <ReactMarkdown>{job.cv_draft}</ReactMarkdown>
-              </div>
-              {cvDoc && (cvBlobUrl || cvBlobLoading) && (
-                <details className="mt-8">
-                  <summary className="text-xs font-bold text-slate-400 dark:text-slate-500 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest select-none">
-                    PDF-Vorschau
-                  </summary>
-                  <div className="mt-4 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900">
-                    {cvBlobLoading ? (
-                      <div className="flex items-center justify-center py-10">
-                        <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
-                      </div>
-                    ) : (
-                      <iframe
-                        src={cvBlobUrl!}
-                        className="w-full border-0"
-                        style={{ height: "680px" }}
-                        title="Lebenslauf PDF"
-                      />
-                    )}
-                  </div>
-                </details>
-              )}
+          ) : cvPdfUrl && cvEditMode ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden">
+              <iframe
+                ref={cvIframeRef}
+                sandbox="allow-same-origin"
+                className="w-full border-0 bg-white"
+                style={{ height: "680px" }}
+                title="Lebenslauf bearbeiten"
+              />
             </div>
           ) : (
             <div className="group flex flex-col items-center justify-center py-16 gap-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all">
@@ -895,12 +796,8 @@ export default function JobApplicationTab({
                 <User className="w-6 h-6 text-emerald-500" />
               </div>
               <div className="text-center px-6 max-w-xs space-y-1">
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Noch kein Lebenslauf
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  KI-optimiert auf Basis deines Profils und der Stellenanzeige.
-                </p>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Noch kein Lebenslauf</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">KI-optimiert auf Basis deines Profils und der Stellenanzeige.</p>
               </div>
               <button
                 onClick={() => handleRegenCv()}
@@ -915,21 +812,9 @@ export default function JobApplicationTab({
         </div>
       )}
     </div>
-
-    {editorOpen && (
-      <DocumentEditor
-        jobId={job.id}
-        kind={editorKind}
-        initialHtml={editorHtml}
-        apiBase={apiBase}
-        onClose={() => setEditorOpen(false)}
-      />
-    )}
-    </>
   );
 }
 
-// ── Spinner sub-component ──────────────────────────────────────────────────────
 function GeneratingSpinner({
   phases,
   phase,
@@ -957,12 +842,8 @@ function GeneratingSpinner({
         <span className="text-2xl">{phase.icon}</span>
       </div>
       <div className="text-center space-y-1">
-        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-          {phase.label}
-        </p>
-        <p className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">
-          {formatElapsed(elapsed)}
-        </p>
+        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{phase.label}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">{formatElapsed(elapsed)}</p>
       </div>
       <div className="flex gap-1.5">
         {phases.map((_, i) => (
