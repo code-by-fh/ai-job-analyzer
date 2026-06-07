@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from database.core import SessionLocal, User, CompanyProfile, CompanyAnalyzeRequest, DeepDiveRequest
 from core.auth import get_current_user
 from core.celery_config import celery_app
-from intelligence.service import generate_deep_dive, get_model, get_api_key
+from intelligence.service import generate_deep_dive, get_client_and_model
 
 router = APIRouter()
 
@@ -118,15 +118,14 @@ def deep_dive(
 ):
     db = SessionLocal()
     try:
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("deep_dive", db)
         result = generate_deep_dive(
             domain=domain,
             company_name=request.company_name,
             focus=request.focus,
             how_to_proceed=request.how_to_proceed,
             model=model,
-            api_key=api_key,
+            client=client,
             language=request.language,
         )
         return {"result": result}

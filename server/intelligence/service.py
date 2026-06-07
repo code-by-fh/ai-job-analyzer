@@ -53,7 +53,7 @@ def get_task_provider(task_name: str, db=None) -> str:
                 if task_name in routing:
                     return routing[task_name]
     except Exception as e:
-        logger.debug(f"get_task_provider fallback for '{task_name}': {e}")
+        logger.warning(f"get_task_provider fallback for '{task_name}': {e}")
     return TASK_DEFAULTS.get(task_name, "cloud")
 
 

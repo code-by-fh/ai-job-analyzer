@@ -47,20 +47,22 @@ def get_admin_settings(current_user: User = Depends(get_current_admin_user)):
     db = SessionLocal()
     try:
         settings = db.query(SystemSettings).first()
+        from intelligence.service import TASK_DEFAULTS as _ROUTING_DEFAULTS
         if not settings:
             return {
                 "openrouter_model": "tngtech/deepseek-r1t2-chimera:free",
                 "openrouter_api_key_set": False,
                 "ollama_model": "llama3.1:8b",
                 "ollama_base_url": "",
-                "ai_task_routing": {},
+                "ai_task_routing": dict(_ROUTING_DEFAULTS),
             }
+        effective_routing = {**_ROUTING_DEFAULTS, **(settings.ai_task_routing or {})}
         return {
             "openrouter_model": settings.openrouter_model,
             "openrouter_api_key_set": bool(settings.openrouter_api_key),
             "ollama_model": settings.ollama_model or "llama3.1:8b",
             "ollama_base_url": settings.ollama_base_url or "",
-            "ai_task_routing": settings.ai_task_routing or {},
+            "ai_task_routing": effective_routing,
         }
     finally:
         db.close()
