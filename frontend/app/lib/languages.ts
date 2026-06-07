@@ -546,7 +546,6 @@ export const translations = {
 
     // AI Task Routing
     aiTaskRouting: "AI Task Routing",
-    aiTaskRoutingDescription: "Configure which provider handles each AI task.",
     saveRouting: "Save Routing",
     providerCloud: "OpenRouter (Cloud)",
     providerLocal: "Local LLM",
@@ -1200,7 +1199,6 @@ export const translations = {
 
     // AI Task Routing
     aiTaskRouting: "KI-Aufgaben-Routing",
-    aiTaskRoutingDescription: "Konfiguriere, welcher Anbieter welche KI-Aufgabe übernimmt.",
     saveRouting: "Routing speichern",
     providerCloud: "OpenRouter (Cloud)",
     providerLocal: "Lokales Modell",

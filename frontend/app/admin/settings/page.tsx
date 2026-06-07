@@ -760,9 +760,6 @@ export default function AdminSettingsPage() {
                 {t("aiTaskRouting")}
               </h3>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-500 -mt-4">
-              {t("aiTaskRoutingDescription")}
-            </p>
 
             <div className="space-y-3">
               {(Object.keys(TASK_DEFAULTS) as string[]).map((key) => {
