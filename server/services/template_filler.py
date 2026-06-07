@@ -2,12 +2,6 @@
 
 from bs4 import BeautifulSoup, NavigableString
 
-_REQUIRED_SLOTS: dict[str, set[str]] = {
-    "CV": {"name", "role"},
-    "COVER_LETTER": {"body"},
-}
-
-
 def fill_template(template_html: str, data: dict) -> str:
     """Replace data-slot / data-repeat annotations with content from *data*."""
     soup = BeautifulSoup(template_html, "html.parser")
@@ -58,11 +52,5 @@ def validate_template(template_html: str, doc_type: str) -> str:
         for attr in list(tag.attrs):
             if attr.lower().startswith("on"):
                 del tag[attr]
-
-    required = _REQUIRED_SLOTS.get(doc_type.upper(), set())
-    found = {el["data-slot"] for el in soup.find_all(attrs={"data-slot": True})}
-    missing = required - found
-    if missing:
-        raise ValueError(f"Missing required slots for {doc_type}: {', '.join(sorted(missing))}")
 
     return str(soup)

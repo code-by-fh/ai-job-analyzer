@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, fetchWithAuth } from "../components/AuthProvider";
 import DynamicList from "./components/DynamicList";
+import DocumentTemplateGallery from "./components/DocumentTemplateGallery";
 import PageWrapper from "../components/PageWrapper";
 import PageHeader from "../components/PageHeader";
 import AutoResizeTextarea from "../components/AutoResizeTextarea";
@@ -92,7 +93,6 @@ export default function Profile() {
   const [coverLetterTemplate, setCoverLetterTemplate] = useState("classic");
   const [docsLoading, setDocsLoading] = useState(false);
   const [docTemplates, setDocTemplates] = useState<DocumentTemplate[]>([]);
-  const [uploadingTemplate, setUploadingTemplate] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -200,37 +200,6 @@ export default function Profile() {
     } catch (e: any) {
       logger.error({ err: e }, "Profile doc delete failed");
       showError("Löschen fehlgeschlagen");
-    }
-  };
-
-  const handleUploadTemplate = async (
-    file: File,
-    docType: "CV" | "COVER_LETTER"
-  ) => {
-    setUploadingTemplate(true);
-    try {
-      const html = await file.text();
-      const res = await fetchWithAuth(
-        `${process.env.NEXT_PUBLIC_API_URL}/document-templates`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            doc_type: docType,
-            name: file.name.replace(/\.html?$/, ""),
-            html,
-          }),
-        }
-      );
-      if (!res.ok) {
-        const err = await res.json();
-        showError(err.detail || "Upload fehlgeschlagen");
-        return;
-      }
-      const created: DocumentTemplate = await res.json();
-      setDocTemplates((prev) => [...prev, created]);
-    } finally {
-      setUploadingTemplate(false);
     }
   };
 
@@ -695,66 +664,22 @@ export default function Profile() {
       {activeTab === "documents" && (
         <div className="space-y-6">
           {/* Template Gallery */}
-          <div className="glass-card rounded-2xl p-6 space-y-6">
-            <h2 className="font-bold text-lg tracking-tight flex items-center gap-2">
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="font-bold text-lg tracking-tight flex items-center gap-2 mb-5">
               <LayoutTemplate className="w-5 h-5 text-indigo-500" />
               Dokument-Templates
             </h2>
-
-            {(["CV", "COVER_LETTER"] as const).map((docType) => {
-              const label = docType === "CV" ? "Lebenslauf" : "Anschreiben";
-              const currentVal = docType === "CV" ? cvTemplate : coverLetterTemplate;
-              const setter = docType === "CV" ? setCvTemplate : setCoverLetterTemplate;
-              const filtered = docTemplates.filter((tmpl) => tmpl.doc_type === docType);
-
-              return (
-                <div key={docType} className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    {label}
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {filtered.map((tmpl) => (
-                      <button
-                        key={tmpl.id}
-                        onClick={() => setter(String(tmpl.id))}
-                        className={`rounded-xl border-2 p-3 text-left transition-all active:scale-95 ${
-                          currentVal === String(tmpl.id)
-                            ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
-                            : "border-slate-200 dark:border-slate-800 hover:border-indigo-300"
-                        }`}
-                      >
-                        <div className="text-xs font-bold truncate">{tmpl.name}</div>
-                        {tmpl.is_admin && (
-                          <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">
-                            Standard
-                          </div>
-                        )}
-                      </button>
-                    ))}
-
-                    {/* Upload button */}
-                    <label
-                      className={`rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-3 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors ${
-                        uploadingTemplate ? "opacity-50 pointer-events-none" : ""
-                      }`}
-                    >
-                      <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
-                      <span className="text-xs text-slate-500">HTML hochladen</span>
-                      <input
-                        type="file"
-                        accept=".html,.htm"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleUploadTemplate(f, docType);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-              );
-            })}
+            <DocumentTemplateGallery
+              templates={docTemplates}
+              activeIds={{ CV: cvTemplate, COVER_LETTER: coverLetterTemplate }}
+              apiBase={process.env.NEXT_PUBLIC_API_URL!}
+              onTemplateAdded={(t) => setDocTemplates((prev) => [...prev, t])}
+              onTemplateDeleted={(id) => setDocTemplates((prev) => prev.filter((t) => t.id !== id))}
+              onActiveChanged={(docType, id) => {
+                if (docType === "CV") setCvTemplate(id);
+                else setCoverLetterTemplate(id);
+              }}
+            />
           </div>
 
           {/* Bewerbungsunterlagen */}

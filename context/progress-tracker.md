@@ -2,7 +2,7 @@
 
 ### 1. Current Status (As of 2026-06-05)
 
-**Phase:** Added spoken_languages field to user profile — stored in DB, included in AI job analysis and company research prompts, editable in frontend profile page.
+**Phase:** CV + Cover Letter Full Generation — All 7 tasks complete; PDF rendered from user-selected template, full profile passed to AI, improvement notes supported for both documents.
 
 > ⚠️ **Risk:** `routers/auth.py` and `routers/jobs.py` have 0% automated test coverage. These are the two most security-critical routers. Any change to auth or job logic is unverified until this is addressed.
 
@@ -13,6 +13,7 @@
 | **Auth & Admin** | ✅ Completed (`routers/auth.py`, `admin.py`) | JWT Login/Refresh/Logout via `tv` (Token-Version), Admin UI, split Cloud & Local AI Model Settings with separate forms and save buttons. |
 | **Job CRUD & Archive** | ✅ Completed (`routers/jobs.py`) | List/Filter, Notes, Bulk actions, History, Uploads. Matching threshold automatically archives new jobs with `match_score < threshold`. |
 | **AI Layer** | ✅ Completed (`intelligence/`) | Matching, Cover letters, Interview prep, Company profiles via OpenRouter. |
+| **AI Service Extension** | ✅ Completed (Task 2: `server/intelligence/service.py`) | `generate_application` and `generate_tailored_cv` now accept full profile data (name, location, skills, spoken_languages, preferences). Commit: 2e26913. |
 | **Platforms & Beat** | ✅ Completed & Tested (`routers/platforms.py`, `tests/test_platforms_router.py`) | CRUD, Intervals, Scheduler, Deferred setup wizard (URL-based), URL pattern inference (character-wise common prefix). 15 tests green. |
 | **Application Package** | ✅ Completed & Tested (`workers/tasks/package.py`, `routers/profile_documents.py`, `tests/test_profile_documents_router.py`) | One-click CV + Cover letter → PDF, Profile documents. |
 | **Template Editor** | ✅ Completed (`routers/templates.py`, `services/template_filler.py`, `services/document_renderer.py`) | DocumentTemplate CRUD; slot-filler; WeasyPrint via external render API; two-column in-browser editor. |
@@ -23,6 +24,8 @@
 | **Real-time Engine** | ✅ Completed (`routers/websocket.py`) | Cookie-authed `/ws`, Live-Updates via `useCrawl` / `CrawlStatus`. |
 | **Pipeline Panel** | ✅ Completed (`components/JobSidePanel/`, `hooks/useJobPanel.ts`, `app/jobs/[id]/page.tsx`) | JobSidePanel replaces JobDetailModal: 420px slide-in, PipelineTabs, StepCard-CTAs, URL sync `?job=<id>`, deep-link restore, full `/jobs/[id]` route. |
 | **Spoken Languages** | ✅ Completed (`database/core.py`, `routers/settings.py`, `workers/tasks/analyze.py`, `workers/tasks/research.py`, `frontend/app/profile/page.tsx`) | `spoken_languages` JSON column in `user_settings`; migration `k3c4d5e6f7a8`; comma-sep input in profile Target tab; sent to AI in job analysis and company research prompts. |
+| **CV Improvement Notes UI** | ✅ Completed (Task 7: `frontend/app/components/JobCard/JobApplicationTab.tsx`) | Toggle button → textarea panel for CV regen notes; mirrors Anschreiben pattern; notes sent as `cv_notes` in generate-package request. Commit: 8c9b535. |
+| **CV + Cover Letter Full Generation** | ✅ Completed (`server/intelligence/prompts.py`, `service.py`, `workers/tasks/application.py`, `workers/tasks/package.py`, `routers/jobs.py`, `frontend/.../JobApplicationTab.tsx`) | Full profile fields sent to AI; both documents rendered from user-selected template via WeasyPrint with OSError fallback; GENERATED_LETTER stored as JobDocument; letter PDF shown in iframe; CV notes passed through API; 11 commits: 1607e77–ec21350. |
 
 ### 3. Next Up & Backlog
 

@@ -206,6 +206,29 @@ def save_settings(
     return {"status": "saved"}
 
 
+class TemplateSelectionData(BaseModel):
+    cv_template: Optional[str] = None
+    cover_letter_template: Optional[str] = None
+
+
+@router.patch("/settings/template")
+def save_template_selection(
+    body: TemplateSelectionData,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+    if body.cv_template is not None:
+        profile.cv_template = body.cv_template
+    if body.cover_letter_template is not None:
+        profile.cover_letter_template = body.cover_letter_template
+    db.commit()
+    return {"status": "saved"}
+
+
 @router.delete("/settings")
 def delete_settings(
     current_user: User = Depends(get_current_user),

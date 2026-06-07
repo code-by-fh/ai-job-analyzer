@@ -81,10 +81,7 @@ def create_document_template(
     if body.doc_type.upper() not in ("CV", "COVER_LETTER"):
         raise HTTPException(status_code=400, detail="doc_type must be CV or COVER_LETTER")
 
-    try:
-        sanitised_html = validate_template(body.html, body.doc_type)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    sanitised_html = validate_template(body.html, body.doc_type)
 
     is_admin = body.is_admin and current_user.is_admin
     db = SessionLocal()
@@ -124,10 +121,7 @@ def update_document_template(
         if body.name is not None:
             t.name = body.name
         if body.html is not None:
-            try:
-                t.html = validate_template(body.html, t.doc_type)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc))
+            t.html = validate_template(body.html, t.doc_type)
         db.commit()
         db.refresh(t)
         return _to_dict(t)
