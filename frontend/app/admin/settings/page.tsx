@@ -30,6 +30,28 @@ interface OpenRouterModel {
   };
 }
 
+const TASK_LABELS: Record<string, string> = {
+  job_analysis: "Job-Analyse",
+  cover_letter: "Anschreiben generieren",
+  cv_tailoring: "CV-Tailoring",
+  interview_prep: "Interview-Vorbereitung",
+  company_profile: "Firmenprofil",
+  deep_dive: "Deep-Dive-Analyse",
+  extract_job_details: "Job-Details extrahieren",
+  platform_name: "Platform-Name generieren",
+};
+
+const TASK_DEFAULTS: Record<string, string> = {
+  job_analysis: "cloud",
+  cover_letter: "cloud",
+  cv_tailoring: "local",
+  interview_prep: "cloud",
+  company_profile: "cloud",
+  deep_dive: "cloud",
+  extract_job_details: "cloud",
+  platform_name: "cloud",
+};
+
 export default function AdminSettingsPage() {
   const { user, token, isAuthenticated } = useAuth();
   const { t } = useLanguage();
@@ -65,6 +87,9 @@ export default function AdminSettingsPage() {
   const [orTestLoading, setOrTestLoading] = useState(false);
   const [ollamaTestStatus, setOllamaTestStatus] = useState("");
   const [ollamaTestLoading, setOllamaTestLoading] = useState(false);
+
+  const [taskRouting, setTaskRouting] = useState<Record<string, string>>({});
+  const [statusRouting, setStatusRouting] = useState("");
 
   const handleTestOpenRouter = async () => {
     setOrTestLoading(true);
@@ -218,6 +243,7 @@ export default function AdminSettingsPage() {
         setApiKeySet(data.openrouter_api_key_set ?? false);
         setOllamaModel(data.ollama_model || "llama3.1:8b");
         setOllamaBaseUrl(data.ollama_base_url || "");
+        setTaskRouting(data.ai_task_routing || {});
       }
     } catch (e) {
       logger.error({ err: e }, "Fetch settings failed");
@@ -310,6 +336,29 @@ export default function AdminSettingsPage() {
       setStatusOllama("Error saving settings");
     }
     setTimeout(() => setStatusOllama(""), 3000);
+  };
+
+  const handleSaveRouting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusRouting("Saving...");
+    try {
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/settings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ai_task_routing: taskRouting }),
+        },
+      );
+      if (res.ok) {
+        setStatusRouting("Saved successfully!");
+      } else {
+        setStatusRouting("Error saving routing");
+      }
+    } catch {
+      setStatusRouting("Error saving routing");
+    }
+    setTimeout(() => setStatusRouting(""), 3000);
   };
 
   const filteredModels = models.filter((m) => {
@@ -687,6 +736,60 @@ export default function AdminSettingsPage() {
                   className={`text-sm font-bold ${statusOllama.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
                 >
                   {statusOllama}
+                </span>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* AI Task Routing */}
+        <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <form onSubmit={handleSaveRouting} className="space-y-6">
+            <div className="flex items-center gap-2 mb-1">
+              <Bot className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                AI Task Routing
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-500 -mt-4">
+              Configure which provider handles each AI task.
+            </p>
+
+            <div className="space-y-3">
+              {Object.entries(TASK_LABELS).map(([key, label]) => {
+                const value = taskRouting[key] ?? TASK_DEFAULTS[key];
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0 truncate">
+                      {label}
+                    </span>
+                    <select
+                      value={value}
+                      onChange={(e) =>
+                        setTaskRouting((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                      className="shrink-0 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer"
+                    >
+                      <option value="cloud">OpenRouter (Cloud)</option>
+                      <option value="local">Local LLM</option>
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="submit"
+                className="bg-amber-500 hover:bg-amber-400 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer"
+              >
+                Save Routing
+              </button>
+              {statusRouting && (
+                <span
+                  className={`text-sm font-bold ${statusRouting.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
+                >
+                  {statusRouting}
                 </span>
               )}
             </div>
