@@ -52,12 +52,12 @@ def get_task_provider(task_name: str, db=None) -> str:
                 routing = settings.ai_task_routing
                 if task_name in routing:
                     return routing[task_name]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"get_task_provider fallback for '{task_name}': {e}")
     return TASK_DEFAULTS.get(task_name, "cloud")
 
 
-def get_client_and_model(task_name: str, db=None):
+def get_client_and_model(task_name: str, db=None) -> tuple:
     """Return (client, model) for the given task based on routing config."""
     provider = get_task_provider(task_name, db)
     if provider == "local":
