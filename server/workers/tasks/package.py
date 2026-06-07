@@ -1,8 +1,9 @@
-"""Celery task: generate the full application package for a job (sequential)."""
+"""Celery task: generate the full application package for a job."""
 
 import os
 import json
 import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import redis
 
@@ -14,6 +15,8 @@ from intelligence.service import (
     format_cv_for_prompt,
     generate_tailored_cv,
     generate_application,
+    fill_html_cv_with_ai,
+    tailor_master_cv_for_job,
 )
 from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
 from services.job_documents import store_generated_document
@@ -24,6 +27,149 @@ from database.core import DocumentTemplate
 logger = get_logger(__name__)
 
 _ATTACH_KIND = {"REFERENCE": "ATTACHED_REFERENCE", "CERTIFICATE": "ATTACHED_CERT"}
+
+
+def _build_cv(
+    cv_data_raw: dict,
+    cv_template_html: str | None,
+    cv_template_key: str | None,
+    candidate_name: str,
+    role: str,
+    skills: str,
+    location: str,
+    spoken_languages: list,
+    job_title: str,
+    job_description: str,
+    language: str,
+    cv_client,
+    cv_model: str,
+    cv_notes: str = "",
+    is_master_cv: bool = False,
+) -> tuple[str, bytes, dict]:
+    """Return (cv_html, cv_pdf_bytes, cv_data). Pure computation — no DB writes."""
+    if cv_template_html:
+        cv_data = dict(cv_data_raw or {})
+        cv_data.setdefault("experience", [])
+        cv_data.setdefault("projects", [])
+        cv_data.setdefault("education", "")
+        cv_data["name"] = candidate_name
+        cv_data["role"] = role
+        cv_data["skills"] = skills
+        cv_data["location"] = location
+        if spoken_languages:
+            cv_data["spoken_languages"] = spoken_languages
+
+        if is_master_cv:
+            # Master CV is already filled — tailor it for this specific job
+            cv_html = tailor_master_cv_for_job(
+                master_cv_html=cv_template_html,
+                job_title=job_title,
+                job_description=job_description[:6000],
+                language=language,
+                cv_notes=cv_notes,
+                model=cv_model,
+                client=cv_client,
+            )
+        else:
+            # Blank DocumentTemplate → AI fills with profile data + job context
+            cv_html = fill_html_cv_with_ai(
+                cv_template_html, cv_data, language,
+                job_title=job_title,
+                job_description=job_description[:6000],
+                cv_notes=cv_notes,
+                model=cv_model, client=cv_client,
+            )
+    else:
+        # No template → JSON tailoring + Jinja2 classic renderer
+        cv_data = generate_tailored_cv(
+            cv_data=cv_data_raw,
+            job_title=job_title,
+            job_description=job_description[:10000],
+            candidate_name=candidate_name,
+            candidate_role=role,
+            language=language,
+            model=cv_model,
+            skills=skills,
+            spoken_languages=spoken_languages,
+            location=location,
+            client=cv_client,
+        )
+        cv_html = render_cv_html(cv_data, template_key=cv_template_key or "classic")
+
+    try:
+        cv_pdf = html_to_pdf(cv_html)
+    except OSError as e:
+        logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
+        cv_pdf = render_cv_pdf(cv_data, template_key="classic")
+    return cv_html, cv_pdf, cv_data
+
+
+def _build_letter(
+    cv_data_raw: dict,
+    letter_template_html: str | None,
+    letter_template_key: str | None,
+    candidate_name: str,
+    role: str,
+    skills: str,
+    location: str,
+    spoken_languages: list,
+    preferences: str,
+    job_title: str,
+    job_company: str,
+    job_description: str,
+    language: str,
+    letter_client,
+    letter_model: str,
+) -> tuple[str, str, bytes]:
+    """Return (letter_text, letter_html, letter_pdf_bytes). Runs AI + render, no DB writes."""
+    letter_text = generate_application(
+        job_title=job_title,
+        job_company=job_company,
+        job_description=job_description[:10000],
+        profile_role=role,
+        cv_text=format_cv_for_prompt(cv_data_raw),
+        user_language=language,
+        model=letter_model,
+        client=letter_client,
+        candidate_name=candidate_name,
+        candidate_location=location,
+        candidate_skills=skills,
+        candidate_languages=spoken_languages,
+        candidate_preferences=preferences,
+    )
+    if letter_template_html:
+        letter_data = {
+            "sender_name": candidate_name,
+            "company": job_company or "",
+            "body": letter_text,
+            "location": location,
+            "date": datetime.date.today().strftime("%d.%m.%Y"),
+            "role": role,
+            "skills": skills,
+        }
+        letter_html = fill_template(letter_template_html, letter_data)
+        try:
+            letter_pdf = html_to_pdf(letter_html)
+        except OSError as e:
+            logger.warning(f"html_to_pdf failed for cover letter, falling back: {e}")
+            letter_pdf = render_cover_letter_pdf(
+                letter_markdown=letter_text, template_key="classic",
+                sender_name=candidate_name, company=job_company or "",
+            )
+    else:
+        letter_html = render_cover_letter_html(
+            letter_markdown=letter_text,
+            template_key=letter_template_key or "classic",
+            sender_name=candidate_name,
+            company=job_company or "",
+        )
+        letter_pdf = render_cover_letter_pdf(
+            letter_markdown=letter_text,
+            template_key=letter_template_key or "classic",
+            sender_name=candidate_name,
+            company=job_company or "",
+        )
+    return letter_text, letter_html, letter_pdf
 
 
 def _publish(r, job, status, **extra):
@@ -81,92 +227,59 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         language = getattr(profile, "language", "de") or "de"
         storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
 
-        # --- 1. AI-completed CV → template → PDF ---
+        # --- 1+2. CV and cover letter — generated in parallel ---
         cv_client, cv_model = get_client_and_model("cv_tailoring", db)
-        cv_data = generate_tailored_cv(
-            cv_data=profile.cv_data,
-            job_title=job.title,
-            job_description=(job.description or "")[:10000],
-            candidate_name=candidate_name,
-            candidate_role=profile.role,
-            language=language,
-            model=cv_model,
-            db=db,
-            skills=profile.skills or "",
-            spoken_languages=profile.spoken_languages or [],
-            location=profile.location or "",
-            client=cv_client,
-        )
-        cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
-        if cv_template_html:
-            job.cv_html = fill_template(cv_template_html, cv_data)
-            try:
-                cv_pdf = html_to_pdf(job.cv_html)
-            except OSError as e:
-                logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
-                cv_pdf = render_cv_pdf(cv_data, template_key="classic")
+        letter_client, letter_model = get_client_and_model("cover_letter", db)
+
+        is_master_cv = False
+        if profile.master_cv_template_id:
+            master_t = db.query(DocumentTemplate).filter(
+                DocumentTemplate.id == profile.master_cv_template_id,
+                DocumentTemplate.doc_type == "MASTER_CV",
+            ).first()
+            if master_t:
+                cv_template_html = master_t.html
+                is_master_cv = True
+            else:
+                cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
         else:
-            job.cv_html = render_cv_html(cv_data, template_key=profile.cv_template or "classic")
-            cv_pdf = render_cv_pdf(cv_data, template_key=profile.cv_template or "classic")
+            cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
+        cv_notes = getattr(job, "cv_draft", "") or ""
+
+        letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cv_future = pool.submit(
+                _build_cv,
+                profile.cv_data, cv_template_html, profile.cv_template,
+                candidate_name, profile.role or "", profile.skills or "",
+                profile.location or "", profile.spoken_languages or [],
+                job.title or "", job.description or "", language,
+                cv_client, cv_model,
+                cv_notes,
+                is_master_cv,
+            )
+            letter_future = pool.submit(
+                _build_letter,
+                profile.cv_data, letter_template_html, profile.cover_letter_template,
+                candidate_name, profile.role or "", profile.skills or "",
+                profile.location or "", profile.spoken_languages or [],
+                profile.preferences or "",
+                job.title or "", job.company or "", job.description or "",
+                language, letter_client, letter_model,
+            )
+            cv_html, cv_pdf, cv_data = cv_future.result()
+            letter_text, letter_html, letter_pdf = letter_future.result()
+
+        job.cv_html = cv_html
+        job.application_draft = letter_text
+        job.cover_letter_html = letter_html
+
         store_generated_document(
             db, job.id, target_user_id, cv_pdf,
             original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
             mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
         )
-
-        # --- 2. Cover letter ---
-        letter_client, letter_model = get_client_and_model("cover_letter", db)
-        letter_text = generate_application(
-            job_title=job.title,
-            job_company=job.company,
-            job_description=(job.description or "")[:10000],
-            profile_role=profile.role,
-            cv_text=format_cv_for_prompt(profile.cv_data),
-            user_language=language,
-            model=letter_model,
-            client=letter_client,
-            candidate_name=candidate_name,
-            candidate_location=profile.location or "",
-            candidate_skills=profile.skills or "",
-            candidate_languages=profile.spoken_languages or [],
-            candidate_preferences=profile.preferences or "",
-        )
-        job.application_draft = letter_text
-        letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
-        if letter_template_html:
-            letter_data = {
-                "sender_name": candidate_name,
-                "company": job.company or "",
-                "body": letter_text,
-                "location": profile.location or "",
-                "date": datetime.date.today().strftime("%d.%m.%Y"),
-                "role": profile.role or "",
-                "skills": profile.skills or "",
-            }
-            job.cover_letter_html = fill_template(letter_template_html, letter_data)
-            try:
-                letter_pdf = html_to_pdf(job.cover_letter_html)
-            except OSError as e:
-                logger.warning(f"html_to_pdf failed for cover letter, falling back to classic renderer: {e}")
-                letter_pdf = render_cover_letter_pdf(
-                    letter_markdown=job.application_draft,
-                    template_key="classic",
-                    sender_name=candidate_name,
-                    company=job.company or "",
-                )
-        else:
-            job.cover_letter_html = render_cover_letter_html(
-                letter_markdown=letter_text,
-                template_key=profile.cover_letter_template or "classic",
-                sender_name=candidate_name,
-                company=job.company or "",
-            )
-            letter_pdf = render_cover_letter_pdf(
-                letter_markdown=letter_text,
-                template_key=profile.cover_letter_template or "classic",
-                sender_name=candidate_name,
-                company=job.company or "",
-            )
         store_generated_document(
             db, job.id, target_user_id, letter_pdf,
             original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
