@@ -544,6 +544,23 @@ export const translations = {
     jobsDeletedCount: "{count} jobs deleted.",
     failed: "Failed",
 
+    // AI Task Routing
+    aiTaskRouting: "AI Task Routing",
+    aiTaskRoutingDescription: "Configure which provider handles each AI task.",
+    saveRouting: "Save Routing",
+    providerCloud: "OpenRouter (Cloud)",
+    providerLocal: "Local LLM",
+    savedSuccessfully: "Saved successfully!",
+    errorSavingRouting: "Error saving routing",
+    taskJobAnalysis: "Job Analysis",
+    taskCoverLetter: "Cover Letter",
+    taskCvTailoring: "CV Tailoring",
+    taskInterviewPrep: "Interview Prep",
+    taskCompanyProfile: "Company Profile",
+    taskDeepDive: "Deep Dive Analysis",
+    taskExtractJobDetails: "Extract Job Details",
+    taskPlatformName: "Platform Name",
+
     // Admin Pages
     adminSettingsDescription:
       "Global system configuration and maintenance tools.",
@@ -1180,6 +1197,23 @@ export const translations = {
       "Diese Aktionen sind endgültig und können nicht rückgängig gemacht werden.",
     jobsDeletedCount: "{count} Jobs gelöscht.",
     failed: "Fehlgeschlagen",
+
+    // AI Task Routing
+    aiTaskRouting: "KI-Aufgaben-Routing",
+    aiTaskRoutingDescription: "Konfiguriere, welcher Anbieter welche KI-Aufgabe übernimmt.",
+    saveRouting: "Routing speichern",
+    providerCloud: "OpenRouter (Cloud)",
+    providerLocal: "Lokales Modell",
+    savedSuccessfully: "Erfolgreich gespeichert!",
+    errorSavingRouting: "Fehler beim Speichern des Routings",
+    taskJobAnalysis: "Job-Analyse",
+    taskCoverLetter: "Anschreiben",
+    taskCvTailoring: "CV-Tailoring",
+    taskInterviewPrep: "Interview-Vorbereitung",
+    taskCompanyProfile: "Firmenprofil",
+    taskDeepDive: "Deep-Dive-Analyse",
+    taskExtractJobDetails: "Job-Details extrahieren",
+    taskPlatformName: "Platform-Name",
 
     // Admin Pages
     adminSettingsDescription:

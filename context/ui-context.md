@@ -55,6 +55,19 @@
 
 ---
 
+### 7. Internationalisation (i18n) — MANDATORY
+
+**All UI strings must go through the translation system. Hardcoded text is never allowed.**
+
+- Hook: `const { t } = useLanguage();` — import from `@/app/lib/useLanguage`
+- Keys are defined in `frontend/app/lib/languages.ts` under both `en` and `de` objects
+- Type: `TranslationKey = keyof typeof translations.en` — TypeScript will error on missing keys
+- Add the EN string first, then the DE string immediately after, keeping both objects in sync
+- Naming convention: camelCase, descriptive — e.g., `aiTaskRouting`, `providerCloud`, `saveRouting`
+- **No exceptions:** labels, button text, status messages, placeholders, headings, descriptions — all go through `t()`
+
+---
+
 ## 🚨 UI Implementation Checklist
 
 - [ ] Every surface and text class has a `dark:` counterpart.
@@ -62,3 +75,4 @@
 - [ ] Modals are strictly rendered via `<Portal>` (clicking on backdrop closes the modal).
 - [ ] No hardcoded, static hex colors (e.g., `#ffffff`) used in the code.
 - [ ] Responsive behavior verified (`md` breakpoint collapses sidebar to bottom navigation).
+- [ ] **All UI strings use `t()` from `useLanguage()` — no hardcoded text anywhere.**

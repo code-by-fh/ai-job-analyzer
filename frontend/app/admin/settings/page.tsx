@@ -30,17 +30,6 @@ interface OpenRouterModel {
   };
 }
 
-const TASK_LABELS: Record<string, string> = {
-  job_analysis: "Job-Analyse",
-  cover_letter: "Anschreiben generieren",
-  cv_tailoring: "CV-Tailoring",
-  interview_prep: "Interview-Vorbereitung",
-  company_profile: "Firmenprofil",
-  deep_dive: "Deep-Dive-Analyse",
-  extract_job_details: "Job-Details extrahieren",
-  platform_name: "Platform-Name generieren",
-};
-
 const TASK_DEFAULTS: Record<string, string> = {
   job_analysis: "cloud",
   cover_letter: "cloud",
@@ -90,6 +79,7 @@ export default function AdminSettingsPage() {
 
   const [taskRouting, setTaskRouting] = useState<Record<string, string>>({});
   const [statusRouting, setStatusRouting] = useState("");
+  const [routingStatusIsError, setRoutingStatusIsError] = useState(false);
 
   const handleTestOpenRouter = async () => {
     setOrTestLoading(true);
@@ -328,7 +318,8 @@ export default function AdminSettingsPage() {
         const data = await res.json();
         setStatusOllama("Saved successfully!");
         if (data.ollama_model) setOllamaModel(data.ollama_model);
-        if (data.ollama_base_url !== undefined) setOllamaBaseUrl(data.ollama_base_url);
+        if (data.ollama_base_url !== undefined)
+          setOllamaBaseUrl(data.ollama_base_url);
       } else {
         setStatusOllama("Error saving settings");
       }
@@ -340,7 +331,8 @@ export default function AdminSettingsPage() {
 
   const handleSaveRouting = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatusRouting("Saving...");
+    setStatusRouting(t("saving"));
+    setRoutingStatusIsError(false);
     try {
       const res = await fetchWithAuth(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/settings`,
@@ -351,14 +343,16 @@ export default function AdminSettingsPage() {
         },
       );
       if (res.ok) {
-        setStatusRouting("Saved successfully!");
+        setStatusRouting(t("savedSuccessfully"));
       } else {
-        setStatusRouting("Error saving routing");
+        setStatusRouting(t("errorSavingRouting"));
+        setRoutingStatusIsError(true);
       }
     } catch {
-      setStatusRouting("Error saving routing");
+      setStatusRouting(t("errorSavingRouting"));
+      setRoutingStatusIsError(true);
     }
-    setTimeout(() => setStatusRouting(""), 3000);
+    setTimeout(() => { setStatusRouting(""); setRoutingStatusIsError(false); }, 3000);
   };
 
   const filteredModels = models.filter((m) => {
@@ -442,8 +436,8 @@ export default function AdminSettingsPage() {
                   <ExternalLink className="w-3 h-3" />
                 </a>
                 {". "}
-                If set, this overrides the server environment variable for all AI
-                operations.
+                If set, this overrides the server environment variable for all
+                AI operations.
                 {apiKeySet && (
                   <button
                     type="button"
@@ -463,11 +457,15 @@ export default function AdminSettingsPage() {
                 disabled={orTestLoading || !apiKeySet}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <RefreshCw className={`w-3 h-3 ${orTestLoading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`w-3 h-3 ${orTestLoading ? "animate-spin" : ""}`}
+                />
                 Test connection
               </button>
               {orTestStatus && (
-                <span className={`text-xs font-medium ${orTestStatus.startsWith("Error") || orTestStatus.startsWith("Network") ? "text-rose-500" : "text-emerald-500"}`}>
+                <span
+                  className={`text-xs font-medium ${orTestStatus.startsWith("Error") || orTestStatus.startsWith("Network") ? "text-rose-500" : "text-emerald-500"}`}
+                >
                   {orTestStatus}
                 </span>
               )}
@@ -684,10 +682,15 @@ export default function AdminSettingsPage() {
                   className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 font-mono text-sm"
                   value={ollamaBaseUrl}
                   onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                  placeholder="http://localhost:11434/v1"
+                  placeholder="http://localhost:11434"
                 />
                 <p className="text-xs text-slate-500 dark:text-slate-500">
-                  OpenAI-compatible endpoint of your local LM Studio or Ollama server. Leave blank to use the default (<code className="text-violet-500">http://localhost:11434/v1</code>).
+                  OpenAI-compatible endpoint of your local LM Studio or Ollama
+                  server. Leave blank to use the default (
+                  <code className="text-violet-500">
+                    http://localhost:11434
+                  </code>
+                  ).
                 </p>
               </div>
               <div className="space-y-2">
@@ -702,7 +705,9 @@ export default function AdminSettingsPage() {
                   placeholder="llama3.1:8b"
                 />
                 <p className="text-xs text-slate-500 dark:text-slate-500">
-                  Model identifier as shown in LM Studio or by <code className="text-violet-500">ollama list</code>. Used for CV tailoring.
+                  Model identifier as shown in LM Studio or by{" "}
+                  <code className="text-violet-500">ollama list</code>. Used for
+                  CV tailoring.
                 </p>
               </div>
             </div>
@@ -714,11 +719,15 @@ export default function AdminSettingsPage() {
                 disabled={ollamaTestLoading}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <RefreshCw className={`w-3 h-3 ${ollamaTestLoading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`w-3 h-3 ${ollamaTestLoading ? "animate-spin" : ""}`}
+                />
                 Test connection
               </button>
               {ollamaTestStatus && (
-                <span className={`text-xs font-medium ${ollamaTestStatus.startsWith("Error") || ollamaTestStatus.startsWith("Network") ? "text-rose-500" : ollamaTestStatus.includes("not found") ? "text-amber-500" : "text-emerald-500"}`}>
+                <span
+                  className={`text-xs font-medium ${ollamaTestStatus.startsWith("Error") || ollamaTestStatus.startsWith("Network") ? "text-rose-500" : ollamaTestStatus.includes("not found") ? "text-amber-500" : "text-emerald-500"}`}
+                >
                   {ollamaTestStatus}
                 </span>
               )}
@@ -748,30 +757,39 @@ export default function AdminSettingsPage() {
             <div className="flex items-center gap-2 mb-1">
               <Bot className="w-4 h-4 text-amber-500" />
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                AI Task Routing
+                {t("aiTaskRouting")}
               </h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-500 -mt-4">
-              Configure which provider handles each AI task.
+              {t("aiTaskRoutingDescription")}
             </p>
 
             <div className="space-y-3">
-              {Object.entries(TASK_LABELS).map(([key, label]) => {
+              {(Object.keys(TASK_DEFAULTS) as string[]).map((key) => {
+                const label = t(
+                  `task${key.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join("")}` as Parameters<typeof t>[0]
+                );
                 const value = taskRouting[key] ?? TASK_DEFAULTS[key];
                 return (
-                  <div key={key} className="flex items-center justify-between gap-4">
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-4"
+                  >
                     <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0 truncate">
                       {label}
                     </span>
                     <select
                       value={value}
                       onChange={(e) =>
-                        setTaskRouting((prev) => ({ ...prev, [key]: e.target.value }))
+                        setTaskRouting((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }))
                       }
                       className="shrink-0 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700/50 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer"
                     >
-                      <option value="cloud">OpenRouter (Cloud)</option>
-                      <option value="local">Local LLM</option>
+                      <option value="cloud">{t("providerCloud")}</option>
+                      <option value="local">{t("providerLocal")}</option>
                     </select>
                   </div>
                 );
@@ -783,11 +801,11 @@ export default function AdminSettingsPage() {
                 type="submit"
                 className="bg-amber-500 hover:bg-amber-400 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer"
               >
-                Save Routing
+                {t("saveRouting")}
               </button>
               {statusRouting && (
                 <span
-                  className={`text-sm font-bold ${statusRouting.includes("Error") ? "text-rose-500" : "text-emerald-500"}`}
+                  className={`text-sm font-bold ${routingStatusIsError ? "text-rose-500" : "text-emerald-500"}`}
                 >
                   {statusRouting}
                 </span>
