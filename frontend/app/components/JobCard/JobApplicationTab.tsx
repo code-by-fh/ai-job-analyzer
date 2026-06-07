@@ -59,6 +59,9 @@ const CV_PHASES = [
   { label: "PDF erstellen…", icon: "📄" },
 ];
 
+const RENDER_PHASE = { label: "PDF wird erstellt…", icon: "📄" };
+const RENDER_PHASES = [RENDER_PHASE];
+
 function serializeIframeHtml(iframe: HTMLIFrameElement): string {
   const doc = iframe.contentDocument;
   if (!doc) return "";
@@ -632,7 +635,14 @@ export default function JobApplicationTab({
             </div>
           )}
 
-          {isLetterGenerating ? (
+          {letterHtmlSaving ? (
+            <GeneratingSpinner
+              phases={RENDER_PHASES}
+              phase={RENDER_PHASE}
+              elapsed={0}
+              phaseIndex={0}
+            />
+          ) : isLetterGenerating ? (
             <GeneratingSpinner
               phases={GENERATION_PHASES}
               phase={phase}
@@ -758,7 +768,15 @@ export default function JobApplicationTab({
             </div>
           </div>
 
-          {cvGenerating ? (
+          {cvHtmlSaving ? (
+            <GeneratingSpinner
+              phases={RENDER_PHASES}
+              phase={RENDER_PHASE}
+              elapsed={0}
+              phaseIndex={0}
+              accentClass="emerald"
+            />
+          ) : cvGenerating ? (
             <GeneratingSpinner
               phases={CV_PHASES}
               phase={cvPhase}
