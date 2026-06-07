@@ -116,6 +116,10 @@ class UserProfile(Base):
     google_drive_refresh_token = Column(String, nullable=True)
     google_drive_email = Column(String, nullable=True)
 
+    # Master CV
+    master_cv_template_id = Column(Integer, ForeignKey("document_templates.id"), nullable=True)
+    master_cv_status = Column(String, nullable=True)  # None | "processing" | "ready" | "error"
+
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -296,6 +300,8 @@ class SettingsData(BaseModel):
     cover_letter_template: Optional[str] = None
     active_storage_service: str = "NONE"
     google_drive_email: Optional[str] = None
+    master_cv_template_id: Optional[int] = None
+    master_cv_status: Optional[str] = None
 
 
 class NotificationSettingsData(BaseModel):
