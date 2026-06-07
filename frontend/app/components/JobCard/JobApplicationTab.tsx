@@ -340,6 +340,7 @@ export default function JobApplicationTab({
     const html = serializeIframeHtml(iframe);
     setLetterHtmlSaving(true);
     setLetterSaveStatus("idle");
+    const prevUploadedAt = letterDoc?.uploaded_at ?? null;
     try {
       const putRes = await fetchWithAuth(
         `${apiBase}/jobs/${job.id}/documents/html?kind=cover_letter`,
@@ -354,6 +355,16 @@ export default function JobApplicationTab({
         `${apiBase}/jobs/${job.id}/documents/render?kind=cover_letter`,
         { method: "POST" }
       );
+      // Poll until the render task completes (uploaded_at changes)
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const docRes = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
+        if (docRes.ok) {
+          const docs: JobDocument[] = await docRes.json();
+          const doc = docs.find((d) => d.kind === "GENERATED_LETTER") ?? null;
+          if (doc && doc.uploaded_at !== prevUploadedAt) break;
+        }
+      }
       setLetterSaveStatus("saved");
       setTimeout(() => setLetterSaveStatus("idle"), 3000);
       setLetterEditMode(false);
@@ -363,7 +374,7 @@ export default function JobApplicationTab({
     } finally {
       setLetterHtmlSaving(false);
     }
-  }, [apiBase, job.id, letterHtmlSaving, loadLetterContent]);
+  }, [apiBase, job.id, letterHtmlSaving, letterDoc, loadLetterContent]);
 
   const handleCvSave = useCallback(async () => {
     const iframe = cvIframeRef.current;
@@ -371,6 +382,7 @@ export default function JobApplicationTab({
     const html = serializeIframeHtml(iframe);
     setCvHtmlSaving(true);
     setCvSaveStatus("idle");
+    const prevUploadedAt = cvDoc?.uploaded_at ?? null;
     try {
       const putRes = await fetchWithAuth(
         `${apiBase}/jobs/${job.id}/documents/html?kind=cv`,
@@ -385,6 +397,16 @@ export default function JobApplicationTab({
         `${apiBase}/jobs/${job.id}/documents/render?kind=cv`,
         { method: "POST" }
       );
+      // Poll until the render task completes (uploaded_at changes)
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const docRes = await fetchWithAuth(`${apiBase}/jobs/${job.id}/documents`);
+        if (docRes.ok) {
+          const docs: JobDocument[] = await docRes.json();
+          const doc = docs.find((d) => d.kind === "GENERATED_CV") ?? null;
+          if (doc && doc.uploaded_at !== prevUploadedAt) break;
+        }
+      }
       setCvSaveStatus("saved");
       setTimeout(() => setCvSaveStatus("idle"), 3000);
       setCvEditMode(false);
@@ -394,7 +416,7 @@ export default function JobApplicationTab({
     } finally {
       setCvHtmlSaving(false);
     }
-  }, [apiBase, job.id, cvHtmlSaving, loadCvContent]);
+  }, [apiBase, job.id, cvHtmlSaving, cvDoc, loadCvContent]);
 
   // ── Generate / regen ──────────────────────────────────────────────────────
   const handleRegenerate = async () => {
