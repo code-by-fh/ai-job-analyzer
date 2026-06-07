@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import redis
 
 from core.scraper_celery_config import celery_app, REDIS_URL
-from intelligence.service import extract_job_details, get_model, get_api_key
+from intelligence.service import extract_job_details, get_client_and_model
 from database.core import SessionLocal, UserProfile, JobEntry
 from services import render_client
 
@@ -507,8 +507,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
             profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
         user_language = getattr(profile, "language", "de") if profile else "de"
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("extract_job_details", db)
 
         if job_id:
             extracting_count = int(
@@ -536,7 +535,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
 
         logger.info(f"Extracting job details intelligently for {url}...")
         intelligent_content = extract_job_details(
-            content, model=model, api_key=api_key, language=user_language
+            content, model=model, client=client, language=user_language
         )
 
         # Use intelligent_content as the new description, truncated to 4000 characters
