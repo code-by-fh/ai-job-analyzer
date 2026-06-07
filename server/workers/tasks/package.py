@@ -169,7 +169,7 @@ def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str |
 
 
 @celery_app.task(name="ai.generate_application_package")
-def generate_application_package_task(job_id, user_id=None, include_profile_documents=True):
+def generate_application_package_task(job_id, user_id=None, include_profile_documents=True, generate_cv=True, generate_letter=True):
     logger.info(f"[TASK] Generating application package for Job {job_id}, User {user_id}")
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
@@ -209,42 +209,45 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
 
         letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
 
+        futures = {}
         with ThreadPoolExecutor(max_workers=2) as pool:
-            cv_future = pool.submit(
-                _build_cv,
-                profile.cv_data, cv_template_html, profile.cv_template,
-                candidate_name, profile.role or "", profile.skills or "",
-                profile.location or "", profile.spoken_languages or [],
-                job.title or "", job.description or "", language,
-                cv_client, cv_model,
-                cv_notes,
-            )
-            letter_future = pool.submit(
-                _build_letter,
-                profile.cv_data, letter_template_html, profile.cover_letter_template,
-                candidate_name, profile.role or "", profile.skills or "",
-                profile.location or "", profile.spoken_languages or [],
-                profile.preferences or "",
-                job.title or "", job.company or "", job.description or "",
-                language, letter_client, letter_model,
-            )
-            cv_html, cv_pdf, cv_data = cv_future.result()
-            letter_text, letter_html, letter_pdf = letter_future.result()
-
-        job.cv_html = cv_html
-        job.application_draft = letter_text
-        job.cover_letter_html = letter_html
-
-        store_generated_document(
-            db, job.id, target_user_id, cv_pdf,
-            original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
-            mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
-        )
-        store_generated_document(
-            db, job.id, target_user_id, letter_pdf,
-            original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
-            mime_type="application/pdf", kind="GENERATED_LETTER", storage=storage,
-        )
+            if generate_cv:
+                futures["cv"] = pool.submit(
+                    _build_cv,
+                    profile.cv_data, cv_template_html, profile.cv_template,
+                    candidate_name, profile.role or "", profile.skills or "",
+                    profile.location or "", profile.spoken_languages or [],
+                    job.title or "", job.description or "", language,
+                    cv_client, cv_model,
+                    cv_notes,
+                )
+            if generate_letter:
+                futures["letter"] = pool.submit(
+                    _build_letter,
+                    profile.cv_data, letter_template_html, profile.cover_letter_template,
+                    candidate_name, profile.role or "", profile.skills or "",
+                    profile.location or "", profile.spoken_languages or [],
+                    profile.preferences or "",
+                    job.title or "", job.company or "", job.description or "",
+                    language, letter_client, letter_model,
+                )
+            if "cv" in futures:
+                cv_html, cv_pdf, cv_data = futures["cv"].result()
+                job.cv_html = cv_html
+                store_generated_document(
+                    db, job.id, target_user_id, cv_pdf,
+                    original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
+                    mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
+                )
+            if "letter" in futures:
+                letter_text, letter_html, letter_pdf = futures["letter"].result()
+                job.application_draft = letter_text
+                job.cover_letter_html = letter_html
+                store_generated_document(
+                    db, job.id, target_user_id, letter_pdf,
+                    original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
+                    mime_type="application/pdf", kind="GENERATED_LETTER", storage=storage,
+                )
 
         # --- 3. Profile documents (optional, whole set) ---
         if include_profile_documents:

@@ -634,6 +634,10 @@ export const translations = {
     decline: "Decline",
     jobAcceptedCongrats: "🎉 Congratulations! The job is yours.",
     markDone: "Done",
+    applyWithoutDocsTitle: "Apply without documents?",
+    applyWithoutDocsBody: "Cover letter and/or CV have not been generated yet. You can still mark this job as applied, but you won't have documents to attach.",
+    applyAnyway: "Apply anyway",
+    cancel: "Cancel",
   },
   de: {
     // Navigation
@@ -1289,6 +1293,10 @@ export const translations = {
     decline: "Ablehnen",
     jobAcceptedCongrats: "🎉 Glückwunsch! Der Job ist deiner.",
     markDone: "Erledigt",
+    applyWithoutDocsTitle: "Ohne Unterlagen bewerben?",
+    applyWithoutDocsBody: "Anschreiben und/oder Lebenslauf wurden noch nicht generiert. Du kannst den Job trotzdem als beworben markieren, hast aber keine Dokumente zum Anhängen.",
+    applyAnyway: "Trotzdem bewerben",
+    cancel: "Abbrechen",
   },
 };
 

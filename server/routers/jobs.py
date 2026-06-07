@@ -53,6 +53,8 @@ class GenerateRequest(BaseModel):
 
 class GeneratePackageRequest(BaseModel):
     include_profile_documents: bool = True
+    generate_cv: bool = True
+    generate_letter: bool = True
 
 
 class SaveHtmlRequest(BaseModel):
@@ -282,9 +284,11 @@ def trigger_package_generation(
         job.status = "GENERATING"
         db.commit()
         include_docs = body.include_profile_documents if body else True
+        gen_cv = body.generate_cv if body else True
+        gen_letter = body.generate_letter if body else True
         celery_app.send_task(
             "ai.generate_application_package",
-            args=[job_id, current_user.id, include_docs],
+            args=[job_id, current_user.id, include_docs, gen_cv, gen_letter],
             queue="ai_queue",
         )
         return {"status": "started"}

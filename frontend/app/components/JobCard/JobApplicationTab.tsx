@@ -495,7 +495,7 @@ export default function JobApplicationTab({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ include_profile_documents: false }),
+          body: JSON.stringify({ include_profile_documents: false, generate_cv: true, generate_letter: false }),
         }
       );
       if (!res.ok) {
