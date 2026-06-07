@@ -15,7 +15,7 @@ from openai import (
 from core.celery_config import celery_app
 from core.logger import get_logger
 from database.core import SessionLocal, JobEntry, UserProfile
-from intelligence.service import get_model, get_api_key, format_cv_for_prompt
+from intelligence.service import get_client_and_model, format_cv_for_prompt
 
 logger = get_logger(__name__)
 
@@ -42,8 +42,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
                 cv_summary = format_cv_for_prompt(user_profile.cv_data)
             user_language = getattr(user_profile, "language", "de") or "de"
 
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("interview_prep", db)
 
         prep_data = generate_interview_prep(
             job_title=job.title,
@@ -51,7 +50,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
             job_description=job.description or "",
             cv_summary=cv_summary,
             model=model,
-            api_key=api_key,
+            client=client,
             language=user_language,
         )
 
@@ -106,8 +105,7 @@ def generate_company_profile(self, domain: str, user_id: int):
         job_title = jobs[0].title or "" if jobs else ""
         key_requirements = (jobs[0].description or "")[:3000] if jobs else ""
 
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("company_profile", db)
         user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         user_language = getattr(user_profile, "language", "de") if user_profile else "de"
 
@@ -132,7 +130,7 @@ def generate_company_profile(self, domain: str, user_id: int):
             key_requirements=key_requirements,
             user_profile=user_profile_str,
             model=model,
-            api_key=api_key,
+            client=client,
         )
 
         company = db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()

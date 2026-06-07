@@ -16,7 +16,7 @@ from openai import (
 from core.celery_config import celery_app
 from core.logger import get_logger
 from database.core import SessionLocal, JobEntry, UserProfile, User, DocumentTemplate
-from intelligence.service import get_model, get_api_key, format_cv_for_prompt, generate_application
+from intelligence.service import get_client_and_model, format_cv_for_prompt, generate_application
 from services.storage import get_storage_service
 from services.template_filler import fill_template
 from services.document_renderer import render_cover_letter_pdf, html_to_pdf
@@ -104,8 +104,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
         cv_text = format_cv_for_prompt(profile.cv_data)
 
         logger.info("Sending request to AI for cover letter...")
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("cover_letter", db)
         existing_draft = job.application_draft if improvement_notes else None
 
         application_text = generate_application(
@@ -116,7 +115,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
             cv_text=cv_text,
             user_language=user_language,
             model=model,
-            api_key=api_key,
+            client=client,
             improvement_notes=improvement_notes,
             existing_draft=existing_draft,
             candidate_name=candidate_name,

@@ -10,9 +10,7 @@ from core.celery_config import celery_app
 from core.logger import get_logger
 from database.core import SessionLocal, JobEntry, UserProfile, ProfileDocument, User
 from intelligence.service import (
-    get_model,
-    get_api_key,
-    get_ollama_model,
+    get_client_and_model,
     format_cv_for_prompt,
     generate_tailored_cv,
     generate_application,
@@ -84,6 +82,7 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
 
         # --- 1. AI-completed CV → template → PDF ---
+        cv_client, cv_model = get_client_and_model("cv_tailoring", db)
         cv_data = generate_tailored_cv(
             cv_data=profile.cv_data,
             job_title=job.title,
@@ -91,11 +90,12 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             candidate_name=candidate_name,
             candidate_role=profile.role,
             language=language,
-            model=get_ollama_model(db),
+            model=cv_model,
             db=db,
             skills=profile.skills or "",
             spoken_languages=profile.spoken_languages or [],
             location=profile.location or "",
+            client=cv_client,
         )
         job.cv_draft = _cv_dict_to_markdown(cv_data)
         cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
@@ -114,7 +114,8 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
         )
 
-        # --- 2. Cover letter (OpenRouter) ---
+        # --- 2. Cover letter ---
+        letter_client, letter_model = get_client_and_model("cover_letter", db)
         letter_text = generate_application(
             job_title=job.title,
             job_company=job.company,
@@ -122,8 +123,8 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             profile_role=profile.role,
             cv_text=format_cv_for_prompt(profile.cv_data),
             user_language=language,
-            model=get_model(db),
-            api_key=get_api_key(db),
+            model=letter_model,
+            client=letter_client,
             candidate_name=candidate_name,
             candidate_location=profile.location or "",
             candidate_skills=profile.skills or "",

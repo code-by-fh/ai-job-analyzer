@@ -17,7 +17,7 @@ from openai import (
 from core.celery_config import celery_app
 from core.logger import get_logger
 from database.core import SessionLocal, JobEntry, UserProfile, JobPlatform, User
-from intelligence.service import get_model, get_api_key, format_cv_for_prompt, analyze_job
+from intelligence.service import get_client_and_model, format_cv_for_prompt, analyze_job
 
 from workers.notifications.push import send_notification
 from workers.notifications.email import (
@@ -147,15 +147,14 @@ def analyze_job_task(job_data):
             profile_str = "Python Dev"
 
         logger.info(f"Sending analysis request to LLM for Job {job_id}...")
-        model = get_model(db)
-        api_key = get_api_key(db)
+        client, model = get_client_and_model("job_analysis", db)
         data = analyze_job(
             job_title=job_data["title"],
             job_description=job_data["description"][:10000],
             profile_str=profile_str,
             user_language=user_language,
             model=model,
-            api_key=api_key,
+            client=client,
         )
         logger.info(
             f"LLM analysis completed for Job {job_id}. Score: {data.get('score')}"
