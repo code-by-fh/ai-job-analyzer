@@ -124,6 +124,7 @@ class SystemSettings(Base):
     openrouter_api_key = Column(String, nullable=True)
     ollama_model = Column(String, nullable=True, default="llama3.1:8b")
     ollama_base_url = Column(String, nullable=True)
+    ai_task_routing = Column(JSON, nullable=True, default=dict)
 
 
 class JobPlatform(Base):
