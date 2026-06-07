@@ -93,6 +93,10 @@ export default function Profile() {
   const [coverLetterTemplate, setCoverLetterTemplate] = useState("classic");
   const [docsLoading, setDocsLoading] = useState(false);
   const [docTemplates, setDocTemplates] = useState<DocumentTemplate[]>([]);
+  const [masterCvStatus, setMasterCvStatus] = useState<"processing" | "ready" | "error" | null>(null);
+  const [masterCvTemplateId, setMasterCvTemplateId] = useState<number | null>(null);
+  const [uploadingMasterCv, setUploadingMasterCv] = useState(false);
+  const [masterCvPollRef, setMasterCvPollRef] = useState<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (token) {
@@ -116,6 +120,8 @@ export default function Profile() {
           });
           if (profileData.cv_template) setCvTemplate(profileData.cv_template);
           if (profileData.cover_letter_template) setCoverLetterTemplate(profileData.cover_letter_template);
+          setMasterCvStatus(profileData.master_cv_status ?? null);
+          setMasterCvTemplateId(profileData.master_cv_template_id ?? null);
 
           const tmplRes = await fetchWithAuth(
             `${process.env.NEXT_PUBLIC_API_URL}/document-templates`
@@ -166,6 +172,28 @@ export default function Profile() {
     }
   }, [token, loadProfileDocs, loadTemplates]);
 
+  useEffect(() => {
+    if (masterCvStatus !== "processing") {
+      if (masterCvPollRef) {
+        clearInterval(masterCvPollRef);
+        setMasterCvPollRef(null);
+      }
+      return;
+    }
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/settings-view`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const status = data?.profile?.master_cv_status ?? null;
+        setMasterCvStatus(status);
+        setMasterCvTemplateId(data?.profile?.master_cv_template_id ?? null);
+      } catch {}
+    }, 3000);
+    setMasterCvPollRef(interval);
+    return () => clearInterval(interval);
+  }, [masterCvStatus]);
+
   const uploadProfileDoc = async (file: File, docType: "REFERENCE" | "CERTIFICATE") => {
     const form = new FormData();
     form.append("file", file);
@@ -200,6 +228,25 @@ export default function Profile() {
     } catch (e: any) {
       logger.error({ err: e }, "Profile doc delete failed");
       showError("Löschen fehlgeschlagen");
+    }
+  };
+
+  const uploadMasterCvTemplate = async (file: File) => {
+    setUploadingMasterCv(true);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_API_URL}/profile/cv-template`,
+        { method: "POST", body: form },
+      );
+      if (!res.ok) throw new Error("Upload failed");
+      setMasterCvStatus("processing");
+    } catch (e: any) {
+      logger.error({ err: e }, "Master CV template upload failed");
+      showError(t("masterCvError"));
+    } finally {
+      setUploadingMasterCv(false);
     }
   };
 
@@ -663,6 +710,65 @@ export default function Profile() {
       {/* TAB: Documents */}
       {activeTab === "documents" && (
         <div className="space-y-6">
+          {/* Master CV Template */}
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="font-bold text-lg tracking-tight flex items-center gap-2 mb-4">
+              <FileText className="w-5 h-5 text-indigo-500" />
+              {t("masterCvTemplate")}
+            </h2>
+
+            {masterCvStatus === "processing" && (
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 mb-4">
+                <div className="w-5 h-5 border-2 border-indigo-400/30 border-t-indigo-500 rounded-full animate-spin flex-shrink-0" />
+                <span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">
+                  {t("masterCvProcessing")}
+                </span>
+              </div>
+            )}
+            {masterCvStatus === "ready" && (
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 mb-4">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                <span className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
+                  {t("masterCvReady")}
+                </span>
+              </div>
+            )}
+            {masterCvStatus === "error" && (
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 mb-4">
+                <span className="text-sm text-rose-700 dark:text-rose-300 font-medium">
+                  {t("masterCvError")}
+                </span>
+              </div>
+            )}
+
+            {masterCvStatus !== "processing" && (
+              <label className={`relative flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all ${uploadingMasterCv ? "border-purple-300 bg-purple-50/30 dark:bg-purple-500/5" : "border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500/50 bg-slate-50 dark:bg-slate-800/20"}`}>
+                <input
+                  type="file"
+                  accept=".html,.htm"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={uploadingMasterCv}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadMasterCvTemplate(f);
+                    e.target.value = "";
+                  }}
+                />
+                {uploadingMasterCv ? (
+                  <div className="w-6 h-6 border-2 border-purple-400/30 border-t-purple-500 rounded-full animate-spin" />
+                ) : (
+                  <UploadCloud className="w-6 h-6 text-indigo-400" />
+                )}
+                <span className="text-sm text-slate-500 dark:text-slate-400 text-center">
+                  {t("dropHtml")}
+                </span>
+                <span className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg">
+                  {t("selectHtml")}
+                </span>
+              </label>
+            )}
+          </div>
+
           {/* Template Gallery */}
           <div className="glass-card rounded-2xl p-6">
             <h2 className="font-bold text-lg tracking-tight flex items-center gap-2 mb-5">
