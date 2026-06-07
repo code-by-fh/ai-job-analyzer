@@ -1,6 +1,7 @@
-"""Fill annotated HTML templates with AI-generated content."""
+"""Fill annotated HTML templates with profile data."""
 
 from bs4 import BeautifulSoup, NavigableString
+from jinja2 import Environment, Undefined
 
 def fill_template(template_html: str, data: dict) -> str:
     """Replace data-slot / data-repeat annotations with content from *data*."""
@@ -43,6 +44,24 @@ def has_data_slots(html: str) -> bool:
     return bool(
         soup.find(attrs={"data-slot": True}) or soup.find(attrs={"data-repeat": True})
     )
+
+
+_jinja_env = Environment(autoescape=False, undefined=Undefined)
+
+
+def has_jinja2_syntax(html: str) -> bool:
+    """Return True if the HTML contains Jinja2 variable or block markers."""
+    return "{{" in html or "{%" in html
+
+
+def render_jinja2_template(template_html: str, data: dict) -> str:
+    """Render a Jinja2-annotated HTML string with the given data dict.
+
+    Missing variables render as empty string. HTML is not escaped because
+    the template is validated (scripts/on-handlers stripped) on upload.
+    """
+    template = _jinja_env.from_string(template_html)
+    return template.render(**data)
 
 
 def validate_template(template_html: str, doc_type: str) -> str:
