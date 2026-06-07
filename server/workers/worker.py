@@ -44,6 +44,7 @@ from workers.tasks.scheduling import (
     cleanup_stale_redis_jobs,
 )
 from workers.tasks.package import generate_application_package_task  # noqa: F401
+from workers.tasks.master_cv import generate_master_cv_task  # noqa: F401
 
 __all__ = [
     "celery_app",
