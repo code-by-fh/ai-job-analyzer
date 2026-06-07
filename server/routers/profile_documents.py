@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 
-from database.core import ProfileDocument, UserProfile, User
+from database.core import ProfileDocument, UserProfile, User, DocumentTemplate
 from core.auth import get_current_user, get_db
 from services.storage import get_storage_service
 from services.document_renderer import list_templates
@@ -140,6 +140,49 @@ def view_profile_document(
     db: Session = Depends(get_db)
 ):
     return _serve(doc_id, current_user, db, disposition="inline")
+
+
+@router.post("/profile/cv-template")
+async def upload_master_cv_template(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+
+    try:
+        html = content.decode("utf-8", errors="replace")
+    except Exception:
+        raise HTTPException(status_code=400, detail="File must be a valid UTF-8 HTML document")
+
+    try:
+        template = DocumentTemplate(
+            user_id=current_user.id,
+            doc_type="MASTER_CV",
+            name=file.filename or "Master CV",
+            html=html,
+            is_admin=False,
+        )
+        db.add(template)
+        db.flush()
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if profile:
+            profile.master_cv_status = "processing"
+        db.commit()
+
+        from workers.tasks.master_cv import generate_master_cv_task
+        generate_master_cv_task.delay(template.id, current_user.id)
+
+        return {"status": "processing", "template_id": template.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Master CV template upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def _serve(doc_id: int, current_user: User, db: Session, disposition: str):
