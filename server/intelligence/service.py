@@ -30,6 +30,40 @@ logger = logging.getLogger(__name__)
 
 AI_404_REDIS_KEY = "system:ai_404_error"
 
+TASK_DEFAULTS: dict[str, str] = {
+    "job_analysis": "cloud",
+    "cover_letter": "cloud",
+    "cv_tailoring": "local",
+    "interview_prep": "cloud",
+    "company_profile": "cloud",
+    "deep_dive": "cloud",
+    "extract_job_details": "cloud",
+    "platform_name": "cloud",
+}
+
+
+def get_task_provider(task_name: str, db=None) -> str:
+    """Return 'local' or 'cloud' for the given task, consulting DB routing config."""
+    try:
+        if db:
+            from database.core import SystemSettings
+            settings = db.query(SystemSettings).first()
+            if settings and settings.ai_task_routing:
+                routing = settings.ai_task_routing
+                if task_name in routing:
+                    return routing[task_name]
+    except Exception:
+        pass
+    return TASK_DEFAULTS.get(task_name, "cloud")
+
+
+def get_client_and_model(task_name: str, db=None):
+    """Return (client, model) for the given task based on routing config."""
+    provider = get_task_provider(task_name, db)
+    if provider == "local":
+        return get_ollama_client(db), get_ollama_model(db)
+    return get_ai_client(db=db), get_model(db)
+
 
 def _get_redis():
     return _redis_sync.from_url(
@@ -246,14 +280,15 @@ def format_cv_for_prompt(cv_json) -> str:
 
 
 def generate_platform_name(
-    url: str, db: Any = None, model: str = None, api_key: str = None
+    url: str, db: Any = None, model: str = None, api_key: str = None, client=None
 ) -> str:
     """
     Uses AI to generate a clean, recognizable name for a job platform based on its URL.
     """
     domain = urlparse(url).netloc.replace("www.", "")
 
-    client = get_ai_client(api_key, db=db)
+    if client is None:
+        client = get_ai_client(api_key, db=db)
     model_to_use = model or get_model(db=db)
     logger.info(f"Generating platform name for {url} using model {model_to_use}")
 
@@ -283,11 +318,13 @@ def analyze_job(
     user_language: str = "de",
     model: str = None,
     api_key: str = None,
+    client=None,
 ) -> dict:
     """
     Calls AI to analyze job fit. Returns dict with 'score' and 'reasoning'.
     """
-    client = get_ai_client(api_key)
+    if client is None:
+        client = get_ai_client(api_key)
 
     messages = get_analyze_job_messages(
         job_title=job_title,
@@ -324,8 +361,10 @@ def generate_application(
     candidate_skills: str = "",
     candidate_languages: Optional[list] = None,
     candidate_preferences: str = "",
+    client=None,
 ) -> str:
-    client = get_ai_client(api_key)
+    if client is None:
+        client = get_ai_client(api_key)
 
     messages = get_generate_application_messages(
         job_title=job_title,
@@ -362,12 +401,14 @@ def generate_interview_prep(
     model: str = None,
     api_key: str = None,
     language: str = "de",
+    client=None,
 ) -> Dict[str, Any]:
     """
     Generate structured interview preparation material.
     Returns dict with: questions, talking_points, company_insights, preparation_tips
     """
-    client = get_ai_client(api_key=api_key)
+    if client is None:
+        client = get_ai_client(api_key=api_key)
     messages = get_interview_prep_messages(
         job_title=job_title,
         company_name=company_name,
@@ -410,6 +451,7 @@ def generate_company_profile_summary(
     user_profile: str = "",
     model: str = None,
     api_key: str = None,
+    client=None,
 ) -> Dict[str, Any]:
     """
     Generate a structured interview preparation guide for a company.
@@ -417,7 +459,8 @@ def generate_company_profile_summary(
     if not model:
         model = get_model()
 
-    client = get_ai_client(api_key=api_key)
+    if client is None:
+        client = get_ai_client(api_key=api_key)
     messages = get_company_profile_summary_messages(
         company_name=company_name,
         job_title=job_title,
@@ -447,12 +490,14 @@ def generate_deep_dive(
     model: str = None,
     api_key: str = None,
     language: str = "de",
+    client=None,
 ) -> str:
     """Returns a focused Markdown research report for the given deep dive focus."""
     if not model:
         model = get_model()
 
-    client = get_ai_client(api_key=api_key)
+    if client is None:
+        client = get_ai_client(api_key=api_key)
     messages = get_deep_dive_messages(
         domain=domain,
         company_name=company_name,
@@ -473,7 +518,7 @@ def generate_deep_dive(
 
 
 def extract_job_details(
-    text: str, model: str = None, api_key: str = None, language: str = "de"
+    text: str, model: str = None, api_key: str = None, language: str = "de", client=None
 ) -> str:
     """
     Extracts the core job description from noisy web content.
@@ -482,7 +527,8 @@ def extract_job_details(
     if not text:
         return ""
 
-    client = get_ai_client(api_key)
+    if client is None:
+        client = get_ai_client(api_key)
     messages = get_extract_job_details_messages(text=text, language=language)
 
     try:
@@ -512,6 +558,7 @@ def generate_tailored_cv(
     spoken_languages: Optional[list] = None,
     location: str = "",
     cv_notes: str = "",
+    client=None,
 ) -> dict:
     base = dict(cv_data or {})
     base.setdefault("experience", [])
@@ -528,7 +575,8 @@ def generate_tailored_cv(
     if location:
         base["location"] = location
 
-    client = get_ollama_client(db)
+    if client is None:
+        client = get_ollama_client(db)
     messages = get_tailored_cv_messages(base, job_title, job_description, language, cv_notes=cv_notes)
     try:
         response = _call_openrouter(
