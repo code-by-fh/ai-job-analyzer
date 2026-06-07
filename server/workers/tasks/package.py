@@ -15,12 +15,11 @@ from intelligence.service import (
     format_cv_for_prompt,
     generate_tailored_cv,
     generate_application,
-    fill_html_cv_with_ai,
 )
 from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
 from services.job_documents import store_generated_document
 from services.storage import get_storage_service
-from services.template_filler import fill_template
+from services.template_filler import fill_template, render_jinja2_template
 from database.core import DocumentTemplate
 
 logger = get_logger(__name__)
@@ -44,41 +43,30 @@ def _build_cv(
     cv_model: str,
     cv_notes: str = "",
 ) -> tuple[str, bytes, dict]:
-    """Return (cv_html, cv_pdf_bytes, cv_data). Pure computation — no DB writes."""
-    if cv_template_html:
-        cv_data = dict(cv_data_raw or {})
-        cv_data.setdefault("experience", [])
-        cv_data.setdefault("projects", [])
-        cv_data.setdefault("education", "")
-        cv_data["name"] = candidate_name
-        cv_data["role"] = role
-        cv_data["skills"] = skills
-        cv_data["location"] = location
-        if spoken_languages:
-            cv_data["spoken_languages"] = spoken_languages
+    """Return (cv_html, cv_pdf_bytes, cv_data). Pure computation — no DB writes.
 
-        cv_html = fill_html_cv_with_ai(
-            cv_template_html, cv_data, language,
-            job_title=job_title,
-            job_description=job_description[:6000],
-            cv_notes=cv_notes,
-            model=cv_model, client=cv_client,
-        )
+    Always calls generate_tailored_cv so data is tailored to the job regardless
+    of which template is used. If a user template (Jinja2 HTML) is selected it
+    is rendered deterministically; otherwise the classic file-based template is used.
+    """
+    cv_data = generate_tailored_cv(
+        cv_data=cv_data_raw,
+        job_title=job_title,
+        job_description=job_description[:10000],
+        candidate_name=candidate_name,
+        candidate_role=role,
+        language=language,
+        model=cv_model,
+        skills=skills,
+        spoken_languages=spoken_languages,
+        location=location,
+        client=cv_client,
+        cv_notes=cv_notes,
+    )
+
+    if cv_template_html:
+        cv_html = render_jinja2_template(cv_template_html, cv_data)
     else:
-        # No template → JSON tailoring + Jinja2 classic renderer
-        cv_data = generate_tailored_cv(
-            cv_data=cv_data_raw,
-            job_title=job_title,
-            job_description=job_description[:10000],
-            candidate_name=candidate_name,
-            candidate_role=role,
-            language=language,
-            model=cv_model,
-            skills=skills,
-            spoken_languages=spoken_languages,
-            location=location,
-            client=cv_client,
-        )
         cv_html = render_cv_html(cv_data, template_key=cv_template_key or "classic")
 
     try:

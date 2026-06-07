@@ -594,49 +594,6 @@ def get_extract_job_details_messages(
     ]
 
 
-def get_fill_html_cv_messages(
-    template_html: str,
-    cv_data,
-    language: str = "de",
-    job_title: str = "",
-    job_description: str = "",
-    cv_notes: str = "",
-) -> List[Dict[str, str]]:
-    import json as _json
-
-    lang_note = "Schreibe auf Deutsch." if language == "de" else "Write in English."
-    job_section = ""
-    if job_title or job_description:
-        job_section = (
-            f"\n\nJOB CONTEXT (use to tailor descriptions and summary):\n"
-            f"Title: {job_title}\n"
-            f"Description (excerpt):\n{job_description[:3000]}"
-        )
-    notes_section = f"\n\nIMPROVEMENT NOTES:\n{cv_notes}" if cv_notes else ""
-    system = (
-        "You are a professional CV editor. You receive an HTML CV template and candidate data as JSON. "
-        "Your tasks:\n"
-        "1. Fill the HTML template with the candidate's REAL data from the JSON\n"
-        "2. Tailor descriptions and the summary to highlight relevance for the target job\n"
-        "3. For repeated sections (experience, projects): use the first HTML block as a pattern "
-        "and repeat it for each entry in the JSON; remove surplus pattern blocks\n\n"
-        "STRICT RULES:\n"
-        "- Keep ALL HTML tags, attributes, CSS classes, and inline styles EXACTLY unchanged\n"
-        "- Only replace visible TEXT content inside elements\n"
-        "- Do NOT invent employers, dates, or skills not present in the JSON\n"
-        "- Return ONLY the complete HTML document, no markdown fences, no explanations\n"
-        f"{lang_note}"
-    )
-    user = (
-        f"CANDIDATE DATA (JSON):\n{_json.dumps(cv_data, ensure_ascii=False)}"
-        f"{job_section}{notes_section}\n\n"
-        f"HTML TEMPLATE:\n{template_html}"
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-
 
 
 def get_tailored_cv_messages(cv_data, job_title, job_description, language="de", cv_notes: str = ""):

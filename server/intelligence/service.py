@@ -24,7 +24,7 @@ from intelligence.prompts import (
     get_extract_job_details_messages,
     get_deep_dive_messages,
     get_tailored_cv_messages,
-    get_fill_html_cv_messages,
+    get_annotate_cv_template_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -611,41 +611,32 @@ def generate_tailored_cv(
     return tailored
 
 
-def fill_html_cv_with_ai(
+def annotate_cv_template_with_jinja2(
     template_html: str,
-    cv_data: dict,
-    language: str = "de",
-    job_title: str = "",
-    job_description: str = "",
-    cv_notes: str = "",
     model: str = None,
-    db=None,
     client=None,
+    db=None,
 ) -> str:
-    """Fill a plain HTML CV template with profile data using AI (no data-slot annotations).
+    """Use AI to add Jinja2 variables to a raw HTML CV template (one-time annotation).
 
-    Combines tailoring + HTML filling in a single AI call to avoid double round-trips.
+    Returns the Jinja2-annotated HTML. On failure returns the original template unchanged.
     """
     if client is None:
         client, model = get_client_and_model("cv_tailoring", db)
 
-    messages = get_fill_html_cv_messages(
-        template_html, cv_data, language,
-        job_title=job_title, job_description=job_description, cv_notes=cv_notes,
-    )
+    messages = get_annotate_cv_template_messages(template_html)
     try:
         response = _call_openrouter(
             client=client,
-            model=model or get_ollama_model(db),
+            model=model,
             messages=messages,
             temperature=0.1,
-            func_name="fill_html_cv_with_ai",
+            func_name="annotate_cv_template_with_jinja2",
         )
         content = response.choices[0].message.content.strip()
-        # Strip markdown code fences the model might add
         content = re.sub(r"^```(?:html)?\n?", "", content)
         content = re.sub(r"\n?```$", "", content)
         return content
     except Exception as e:
-        logger.error(f"fill_html_cv_with_ai failed, returning original template: {e}")
+        logger.error(f"annotate_cv_template_with_jinja2 failed, returning original: {e}")
         return template_html
