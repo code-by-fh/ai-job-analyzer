@@ -195,7 +195,7 @@ def cleanup_stale_redis_jobs():
     import time as time_module
 
     STALE_THRESHOLD_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
-    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
     r = redis.from_url(redis_url, decode_responses=True)
 
     now_ms = int(time_module.time() * 1000)

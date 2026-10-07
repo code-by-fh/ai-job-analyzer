@@ -40,7 +40,7 @@ def analyze_job_task(job_data):
     )
 
     db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
 
     # Bail out immediately if the crawl job was cancelled.
     # Check the dedicated cancellation marker (resurrection-safe) as well as the
@@ -407,7 +407,7 @@ def save_job_basic_task(job_data):
     crawl_job_id = job_data.get("crawl_job_id")
 
     db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
 
     try:
         if crawl_job_id:

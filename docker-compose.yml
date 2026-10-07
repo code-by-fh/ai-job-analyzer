@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  database:
+  ai-job-agent-database:
     image: postgres:15
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-user}
@@ -11,17 +11,17 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-    container_name: database
-    hostname: database
+    container_name: ai-job-agent-database
+    hostname: ai-job-agent-database
 
-  redis:
+  ai-job-agent-redis:
     image: redis:alpine
     ports:
       - "6379:6379"
-    container_name: redis
-    hostname: redis
+    container_name: ai-job-agent-redis
+    hostname: ai-job-agent-redis
 
-  rabbitmq:
+  ai-job-agent-rabbitmq:
     image: rabbitmq:3-management
     ports:
       - "5672:5672"
@@ -29,30 +29,30 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
-    container_name: rabbitmq
-    hostname: rabbitmq
+    container_name: ai-job-agent-rabbitmq
+    hostname: ai-job-agent-rabbitmq
 
-  botosaurus:
+  ai-job-agent-botosaurus:
     image: doublelayer/botosaurus-api-service:latest
     ports:
       - "8000:8000"
     environment:
       - MAX_WORKERS=${BOTOSAURUS_MAX_WORKERS:-3}
       - HEADLESS=true
-    container_name: botosaurus
-    hostname: botosaurus
+    container_name: ai-job-agent-botosaurus
+    hostname: ai-job-agent-botosaurus
 
-  server:
+  ai-job-agent-server:
     build: ./server
     ports:
       - "8002:8080"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-jobdb}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@ai-job-agent-database:5432/${POSTGRES_DB:-jobdb}
       - SCRAPER_SERVICE_URL=http://127.0.0.1:8081
-      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@ai-job-agent-rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://ai-job-agent-redis:6379/0
       - PYTHONUNBUFFERED=1
-      - RENDER_API_URL=${RENDER_API_URL:-http://botosaurus:8000/render}
+      - RENDER_API_URL=${RENDER_API_URL:-http://ai-job-agent-botosaurus:8000/render}
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
@@ -60,18 +60,18 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
-      - database
-      - rabbitmq
-      - redis
-      - botosaurus
-    container_name: server
-    hostname: server
+      - ai-job-agent-database
+      - ai-job-agent-rabbitmq
+      - ai-job-agent-redis
+      - ai-job-agent-botosaurus
+    container_name: ai-job-agent-server
+    hostname: ai-job-agent-server
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./server:/app
       - /app/__pycache__
-  frontend:
+  ai-job-agent-frontend:
     build: ./frontend
     ports:
       - "3000:3000"
@@ -79,10 +79,10 @@ services:
       - APP_PREFIX=APP_
       - ASSET_DIR=./.next/static
       - APP_API_URL=${APP_API_URL:-http://localhost:8002}
-    container_name: frontend
-    hostname: frontend
+    container_name: ai-job-agent-frontend
+    hostname: ai-job-agent-frontend
     depends_on:
-      - server
+      - ai-job-agent-server
 
 volumes:
   db_data:

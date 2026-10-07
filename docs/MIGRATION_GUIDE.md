@@ -25,11 +25,11 @@ Let Alembic detect the difference between your code and the actual database stat
 Run this command in your terminal (in the project root):
 
 ```bash
-docker-compose exec ai-api alembic revision --autogenerate -m "Add phone number to profile"
+docker-compose exec ai-job-agent-server alembic revision --autogenerate -m "Add phone number to profile"
 
 ```
 
-* `exec ai-api`: Runs the command inside the running container.
+* `exec ai-job-agent-server`: Runs the command inside the running container.
 * `--autogenerate`: Compares `Base.metadata` with the live DB.
 * `-m "..."`: A description of the change (crucial for history!).
 
@@ -49,7 +49,7 @@ Open the newly created file locally in your editor.
 Apply the changes to the database:
 
 ```bash
-docker-compose exec ai-api alembic upgrade head
+docker-compose exec ai-job-agent-server alembic upgrade head
 
 ```
 
@@ -64,14 +64,14 @@ Did you make a mistake or need to revert a change?
 **Go back one step:**
 
 ```bash
-docker-compose exec ai-api alembic downgrade -1
+docker-compose exec ai-job-agent-server alembic downgrade -1
 
 ```
 
 **Reset completely (Drop all tables):**
 
 ```bash
-docker-compose exec ai-api alembic downgrade base
+docker-compose exec ai-job-agent-server alembic downgrade base
 
 ```
 
@@ -84,7 +84,7 @@ docker-compose exec ai-api alembic downgrade base
 If you are unsure which version your database is currently on:
 
 ```bash
-docker-compose exec ai-api alembic current
+docker-compose exec ai-job-agent-server alembic current
 
 ```
 
@@ -94,7 +94,7 @@ Sometimes you want to modify data instead of structure (e.g., setting all users 
 Create an empty revision without `--autogenerate`:
 
 ```bash
-docker-compose exec ai-api alembic revision -m "set default user status"
+docker-compose exec ai-job-agent-server alembic revision -m "set default user status"
 
 ```
 
@@ -112,7 +112,7 @@ If working in a team and two people create a migration at the same time, you wil
 Solution:
 
 ```bash
-docker-compose exec ai-api alembic merge heads -m "merge conflict"
+docker-compose exec ai-job-agent-server alembic merge heads -m "merge conflict"
 
 ```
 

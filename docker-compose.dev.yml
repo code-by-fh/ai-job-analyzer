@@ -1,10 +1,10 @@
 services:
-  server:
+  ai-job-agent-server:
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-jobdb}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@ai-job-agent-database:5432/${POSTGRES_DB:-jobdb}
       - SCRAPER_SERVICE_URL=http://127.0.0.1:8081
-      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@ai-job-agent-rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://ai-job-agent-redis:6379/0
       - PYTHONUNBUFFERED=1
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
@@ -17,7 +17,7 @@ services:
       - ./server:/app
       - /app/__pycache__
 
-  frontend:
+  ai-job-agent-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
@@ -30,4 +30,4 @@ services:
       - /app/node_modules
       - /app/.next
     depends_on:
-      - server
+      - ai-job-agent-server

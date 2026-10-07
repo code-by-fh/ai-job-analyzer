@@ -3,8 +3,8 @@ from celery import Celery
 
 celery_app = Celery(
     "ai_worker",
-    broker=os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@rabbitmq:5672//"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
+    broker=os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@ai-job-agent-rabbitmq:5672//"),
+    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"),
 )
 
 celery_app.conf.beat_schedule = {

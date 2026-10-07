@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:password@database:5432/jobdb"
+    "DATABASE_URL", "postgresql://user:password@ai-job-agent-database:5432/jobdb"
 )
 
 engine = create_engine(DATABASE_URL, poolclass=NullPool)

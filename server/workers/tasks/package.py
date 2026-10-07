@@ -172,7 +172,7 @@ def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str |
 def generate_application_package_task(job_id, user_id=None, include_profile_documents=True, generate_cv=True, generate_letter=True):
     logger.info(f"[TASK] Generating application package for Job {job_id}, User {user_id}")
     db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
     try:
         job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
         if not job:
@@ -297,7 +297,7 @@ def render_document_pdf_task(job_id: str, kind: str, user_id: int):
     """Re-render edited HTML for a job to PDF and replace the JobDocument."""
     logger.info(f"[TASK] render_document_pdf job={job_id} kind={kind} user={user_id}")
     db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
     try:
         job = db.query(JobEntry).filter(
             JobEntry.id == job_id,

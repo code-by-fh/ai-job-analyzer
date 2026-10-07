@@ -236,7 +236,7 @@ def schedule_crawls_task(args):
     user_id = 1
 
     try:
-        r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+        r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
 
         if len(args) >= 3:
             filtered_links, user_id = args[0], args[1]

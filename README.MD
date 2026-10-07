@@ -152,7 +152,7 @@ For local development, it is highly recommended to run the infrastructure compon
 ### Step 1: Start Infrastructure Containers
 Run only the supporting services from the root folder:
 ```bash
-docker-compose up -d database redis rabbitmq botosaurus
+docker-compose up -d ai-job-agent-database ai-job-agent-redis ai-job-agent-rabbitmq ai-job-agent-botosaurus
 ```
 
 ---

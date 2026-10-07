@@ -60,7 +60,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
         db.commit()
 
         # Notify via Redis pub/sub
-        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
         r = redis.from_url(redis_url)
         r.publish(
             "job_updates",
@@ -146,7 +146,7 @@ def generate_company_profile(self, domain: str, user_id: int):
         company.analyzed_at = datetime.now(tz.utc)
         db.commit()
 
-        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
         redis.from_url(redis_url).publish(
             "job_updates",
             json.dumps({"type": "company_profile_ready", "domain": domain}),

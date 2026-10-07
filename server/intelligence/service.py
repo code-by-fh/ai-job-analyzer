@@ -68,7 +68,7 @@ def get_client_and_model(task_name: str, db=None) -> tuple:
 
 def _get_redis():
     return _redis_sync.from_url(
-        os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
+        os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"),
         decode_responses=True,
     )
 

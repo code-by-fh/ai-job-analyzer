@@ -119,7 +119,7 @@ def test_api_reachable() -> bool:
         fail("GET /status", str(e))
         logger.info(f"\n  {RED}API not reachable at {_base_url}{RESET}")
         logger.info(
-            f"  Make sure the server is running: docker-compose up server"
+            f"  Make sure the server is running: docker-compose up ai-job-agent-server"
         )
         return False
 

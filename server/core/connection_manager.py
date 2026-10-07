@@ -56,7 +56,7 @@ manager = ConnectionManager()
 
 
 async def redis_listener():
-    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
     logger.info(f"Connecting to Redis at {redis_url}...")
 
     try:

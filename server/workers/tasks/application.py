@@ -48,7 +48,7 @@ def generate_application_task(job_id, user_id=None, improvement_notes=None):
         f"[TASK] Generating application letter for Job ID: {job_id}, User ID: {user_id}"
     )
     db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
 
     try:
         job = db.query(JobEntry).filter(JobEntry.id == job_id).first()

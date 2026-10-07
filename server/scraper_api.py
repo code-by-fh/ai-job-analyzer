@@ -32,7 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
 r = redis.from_url(REDIS_URL)
 
 

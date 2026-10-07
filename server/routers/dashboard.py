@@ -17,7 +17,7 @@ router = APIRouter()
 
 @router.get("/status")
 async def get_system_status():
-    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+    redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
     r = redis_sync.from_url(redis_url, decode_responses=True)
     is_crawling = r.get("system:crawling")
     ai_error = r.get("system:ai_404_error")
@@ -90,7 +90,7 @@ def get_dashboard_data(
         jobs = query.offset(offset).limit(limit).all()
 
         # 2. Fetch System Status
-        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+        redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
         try:
             r = redis_sync.from_url(redis_url, decode_responses=True)
             is_crawling = bool(r.get("system:crawling"))

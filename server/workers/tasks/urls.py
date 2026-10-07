@@ -36,7 +36,7 @@ def filter_urls_task(args):
         logger.error(f"Invalid args unpacking in filter_urls: {args}")
         return []
 
-    r_check = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+    r_check = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
     if job_id and (
         r_check.exists(f"crawl_job:{job_id}:cancelled")
         or not r_check.exists(f"crawl_job:{job_id}")
@@ -79,7 +79,7 @@ def filter_urls_task(args):
                 if skipped > 0:
                     logger.info(f"Deduplication: {skipped} already-known URLs removed.")
                     if job_id:
-                        r_dedup = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"))
+                        r_dedup = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
                         r_dedup.hset(f"crawl_job:{job_id}", "total_found", before)
             except Exception as dedup_e:
                 logger.error(f"Deduplication error: {dedup_e}")

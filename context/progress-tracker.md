@@ -19,6 +19,7 @@
 | **Application Package** | ✅ Completed & Tested (`workers/tasks/package.py`, `routers/profile_documents.py`, `tests/test_profile_documents_router.py`) | One-click CV + Cover letter → PDF, Profile documents. |
 | **Template Editor** | ✅ Completed (`routers/templates.py`, `services/template_filler.py`, `services/document_renderer.py`) | DocumentTemplate CRUD; slot-filler; WeasyPrint via external render API; two-column in-browser editor. |
 | **PDF Rendering** | ✅ Completed (Task 4: `server/requirements.txt`, `server/Dockerfile`, `docker-compose.yml`) | Removed Playwright deps (playwright, playwright-stealth, xvfb, x11vnc, novnc). Added weasyprint==69.0. Dockerfile: switched to python:3.11-slim-bookworm, added WeasyPrint system deps (libpango, libgdk-pixbuf). docker-compose.yml: added RENDER_API_URL env var, removed noVNC port 6080. All 64 tests pass. |
+| **Compose Service Naming** | ✅ Completed (`docker-compose.yml`, `docker-compose.dev.yml`, `.env.example`, `server/**` URL defaults) | All services, container names and hostnames prefixed `ai-job-agent-` (e.g. `ai-job-agent-database`, `ai-job-agent-redis`); default connection URLs in code updated accordingly. |
 | **Companies** | ✅ Completed (`routers/companies.py`) | Domain-specific views & deep-dive analyses. |
 | **Dual Storage** | ✅ Completed (`services/storage.py`) | DB-Blob (`LargeBinary`) vs. Google Drive OAuth. |
 | **Notifications** | ✅ Completed & Tested (`routers/settings.py`, `tests/test_settings_router.py`) | 5 channels: Gmail, Pushover, Resend, Mailjet, SMTP + Templates. 49 tests green. |
