@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine,
     Column,
@@ -11,12 +12,17 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     LargeBinary,
+    false,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
+from typing import Annotated, List, Literal, Optional
+
+from core.platform_rules import check_name, check_schedule_days, check_schedule_time, check_url_pattern
+from core.url_safety import ensure_public_http_url
+from services.company_domain import CompanyDomain
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@ai-job-agent-database:5432/jobdb"
@@ -63,7 +69,15 @@ class JobEntry(Base):
     recruiter_info = Column(JSON, nullable=True)
     salary_benchmark = Column(JSON, nullable=True)
     next_follow_up_at = Column(DateTime(timezone=True), nullable=True)
+    interview_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    archive_reason = Column(String, nullable=True)  # "THRESHOLD" | "USER", see core/job_status.py
+    kept_by_user = Column(Boolean, default=False, nullable=False, server_default=false())
+    checklist = Column(JSON, nullable=True)
+    todos = Column(JSON, nullable=True)
+    # Status before the running generation started; see core/job_status.py::status_after_generation.
+    pre_generation_status = Column(String, nullable=True)
+    generation_started_at = Column(DateTime(timezone=True), nullable=True)  # set while GENERATING, see workers/tasks/generation_sweep.py
 
     platform = relationship("JobPlatform", back_populates="jobs")
     status_history = relationship(
@@ -150,10 +164,28 @@ class JobPlatform(Base):
     smtp_recipients = Column(JSON, nullable=True)
     setup_status = Column(String, nullable=False, default='pending_setup')
     url_pattern = Column(String, nullable=True)
+    last_run = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
     jobs = relationship("JobEntry", back_populates="platform")
+
+
+class PlatformRun(Base):
+    """One finished crawl of a platform (drawer history); workers/tasks/platform_runs.py keeps the newest 20."""
+
+    __tablename__ = "platform_runs"
+    id = Column(Integer, primary_key=True)
+    # CASCADE: the bulk platform deletes (account delete, admin wipe) bypass the ORM.
+    platform_id = Column(Integer, ForeignKey("job_platforms.id", ondelete="CASCADE"), index=True, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=False)
+    found = Column(Integer, nullable=False, default=0)
+    new = Column(Integer, nullable=False, default=0)
+    matched = Column(Integer, nullable=False, default=0)
+    # A seed run stores today's postings as known without analysing them (B8 "seed").
+    seeded = Column(Boolean, nullable=False, default=False, server_default=false())
+    error = Column(String, nullable=True)  # a fixed code of platform_runs.ERROR_CODES
 
 
 class NotificationTemplate(Base):
@@ -177,7 +209,7 @@ class DocumentTemplate(Base):
     doc_type = Column(String, nullable=False)  # "CV" | "COVER_LETTER"
     name = Column(String, nullable=False)
     html = Column(Text, nullable=False)
-    status = Column(String, nullable=True)  # None = ready | "processing" = AI fill in progress
+    status = Column(String, nullable=True)  # None = ready | "processing" = AI fill running | "annotation_rejected" = AI output refused | "annotation_failed" = AI call or store failed; the original is kept in both
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -249,77 +281,132 @@ class JobStatusHistory(Base):
     job = relationship("JobEntry", back_populates="status_history")
 
 
+# Every profile field goes into each AI prompt; the web mirrors these (src/api/profilePaths.ts).
+MAX_ROLE_LENGTH = 200
+MAX_SKILLS_LENGTH = 2000
+MAX_SALARY_LENGTH = 50
+MAX_LOCATION_LENGTH = 200
+MAX_PREFERENCES_LENGTH = 5000
+MAX_SPOKEN_LANGUAGES = 20
+MAX_SPOKEN_LANGUAGE_LENGTH = 50
+MAX_CV_ENTRIES = 30
+MAX_ENTRY_TITLE_LENGTH = 200
+MAX_ENTRY_DURATION_LENGTH = 100
+MAX_ENTRY_TEXT_LENGTH = 5000
+MAX_EDUCATION_LENGTH = 5000
+
+EntryTitle = Annotated[str, Field(max_length=MAX_ENTRY_TITLE_LENGTH)]
+EntryText = Annotated[str, Field(max_length=MAX_ENTRY_TEXT_LENGTH)]
+SpokenLanguage = Annotated[str, Field(max_length=MAX_SPOKEN_LANGUAGE_LENGTH)]
+
+
 class ExperienceItem(BaseModel):
-    company: str
-    role: str
-    duration: str
-    description: str
+    # The CV import fills entries from an AI answer, which may give a year or a duration as a number.
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    company: EntryTitle = ""
+    role: EntryTitle = ""
+    duration: Annotated[str, Field(max_length=MAX_ENTRY_DURATION_LENGTH)] = ""
+    description: EntryText = ""
 
 
 class ProjectItem(BaseModel):
-    name: str
-    tech_stack: str
-    description: str
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    name: EntryTitle = ""
+    tech_stack: EntryTitle = ""
+    description: EntryText = ""
 
 
 class CVDataModel(BaseModel):
-    experience: List[ExperienceItem] = []
-    projects: List[ProjectItem] = []
-    education: str = ""
+    experience: List[ExperienceItem] = Field(default_factory=list, max_length=MAX_CV_ENTRIES)
+    projects: List[ProjectItem] = Field(default_factory=list, max_length=MAX_CV_ENTRIES)
+    education: str = Field("", max_length=MAX_EDUCATION_LENGTH)
+
+
+MAX_EMAIL_LENGTH = 254
+MAX_CREDENTIAL_LENGTH = 500
+MAX_HOST_LENGTH = 253
+MIN_PORT = 1
+MAX_PORT = 65535
+# Shape only (something@host.tld): delivery is what proves an address, the check keeps junk out.
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+EmailAddress = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_EMAIL_LENGTH, pattern=EMAIL_PATTERN)]
+# Credentials and the host refuse "": only null clears a field, so an empty input never wipes one silently.
+Credential = Annotated[str, StringConstraints(min_length=1, max_length=MAX_CREDENTIAL_LENGTH)]
+HostName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_HOST_LENGTH)]
+Port = Annotated[int, Field(ge=MIN_PORT, le=MAX_PORT)]
+
+MAX_NOTIFICATION_TEMPLATE_NAME_LENGTH = 100
+# A digest template is HTML; 100,000 characters is far above any real one and keeps a row small.
+MAX_NOTIFICATION_TEMPLATE_LENGTH = 100_000
+# Resend accepts at most 50 addresses per message; the other channels get the same bound.
+MAX_NOTIFICATION_RECIPIENTS = 50
+NotificationTemplateName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTIFICATION_TEMPLATE_NAME_LENGTH)
+]
+NotificationTemplateText = Annotated[str, StringConstraints(min_length=1, max_length=MAX_NOTIFICATION_TEMPLATE_LENGTH)]
+# A source's own template copy; "" is allowed there and stored as "no template".
+NotificationTemplateCopy = Annotated[str, StringConstraints(max_length=MAX_NOTIFICATION_TEMPLATE_LENGTH)]
+RecipientList = Annotated[List[EmailAddress], Field(max_length=MAX_NOTIFICATION_RECIPIENTS)]
+NotificationChannelType = Literal["PUSHOVER", "RESEND", "MAILJET", "SMTP"]
 
 
 class SettingsData(BaseModel):
-    role: str
-    skills: str
-    min_salary: str
-    location: str
-    preferences: str
-    cv_data: CVDataModel
-    job_urls: List[str] = []
+    """Partial profile update: only the fields present in the body are written.
 
-    pushover_user_key: Optional[str] = None
-    pushover_api_token: Optional[str] = None
-    resend_api_key: Optional[str] = None
-    resend_from_email: Optional[str] = None
-    mailjet_api_key: Optional[str] = None
-    mailjet_secret_key: Optional[str] = None
-    mailjet_from_email: Optional[str] = None
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = None
-    smtp_user: Optional[str] = None
-    smtp_password: Optional[str] = None
-    smtp_from_email: Optional[str] = None
-    active_notification_service: str = "NONE"
-    language: str = "de"
-    timezone: str = "Europe/Berlin"
-    spoken_languages: List[str] = []
-    cv_template: Optional[str] = None
-    cover_letter_template: Optional[str] = None
-    active_storage_service: str = "NONE"
-    google_drive_email: Optional[str] = None
-    master_cv_template_id: Optional[int] = None
-    master_cv_status: Optional[str] = None
+    Profile fields default to None without being Optional, so omitting one is
+    fine but an explicit null is rejected. Credential fields stay Optional so a
+    client can clear them.
+    """
+
+    role: str = Field(None, max_length=MAX_ROLE_LENGTH)
+    skills: str = Field(None, max_length=MAX_SKILLS_LENGTH)
+    min_salary: str = Field(None, max_length=MAX_SALARY_LENGTH)
+    location: str = Field(None, max_length=MAX_LOCATION_LENGTH)
+    preferences: str = Field(None, max_length=MAX_PREFERENCES_LENGTH)
+    cv_data: CVDataModel = None
+    job_urls: List[str] = None
+    spoken_languages: List[SpokenLanguage] = Field(None, max_length=MAX_SPOKEN_LANGUAGES)
+    cv_template: str = None
+    cover_letter_template: str = None
+    active_notification_service: str = None
+
+    pushover_user_key: Optional[Credential] = None
+    pushover_api_token: Optional[Credential] = None
+    resend_api_key: Optional[Credential] = None
+    resend_from_email: Optional[EmailAddress] = None
+    mailjet_api_key: Optional[Credential] = None
+    mailjet_secret_key: Optional[Credential] = None
+    mailjet_from_email: Optional[EmailAddress] = None
 
 
 class NotificationSettingsData(BaseModel):
-    pushover_user_key: Optional[str] = None
-    pushover_api_token: Optional[str] = None
-    resend_api_key: Optional[str] = None
-    resend_from_email: Optional[str] = None
-    mailjet_api_key: Optional[str] = None
-    mailjet_secret_key: Optional[str] = None
-    mailjet_from_email: Optional[str] = None
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = None
-    smtp_user: Optional[str] = None
-    smtp_password: Optional[str] = None
-    smtp_from_email: Optional[str] = None
-    email_global_recipient: Optional[str] = None
+    """Partial update of the channel credentials (B2): only the keys sent are written; null clears."""
+
+    pushover_user_key: Optional[Credential] = None
+    pushover_api_token: Optional[Credential] = None
+    resend_api_key: Optional[Credential] = None
+    resend_from_email: Optional[EmailAddress] = None
+    mailjet_api_key: Optional[Credential] = None
+    mailjet_secret_key: Optional[Credential] = None
+    mailjet_from_email: Optional[EmailAddress] = None
+    smtp_host: Optional[HostName] = None
+    smtp_port: Optional[Port] = None
+    smtp_user: Optional[Credential] = None
+    smtp_password: Optional[Credential] = None
+    smtp_from_email: Optional[EmailAddress] = None
+    email_global_recipient: Optional[EmailAddress] = None
 
 
 class PlatformCreate(BaseModel):
     url: str
     crawl_interval_minutes: int = 1440
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_public(cls, value: str) -> str:
+        return ensure_public_http_url(value)
 
 
 class PlatformUpdate(BaseModel):
@@ -331,6 +418,8 @@ class PlatformUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
     notification_adapters: Optional[List[str]] = None
+    # Bounded in routers/platforms.py, not here: a value equal to the stored one is accepted unchanged,
+    # so a legacy copy the drawer sends back verbatim never blocks the save.
     pushover_template: Optional[str] = None
     resend_template: Optional[str] = None
     resend_recipients: Optional[List[str]] = None
@@ -340,6 +429,41 @@ class PlatformUpdate(BaseModel):
     smtp_recipients: Optional[List[str]] = None
     setup_status: Optional[str] = None
     url_pattern: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_public(cls, value: Optional[str]) -> Optional[str]:
+        return None if value is None else ensure_public_http_url(value)
+
+    @field_validator("schedule_time")
+    @classmethod
+    def _time_format(cls, value: Optional[str]) -> Optional[str]:
+        return check_schedule_time(value)
+
+    @field_validator("schedule_days")
+    @classmethod
+    def _days_range(cls, value: Optional[List[int]]) -> Optional[List[int]]:
+        return check_schedule_days(value)
+
+    @field_validator("name")
+    @classmethod
+    def _name_text(cls, value: Optional[str]) -> Optional[str]:
+        return check_name(value)
+
+    @field_validator("url_pattern")
+    @classmethod
+    def _pattern_text(cls, value: Optional[str]) -> Optional[str]:
+        return check_url_pattern(value)
+
+
+class PlatformRunResponse(BaseModel):
+    started_at: Optional[str] = None
+    finished_at: str
+    found: int
+    new: int
+    matched: int
+    seeded: bool
+    error: Optional[str] = None
 
 
 class PlatformResponse(BaseModel):
@@ -365,20 +489,39 @@ class PlatformResponse(BaseModel):
     seen_count: int = 0
     setup_status: str = 'active'
     url_pattern: Optional[str] = None
+    last_run: Optional[dict] = None
 
     class Config:
         orm_mode = True
 
 
+class PlatformSetupResponse(PlatformResponse):
+    """Response of the setup wizard only; list and update responses never carry the setup flag."""
+
+    initial_crawl_started: bool = False
+
+
 class NotificationTemplateCreate(BaseModel):
-    name: str
-    type: str  # "PUSHOVER"
-    content: str
+    name: NotificationTemplateName
+    type: str  # checked by the routers (SMTP stays refused, spec section 3)
+    content: NotificationTemplateText
 
 
 class NotificationTemplateUpdate(BaseModel):
-    name: Optional[str] = None
-    content: Optional[str] = None
+    name: Optional[NotificationTemplateName] = None
+    content: Optional[NotificationTemplateText] = None
+
+
+class NotificationPreviewRequest(BaseModel):
+    type: NotificationChannelType
+    # Empty previews the built-in default text, as a source without a template would send.
+    content: str = Field("", max_length=MAX_NOTIFICATION_TEMPLATE_LENGTH)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _type_in_capitals(cls, value):
+        """Like template creation, the type is case-insensitive."""
+        return value.upper() if isinstance(value, str) else value
 
 
 class NotificationTemplateResponse(BaseModel):
@@ -394,16 +537,22 @@ class NotificationTemplateResponse(BaseModel):
         orm_mode = True
 
 
+# Same bound as a job document's HTML (routers.jobs.MAX_DOCUMENT_HTML_LENGTH).
+MAX_TEMPLATE_HTML_LENGTH = 1_000_000
+MAX_TEMPLATE_NAME_LENGTH = 100
+TemplateName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TEMPLATE_NAME_LENGTH)]
+
+
 class DocumentTemplateCreate(BaseModel):
     doc_type: str  # "CV" | "COVER_LETTER"
-    name: str
-    html: str
+    name: TemplateName
+    html: str = Field(max_length=MAX_TEMPLATE_HTML_LENGTH)
     is_admin: bool = False  # only honored when current_user.is_admin
 
 
 class DocumentTemplateUpdate(BaseModel):
-    name: Optional[str] = None
-    html: Optional[str] = None
+    name: Optional[TemplateName] = None
+    html: Optional[str] = Field(None, max_length=MAX_TEMPLATE_HTML_LENGTH)
 
 
 class DocumentTemplateResponse(BaseModel):
@@ -446,28 +595,129 @@ class JobStatusHistoryEntry(BaseModel):
         orm_mode = True
 
 
+MAX_TODOS = 50
+MAX_TODO_TEXT_LENGTH = 500
+MAX_TODO_ID_LENGTH = 64
+
+
+class JobChecklist(BaseModel):
+    """Apply checklist of the job page; only these keys exist."""
+
+    model_config = ConfigDict(extra="forbid")
+    posting_opened: bool = False
+    documents_checked: bool = False
+    sent: bool = False
+
+
+class JobTodo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=MAX_TODO_ID_LENGTH)
+    text: str = Field(min_length=1, max_length=MAX_TODO_TEXT_LENGTH)
+    done: bool = False
+
+
+def as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalise to an aware UTC instant; a naive value is taken as UTC."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def iso_utc(value: Optional[datetime]) -> Optional[str]:
+    """ISO 8601 in UTC with an explicit offset, so clients never guess the zone."""
+    return as_utc(value).isoformat() if value else None
+
+
+MAX_CONTACTS = 20
+MAX_CONTACT_FIELD_LENGTH = 200
+MAX_SALARY_AMOUNT = 10_000_000
+MAX_SALARY_NOTE_LENGTH = 500
+MAX_NOTES_LENGTH = 20_000
+MAX_DRAFT_LENGTH = 50_000
+
+
+class JobContactPerson(BaseModel):
+    """One contact of a job; only these keys are stored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=MAX_CONTACT_FIELD_LENGTH)
+    role: str = Field("", max_length=MAX_CONTACT_FIELD_LENGTH)
+    email: str = Field("", max_length=MAX_CONTACT_FIELD_LENGTH)
+    phone: str = Field("", max_length=MAX_CONTACT_FIELD_LENGTH)
+
+
+class JobRecruiterInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(None, max_length=MAX_CONTACT_FIELD_LENGTH)
+    role: Optional[str] = Field(None, max_length=MAX_CONTACT_FIELD_LENGTH)
+    email: Optional[str] = Field(None, max_length=MAX_CONTACT_FIELD_LENGTH)
+    phone: Optional[str] = Field(None, max_length=MAX_CONTACT_FIELD_LENGTH)
+
+
+class JobSalaryBenchmark(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: Optional[float] = Field(None, ge=0, le=MAX_SALARY_AMOUNT)
+    max: Optional[float] = Field(None, ge=0, le=MAX_SALARY_AMOUNT)
+    note: str = Field("", max_length=MAX_SALARY_NOTE_LENGTH)
+
+    # A field validator on max (not a model validator) puts the 422 on salary_benchmark.max,
+    # so the web client can show it under that field.
+    @field_validator("max")
+    @classmethod
+    def max_not_below_min(cls, value: Optional[float], info: ValidationInfo) -> Optional[float]:
+        minimum = info.data.get("min")
+        if value is not None and minimum is not None and value < minimum:
+            raise ValueError("max must not be below min")
+        return value
+
+
 class JobPatchRequest(BaseModel):
-    status: Optional[str] = None
     is_favorite: Optional[bool] = None
-    company_domain: Optional[str] = None
-    contact_persons: Optional[list] = None
-    recruiter_info: Optional[dict] = None
-    salary_benchmark: Optional[dict] = None
-    next_follow_up_at: Optional[str] = None
-    note: Optional[str] = None
-    notes: Optional[str] = None
-    application_draft: Optional[str] = None
-    cv_draft: Optional[str] = None
+    company_domain: Optional[CompanyDomain] = None
+    contact_persons: Optional[List[JobContactPerson]] = Field(None, max_length=MAX_CONTACTS)
+    recruiter_info: Optional[JobRecruiterInfo] = None
+    salary_benchmark: Optional[JobSalaryBenchmark] = None
+    next_follow_up_at: Optional[datetime] = None
+    interview_at: Optional[datetime] = None
+    notes: Optional[str] = Field(None, max_length=MAX_NOTES_LENGTH)
+    application_draft: Optional[str] = Field(None, max_length=MAX_DRAFT_LENGTH)
+    cv_draft: Optional[str] = Field(None, max_length=MAX_DRAFT_LENGTH)
     is_archived: Optional[bool] = None
+    checklist: Optional[JobChecklist] = None
+    todos: Optional[List[JobTodo]] = Field(None, max_length=MAX_TODOS)
+
+    @field_validator("next_follow_up_at", "interview_at")
+    @classmethod
+    def _dates_as_utc(cls, value):
+        return as_utc(value)
+
+    @field_validator("todos")
+    @classmethod
+    def _todo_ids_unique(cls, todos):
+        # The UI toggles and deletes to-dos by id, so a duplicate would hit the wrong item.
+        if todos is not None and len({todo.id for todo in todos}) != len(todos):
+            raise ValueError("todo ids must be unique")
+        return todos
 
 
 class CompanyAnalyzeRequest(BaseModel):
     force_refresh: bool = False
 
 
+# The texts come from AI output and scraped names; the web clips them to these bounds before sending.
+MAX_DEEP_DIVE_TEXT_LENGTH = 2000
+MAX_DEEP_DIVE_TITLE_LENGTH = 300
+MAX_DEEP_DIVE_COMPANY_LENGTH = 200
+
+
 class DeepDiveRequest(BaseModel):
-    focus: str
-    how_to_proceed: str
-    company_name: str
-    title: str
-    language: str = "de"
+    focus: str = Field(max_length=MAX_DEEP_DIVE_TEXT_LENGTH)
+    how_to_proceed: str = Field(max_length=MAX_DEEP_DIVE_TEXT_LENGTH)
+    company_name: str = Field(max_length=MAX_DEEP_DIVE_COMPANY_LENGTH)
+    title: str = Field(max_length=MAX_DEEP_DIVE_TITLE_LENGTH)
+    language: Literal["de", "en"] = "de"

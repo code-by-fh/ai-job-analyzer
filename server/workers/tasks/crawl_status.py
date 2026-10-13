@@ -9,7 +9,9 @@ once now.
 import json
 
 from core.logger import get_logger
+from core.crawl_registry import touch_crawl_progress
 from workers.notifications.email import flush_all_digests
+from workers.tasks.platform_runs import record_platform_run
 
 logger = get_logger(__name__)
 
@@ -36,7 +38,9 @@ def maybe_complete_crawl(crawl_job_id, user_id, db, r):
 
     if (jobs_saved + jobs_skipped) >= total and total > 0:
         logger.info(f"All jobs processed for crawl {crawl_job_id}. Marking as completed.")
+        touch_crawl_progress(r, crawl_job_id)
         r.hset(f"crawl_job:{crawl_job_id}", "status", "completed")
+        record_platform_run(r, crawl_job_id)
         r.srem(f"user:{user_id}:active_crawls", crawl_job_id)
         r.delete("system:crawling")
 
@@ -56,7 +60,7 @@ def maybe_complete_crawl(crawl_job_id, user_id, db, r):
             ),
         )
         flush_all_digests(crawl_job_id, user_id, db, r)
-        r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+        r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
         return True
 
     return False

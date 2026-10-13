@@ -1,0 +1,510 @@
+/* Quellen, ported from docs/prototype/clickdummy-editorial.html (.table.stack-sm, .src-name, .src-host, .health). */
+@layer components {
+  /* D11: the row layout follows the main column, which the sidebar narrows, so it is a container query. */
+  .sources {
+    container: sources / inline-size;
+  }
+  /* The deck keeps its line while the list loads, so the banner and rows never jump down. */
+  .sources .mast-deck {
+    min-height: 1.5em;
+  }
+  /* Preflight R-7: these shared primitives are 12 px; meaningful text here is at least 13 px. */
+  .sources .hint,
+  .sources .btn-sm,
+  .sources .chip,
+  .sources .code,
+  .source-drawer .hint,
+  .source-drawer .btn-sm,
+  .source-drawer .chip,
+  .source-drawer .code,
+  .source-wizard .hint,
+  .source-wizard .btn-sm,
+  .source-wizard .chip,
+  .source-wizard .code {
+    font-size: var(--fs-13);
+  }
+  .src-banner {
+    margin-bottom: var(--s5);
+  }
+  .src-banner-title {
+    margin: 0;
+    font-weight: 600;
+  }
+  .src-banner-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--s1);
+    font-size: var(--fs-13);
+  }
+  .src-head,
+  .src-row {
+    display: grid;
+    grid-template-columns:
+      minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 2.4fr) minmax(0, 1fr)
+      48px;
+    gap: var(--s4);
+    align-items: start;
+  }
+  .src-head {
+    padding: 0 0 var(--s2);
+    border-bottom: 1px solid var(--line-strong);
+    font-size: var(--fs-13);
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .src-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .src-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-list);
+  }
+  .src-cell {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .src-name-cell {
+    display: grid;
+    gap: 3px;
+    justify-items: start;
+  }
+  .src-name {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    font-size: var(--fs-16);
+    font-weight: 650;
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .src-name:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .src-host {
+    font-family: var(--font-code);
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  /* A visually hidden label (the sr-only clip), revealed in the narrow layout below. */
+  .src-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* Inline like a successful run, so a failure wraps right after the narrow layout's "Letzter Lauf:". */
+  .src-run-error {
+    display: inline;
+  }
+  .src-run-error > .ico {
+    display: inline-block;
+    vertical-align: -0.2em;
+    margin-right: 6px;
+  }
+  .src-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px var(--s2);
+    border: 1px solid var(--line-control);
+    border-radius: var(--r-ctl);
+    font-size: var(--fs-13);
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--text-2);
+  }
+  .src-status-running {
+    color: var(--text);
+  }
+  /* Spec 5: an error in crimson with icon and words (.t-danger alone loses to .src-status here). */
+  .src-status-failing {
+    color: var(--danger);
+    border-color: currentColor;
+  }
+  .src-action {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .crawl-start {
+    display: inline-flex;
+  }
+  /* D4: step text over a native bar, Abbrechen beside the bar in the last-run cell. */
+  .crawl-live {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    align-items: center;
+  }
+  .crawl-step {
+    grid-column: 1 / -1;
+  }
+  .crawl-bar {
+    width: 100%;
+    height: 6px;
+    appearance: none;
+    border: 0;
+    border-radius: 3px;
+    background: var(--sunken);
+  }
+  .crawl-bar::-webkit-progress-bar {
+    background: var(--sunken);
+    border-radius: 3px;
+  }
+  /* Ink, not vermilion: progress is not "your next move" (usability #16). */
+  .crawl-bar::-webkit-progress-value {
+    background: var(--text);
+    border-radius: 3px;
+  }
+  .crawl-bar::-moz-progress-bar {
+    background: var(--text);
+    border-radius: 3px;
+  }
+
+  /* D5: the drawer, a portal outside .sources, so it is its own container for the narrow layout. */
+  .source-drawer {
+    container: source-drawer / inline-size;
+  }
+  .drawer-subline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2) var(--s3);
+    margin-top: -12px;
+    font-size: var(--fs-13);
+  }
+  .drawer-subline .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .drawer-crawl {
+    margin-left: auto;
+  }
+  .drawer-crawl .crawl-live {
+    min-width: 240px;
+  }
+  .source-drawer > .notice {
+    margin-top: var(--s4);
+  }
+  .drawer-section {
+    display: grid;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  /* The grid gap spaces the fields; the stacked-field margin would double it. */
+  .drawer-section .field + .field {
+    margin-top: 0;
+  }
+  .drawer-section-foot {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .src-name-field {
+    display: grid;
+    gap: 6px;
+  }
+  /* Its text lines up with the field above; the ghost button's padding hangs into the margin. */
+  .src-name-field > .btn {
+    justify-self: start;
+    margin-left: -10px;
+  }
+  /* HH:MM needs no full row; the hint below keeps the width of the section. */
+  .schedule-fields input[type="time"] {
+    max-width: 180px;
+  }
+  .schedule-fields {
+    display: grid;
+    gap: 12px;
+  }
+  .schedule-days {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  /* D7: one row per channel, separated by a hairline; the legend only names the group. */
+  .notify-intro {
+    margin: 0;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .channel-row {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+    min-width: 0;
+  }
+  .channel-row > .hint {
+    margin: 0;
+  }
+  .channel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s2) var(--s3);
+  }
+  .channel-test {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .channel-test > .hint {
+    margin: 0;
+  }
+  /* Under the check's label text: the 15 px box plus the 10 px gap of ui .check. */
+  .channel-options {
+    display: grid;
+    gap: 12px;
+    padding-left: 25px;
+  }
+  .notify-failed,
+  .runs-failed {
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+  }
+  /* D8: a plain list of sentences; a failure keeps its icon on the first line. */
+  .run-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-13);
+  }
+  .run-list > .run-failed {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .run-failed > .ico {
+    flex: none;
+    align-self: center;
+  }
+  .drawer-danger {
+    justify-items: start;
+  }
+  .drawer-danger > .hint {
+    margin: 0;
+  }
+
+  /* D10: the add wizard, a portal outside .sources and always the narrow drawer. */
+  /* D11: the three steps stay one row (labels may wrap), not the phone's scrolling strip. */
+  .source-wizard .stepper {
+    display: grid;
+    overflow: visible;
+    margin: 0 0 var(--s5);
+    padding: 0;
+    mask-image: none;
+  }
+  .source-wizard .stepper li {
+    min-width: 0;
+  }
+  /* The wizard's steps carry no dates; the empty date line and the track's 56 px would leave a gap. */
+  .source-wizard .step-date {
+    display: none;
+  }
+  .source-wizard .step {
+    min-height: 0;
+  }
+  .source-wizard .notice {
+    margin-top: var(--s4);
+  }
+  /* Carried 44 px rule: the narrow wizard renders ScheduleFields too (Task 13), at any viewport. */
+  .source-wizard .chip {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+  }
+  .wizard-existing {
+    min-height: 44px;
+  }
+  .link-tools {
+    display: grid;
+    gap: var(--s2);
+    margin-top: var(--s4);
+  }
+  .link-select {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s1) var(--s2);
+  }
+  .link-count {
+    margin-left: auto;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .link-list {
+    list-style: none;
+    margin: 12px 0 var(--s4);
+    padding: 0;
+    border-top: 2px solid var(--rule);
+    max-height: 50vh;
+    overflow: auto;
+  }
+  /* One row for a found link and a first-run choice (preflight ruling 30, also in the narrow wizard). */
+  .link-list li,
+  .run-choice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    min-height: 44px;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-13);
+  }
+  /* As ui .check input: the accent and the 15 px box. */
+  .link-list input,
+  .run-choice input {
+    flex: none;
+    margin-top: 12px;
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+  }
+  /* The label fills the row, so the whole 44 px row toggles its input. */
+  .link-list label,
+  .run-choice label {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+    padding: 10px 0;
+    cursor: pointer;
+  }
+  .link-list .code {
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  /* D10 step 3: the grid gap spaces name, schedule and first run, like a drawer section. */
+  .wizard-finish {
+    display: grid;
+    gap: var(--s4);
+  }
+  .wizard-finish .field + .field {
+    margin-top: 0;
+  }
+  .run-choices {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .run-choice .hint {
+    margin-top: 0;
+  }
+  /* The foot's own rule closes the list, and the grid gap already spaces it (no 40 px hole). */
+  .run-choice:last-child {
+    border-bottom: 0;
+  }
+  .wizard-finish > .panel-foot {
+    margin-top: 0;
+  }
+
+  @container source-drawer (max-width: 719px) {
+    .drawer-crawl {
+      margin-left: 0;
+      flex-basis: 100%;
+    }
+    .source-drawer .chip {
+      min-height: 44px;
+      min-width: 44px;
+      justify-content: center;
+    }
+    .drawer-subline .link {
+      min-height: 44px;
+    }
+    .channel-row .check,
+    .channel-row .link,
+    .channel-test .btn,
+    .drawer-section-foot .btn,
+    .notify-failed .btn,
+    .runs-failed .btn,
+    .drawer-danger .btn {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+    .channel-options {
+      padding-left: 0;
+    }
+  }
+
+  /* D11: below 720 px of column width each row stacks; the status tag sits beside the name. */
+  @container sources (max-width: 719px) {
+    .src-head {
+      display: none;
+    }
+    .src-row {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "name status action"
+        "schedule schedule schedule"
+        "run run run";
+      gap: var(--s1) var(--s3);
+    }
+    .src-name-cell {
+      grid-area: name;
+    }
+    .src-schedule {
+      grid-area: schedule;
+    }
+    .src-run {
+      grid-area: run;
+    }
+    /* Tag and button are taller than the name's line; pulled up so all three share one centre. */
+    .src-state {
+      grid-area: status;
+      margin-top: -4px;
+    }
+    .src-action {
+      grid-area: action;
+      margin-top: -12px;
+    }
+    .src-schedule > .src-label,
+    .src-run > .src-label {
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+      white-space: normal;
+      color: var(--text-2);
+    }
+    /* A 44 px target without a gap before the host: the padding reaches into the row's own space. */
+    .src-name {
+      padding-block: 13px;
+      margin-block: -13px;
+    }
+    .src-banner-list .link,
+    .src-action .btn,
+    .crawl-cancel {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+  }
+}

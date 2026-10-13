@@ -1,0 +1,81 @@
+/* Login screen ported from docs/prototype/clickdummy-editorial.html. */
+@layer components {
+  .auth {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .auth-side {
+    --text: var(--sb-text);
+    --text-2: var(--sb-text-2);
+    --accent-text: var(--sb-accent);
+    background: var(--sb-bg);
+    color: var(--sb-text);
+    padding: 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .auth-word {
+    font: 760 clamp(56px, 8vw, 120px)/0.86 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.055em;
+  }
+  .auth-word > span:last-child::after {
+    content: ".";
+    color: var(--accent-text);
+  }
+  .auth-deck {
+    font-size: 16px;
+    color: var(--text-2);
+    max-width: 34ch;
+    margin-top: 22px;
+  }
+  .auth-foot {
+    color: var(--sb-text-3);
+  }
+  .auth-main {
+    display: grid;
+    place-items: center;
+    padding: 32px 24px;
+  }
+  .auth-box {
+    width: min(380px, 100%);
+  }
+  .auth-form {
+    margin-top: 22px;
+  }
+  .auth-form .notice {
+    margin-top: var(--s4);
+  }
+  .auth-submit {
+    width: 100%;
+    margin-top: 22px;
+  }
+
+  @media (max-width: 767px) {
+    /* The brand panel keeps its natural height; otherwise spare viewport height splits evenly. */
+    .auth {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    .auth-side {
+      padding: 28px 16px 26px;
+    }
+    .auth-word {
+      font-size: 56px;
+    }
+    .auth-deck {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .auth-foot {
+      display: none;
+    }
+    .auth-main {
+      place-items: start center;
+      padding: 28px 16px;
+    }
+  }
+}

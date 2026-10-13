@@ -45,6 +45,7 @@ from workers.tasks.scheduling import (
 )
 from workers.tasks.package import generate_application_package_task  # noqa: F401
 from workers.tasks.fill_cv_template import fill_cv_template_task  # noqa: F401
+from workers.tasks.generation_sweep import fail_stuck_generations  # noqa: F401
 
 __all__ = [
     "celery_app",

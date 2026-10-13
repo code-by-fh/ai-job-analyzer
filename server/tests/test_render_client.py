@@ -63,3 +63,32 @@ def test_fetch_html_passes_custom_timeout():
 
     payload = mock_post.call_args[1]["json"]
     assert payload["timeout"] == 20
+
+
+RENDER_KEY = "k" * 48
+
+
+def _html_response():
+    mock_resp = MagicMock()
+    mock_resp.headers = {"content-type": "text/html"}
+    mock_resp.text = "<html></html>"
+    mock_resp.raise_for_status = MagicMock()
+    return mock_resp
+
+
+def test_fetch_html_sends_api_key_as_bearer_token(monkeypatch):
+    monkeypatch.setattr(render_client, "_RENDER_API_KEY", RENDER_KEY)
+
+    with patch("services.render_client.requests.post", return_value=_html_response()) as mock_post:
+        render_client.fetch_html("https://example.com")
+
+    assert mock_post.call_args[1]["headers"] == {"Authorization": f"Bearer {RENDER_KEY}"}
+
+
+def test_fetch_html_sends_no_auth_header_without_api_key(monkeypatch):
+    monkeypatch.setattr(render_client, "_RENDER_API_KEY", "")
+
+    with patch("services.render_client.requests.post", return_value=_html_response()) as mock_post:
+        render_client.fetch_html("https://example.com")
+
+    assert mock_post.call_args[1]["headers"] == {}

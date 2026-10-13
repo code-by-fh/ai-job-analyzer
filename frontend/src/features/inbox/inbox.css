@@ -1,0 +1,620 @@
+/* Inbox, ported from docs/prototype/clickdummy-editorial.html (.inbox, .jrow, .runline, .list-foot). */
+@layer components {
+  .inbox {
+    min-height: 100dvh;
+  }
+  .inbox-list {
+    min-width: 0;
+    max-width: 920px;
+    margin: 0 auto;
+    padding-bottom: 72px;
+  }
+  .inbox-top {
+    padding: 30px 24px 0;
+  }
+  .inbox-top .mast {
+    margin-bottom: 0;
+  }
+  .inbox-top .tabs {
+    margin-top: 18px;
+  }
+  .inbox-list .tabpanel {
+    padding-top: 0;
+  }
+  /* Meaningful text, so 13 px and --text-2 (spec 4.3 #5), not the prototype's 12 px in --text-3. */
+  .runline {
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+  .runline b {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .runline-error b {
+    color: inherit;
+  }
+  /* Counts are meaningful text: 13 px in --text-2, like the sidebar's nav counts (shell.css). */
+  .inbox-top .tab .count-plain {
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  /* The Neu badge too: the shared .count-badge is 12 px, a size for decoration, not counts. */
+  .inbox-top .tab .count-badge {
+    font-size: var(--fs-13);
+  }
+  .runline-error {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .runline-error > .ico {
+    align-self: center;
+  }
+  .jrows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .jrow {
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 6px 14px;
+    align-items: start;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    transition: background-color var(--t-fast) var(--ease);
+  }
+  .jrow:hover {
+    background: var(--hover);
+  }
+  .jrow.is-selected {
+    background: var(--selected);
+  }
+  .jrow.is-selected::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: var(--accent);
+  }
+  .jrow-main {
+    min-width: 0;
+  }
+  .jrow-link {
+    font-weight: 600;
+    font-size: var(--fs-body);
+    line-height: 1.3;
+    color: var(--text);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .jrow-link:hover {
+    text-decoration: none;
+  }
+  /* The whole row opens the job: the link stretches over it; the buttons sit above (z-index). */
+  .jrow-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .jrow-link:focus-visible {
+    outline: none;
+  }
+  .jrow-link:focus-visible::after {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .jrow-sub,
+  .jrow-fit {
+    margin-top: 3px;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .jrow-actions {
+    grid-column: 2 / 4;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .score.unscored .score-n {
+    color: var(--text-3);
+  }
+  .jrows-loading {
+    padding: 16px 24px;
+  }
+  .jrow-skeleton + .jrow-skeleton {
+    margin-top: 22px;
+  }
+  .jrows-stalled {
+    margin-top: 16px;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .list-foot {
+    padding: 14px 24px;
+  }
+  .inbox-notice {
+    margin: 16px 24px 0;
+  }
+
+  /* "Anstehend": the border is a control-strength line (3:1), amber only for a warning. */
+  .due {
+    margin-top: 18px;
+  }
+  .due-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .due-row {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 0 8px 12px;
+    border-left: 3px solid var(--line-control);
+  }
+  .due-row + .due-row {
+    margin-top: 4px;
+  }
+  .due-row.is-warning {
+    border-left-color: var(--warn-text);
+  }
+  /* One line per step: "label · job" truncates, the date stays at the right. */
+  .due-link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 6px;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .due-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .due-link:focus-visible {
+    outline: none;
+  }
+  .due-link:focus-visible::after {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .due-what {
+    flex: none;
+    font-weight: 600;
+  }
+  .due-job,
+  .due-when {
+    font-size: var(--fs-13);
+  }
+  .due-job,
+  .due-when:not(.t-warn) {
+    color: var(--text-2);
+  }
+  .due-job {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .due-error-action {
+    margin-top: 8px;
+  }
+  .due-when {
+    flex: none;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /*
+   * Decision D2 / R16(1): the preview column exists from the server render on and CSS alone shows it,
+   * so hydration causes no reflow. 1200px must equal WIDE_INBOX_QUERY in InboxPage.tsx, which decides
+   * what a row click does and fills the pane.
+   */
+  .inbox-detail {
+    display: none;
+  }
+  @media (min-width: 1200px) {
+    .inbox {
+      display: grid;
+      grid-template-columns: minmax(320px, var(--list-w)) minmax(0, 1fr);
+      align-items: start;
+    }
+    .inbox-list {
+      max-width: none;
+      margin: 0;
+      min-height: 100dvh;
+      border-right: 1px solid var(--line-strong);
+    }
+    /* The pane stays in view while the list scrolls with the page. */
+    .inbox-detail {
+      display: block;
+      position: sticky;
+      top: 0;
+      max-height: 100dvh;
+      overflow-y: auto;
+      min-width: 0;
+    }
+    /* Prototype .ftab sizes, so all three tabs with counts fit the ~372 px column. */
+    .inbox-top .tab {
+      font-size: var(--fs-13);
+      margin-right: 14px;
+    }
+    /* Fallback for longer labels (EN): the strip scrolls, and the fade says so. The bleed puts the
+       fade into the column padding, so it starts where the masthead rule ends. */
+    .inbox-top .tabs {
+      margin-inline: -16px;
+      padding-inline: 16px;
+      mask-image: var(--edge-fade);
+    }
+    /* The ~372 px column has no room for the label beside the title (it broke "Eingang"), so
+       the import trigger is icon only here, as in the prototype's inbox masthead. */
+    .inbox-top .import-trigger {
+      width: var(--ctl-h-sm);
+      padding: 0;
+    }
+    .inbox-top .import-trigger > span {
+      display: none;
+    }
+  }
+  .ip {
+    max-width: 820px;
+    padding: 30px 40px 0;
+  }
+  .ip-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px 24px;
+    align-items: start;
+    border-top: var(--rule-w) solid var(--rule);
+    padding-top: 18px;
+  }
+  .ip-title {
+    font: 700 clamp(26px, 2.6vw, 38px) / 1.05 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.03em;
+    overflow-wrap: anywhere;
+  }
+  .ip-body {
+    margin-top: 24px;
+  }
+  .ip-actions {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+    padding: 14px 0 20px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .detail-empty {
+    min-height: 60dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+  }
+
+  /* Ported from the prototype's .threshold block; numeral, slider and line in ink (usability #16). */
+  .threshold-panel {
+    /* Pinned on the thumb below; ticks and scale are inset by half of it (one mapping, Task 12). */
+    --thr-thumb: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  /* Meaningful text: 13 px in --text-2, not the 12 px .hint (spec 4.3 #5). */
+  .thr-note {
+    margin-top: 6px;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+  .thr-skeleton {
+    width: 50%;
+    margin-top: 16px;
+  }
+  .thr-error {
+    margin-top: 12px;
+  }
+  .thr-head {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    margin: 16px 0 12px;
+  }
+  .thr-big {
+    font: 760 72px / 0.8 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .thr-band {
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    padding-bottom: 2px;
+  }
+  .thr-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .thr-field .label {
+    margin-bottom: 0;
+  }
+  /*
+    Full panel width, like the tick strip and the scale. The browser centres the thumb for value n
+    at thumb/2 + n% of (width - thumb), so the thumb size is pinned and the others are inset by half.
+  */
+  .thr-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    display: block;
+    width: 100%;
+    height: var(--ctl-h);
+    margin: 8px 0 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .thr-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line-control);
+  }
+  .thr-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--thr-thumb);
+    height: var(--thr-thumb);
+    margin-top: calc((4px - var(--thr-thumb)) / 2);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text);
+  }
+  .thr-slider::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line-control);
+  }
+  .thr-slider::-moz-range-thumb {
+    width: var(--thr-thumb);
+    height: var(--thr-thumb);
+    border: 0;
+    border-radius: 50%;
+    background: var(--text);
+  }
+  .thr-field .input {
+    width: 76px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .thr-ticks,
+  .thr-scale {
+    padding-inline: calc(var(--thr-thumb) / 2);
+  }
+  .thr-ticks {
+    height: 24px;
+    margin-top: 10px;
+  }
+  .thr-ticks > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  /* Both fills reach 3:1 on --bg (tests/unit/theme/thresholdStyles.test.ts); the line splits them. */
+  .thr-tick {
+    fill: var(--text);
+  }
+  .thr-tick.below {
+    fill: var(--text-3);
+  }
+  .thr-line {
+    fill: var(--text);
+  }
+  /* Labels are placed at their score; the end labels keep inside the track. */
+  /* Two lines: numerals on their ticks, each word centred below its numeral, so words of
+     neighbouring marks never meet on a narrow track (EN "Strong" next to "100"). */
+  .thr-scale {
+    height: 3em;
+    margin-top: 4px;
+    white-space: nowrap;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Positioned in the inset box, so left: n% is the same place as tick n. */
+  .thr-scale > div {
+    position: relative;
+    height: 100%;
+  }
+  /* The mark is as wide as its numeral (the word is taken out of the flow), so -50% centres the
+     numeral on its tick; the end marks stay inside the track. */
+  .thr-mark {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+  }
+  .thr-mark:first-child {
+    transform: none;
+  }
+  .thr-mark:last-child {
+    transform: translateX(-100%);
+  }
+  .thr-word {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding-left: 0;
+  }
+  /* "alles" starts at the left end like its numeral, so it stays inside the track. */
+  .thr-mark:first-child .thr-word {
+    left: 0;
+    transform: none;
+  }
+  .thr-actions {
+    margin-top: 12px;
+  }
+
+  /* Decision D6: the warning sits with the run line it qualifies, above the due card and tabs. */
+  .ai-missing {
+    margin-top: 16px;
+  }
+
+  /* Prototype .onboard; the progress bar is ink, vermilion stays for the next move (usability #16). */
+  .onboard {
+    max-width: 760px;
+  }
+  .ob-progress {
+    max-width: 320px;
+    height: 4px;
+    margin-top: -14px;
+    background: var(--line);
+  }
+  /* Below the deck, pulled up like the progress bar; the bar then follows with its own gap. */
+  .ob-import {
+    margin-top: -14px;
+    margin-bottom: 16px;
+  }
+  .ob-import + .ob-progress {
+    margin-top: 0;
+  }
+  .ob-progress > i {
+    display: block;
+    height: 100%;
+    background: var(--text);
+  }
+  .ob-list {
+    list-style: none;
+    margin: var(--s5) 0 0;
+    padding: 0;
+  }
+  .ob-item {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+  }
+  .ob-item:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .ob-num {
+    display: flex;
+    font: 300 44px / 0.85 var(--font-display);
+    font-optical-sizing: auto;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    color: var(--text-3);
+  }
+  .ob-num .ico {
+    width: 28px;
+    height: 28px;
+    stroke-width: 2.2;
+    color: var(--text);
+  }
+  .ob-title {
+    font: 650 20px / 1.2 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+  }
+  .ob-item.done .ob-title {
+    color: var(--text-2);
+  }
+  .ob-text {
+    max-width: 54ch;
+    margin-top: 4px;
+    font-size: var(--fs-14);
+    color: var(--text-2);
+  }
+  /* Meaningful text: 13 px (.meta) in --text-2, not the prototype's 12 px in --text-3 (spec 4.3 #5). */
+  .ob-done,
+  .ob-foot {
+    color: var(--text-2);
+  }
+  .ob-foot {
+    margin-top: 18px;
+  }
+
+  @media (max-width: 767px) {
+    /* Narrow: label and date on the first line, "Company · Title" on a second one. */
+    .due-link {
+      flex-wrap: wrap;
+    }
+    .due-what {
+      order: 1;
+    }
+    .due-sep {
+      display: none;
+    }
+    .due-when {
+      order: 2;
+    }
+    .due-job {
+      order: 3;
+      flex: 0 0 100%;
+    }
+    .inbox-top {
+      padding: 22px 16px 0;
+    }
+    .jrow {
+      gap: 6px 12px;
+      padding: 15px 16px;
+      min-height: 64px;
+    }
+    .jrows-loading,
+    .list-foot {
+      padding: 14px 16px;
+    }
+    .inbox-notice {
+      margin: 16px 16px 0;
+    }
+    .threshold-panel {
+      padding: 18px 16px;
+    }
+    .thr-slider {
+      height: 44px;
+    }
+    .ob-item {
+      grid-template-columns: 44px minmax(0, 1fr);
+    }
+    .ob-act {
+      grid-column: 2;
+    }
+    /* R18(4): icon only below 768 px in the inbox masthead, square like .btn-sm.btn-icon; the
+       aria-label keeps the name. The onboarding (R19(3)) has room for the words. */
+    .inbox-top .import-trigger {
+      width: 36px;
+      padding: 0;
+    }
+    .inbox-top .import-trigger > span {
+      display: none;
+    }
+  }
+
+  /* Import drawer (prototype renderImport): field and notices sit 16 px below the intro. */
+  .import-block {
+    margin-top: 16px;
+  }
+  .import-again {
+    margin-top: 8px;
+  }
+}

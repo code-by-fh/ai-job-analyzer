@@ -13,7 +13,7 @@ ls -la *.py 2>/dev/null || echo "Keine Python-Dateien gefunden!"
 echo "Gelesene Variable SERVICE_MODE: '$SERVICE_MODE'"
 
 echo "Running Database Migrations..."
-alembic -c database/alembic.ini upgrade head || echo "Migrations skipped (oder nicht konfiguriert)"
+python -m database.schema || echo "Migrations failed - see the error above"
 
 echo "Starte Supervisord..."
 exec supervisord -c supervisord.conf

@@ -1,0 +1,422 @@
+/* Bewerbungen, ported from docs/prototype/clickdummy-editorial.html (.mag, .mag-head, .mag-table, .next-cell, .stack-sm). */
+@layer components {
+  /* The deck keeps its line while the counts load, so the sections never jump down. */
+  .applications .mast-deck {
+    min-height: 1.5em;
+  }
+  /* RB7: one stage colour set for the sections and the strip (STAGE_CLASS in PhaseSection.tsx). */
+  .stage-drafted {
+    --c: var(--st-drafted);
+  }
+  .stage-applied {
+    --c: var(--st-applied);
+  }
+  .stage-interview {
+    --c: var(--st-interview);
+  }
+  .stage-offer {
+    --c: var(--st-offer);
+  }
+  .stage-closed {
+    --c: var(--st-closed);
+  }
+  .mag + .mag {
+    margin-top: 52px;
+  }
+  .mag-head {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    column-gap: 8px;
+    align-items: baseline;
+    border-top: 5px solid var(--c);
+    padding-top: 14px;
+    margin-bottom: 6px;
+  }
+  .mag-no {
+    font: 300 44px/0.9 var(--font-display);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+  .mag-title {
+    margin: 0;
+    font: 720 44px/0.92 var(--font-display);
+    letter-spacing: -0.04em;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .mag-count {
+    font: 720 44px/0.9 var(--font-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+  }
+  .mag-hint {
+    grid-column: 2 / 4;
+    margin: 10px 0 0;
+    max-width: 62ch;
+    font-size: var(--fs-14);
+    color: var(--text-2);
+  }
+  .arows-head,
+  .arow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 23% 17% 16%;
+    column-gap: 24px;
+  }
+  .arows-head {
+    margin-top: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-strong);
+    font-size: var(--fs-13);
+    font-weight: 600;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  .arows {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+  }
+  .arows-head + .arows {
+    margin-top: 0;
+  }
+  .arow {
+    position: relative;
+    align-items: start;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .arow:hover {
+    background: var(--hover);
+  }
+  /*
+    Loading cue for the rows kept while a search answer is pending: a bar in the gap above the
+    first section (its stage rule stays visible). The former hover tint read as a hover and is
+    gone. The closed list shows the same bar. With reduced motion the segment stays put at the
+    left, so it never reads as a full-width divider; the slide is added below.
+  */
+  .apps-sections[aria-busy="true"],
+  .apps-closed[aria-busy="true"] {
+    position: relative;
+  }
+  .apps-sections[aria-busy="true"]::before,
+  .apps-closed[aria-busy="true"]::before {
+    content: "";
+    position: absolute;
+    top: -16px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(var(--text-2), var(--text-2)) no-repeat;
+    background-size: 30% 100%;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .apps-sections[aria-busy="true"]::before,
+    .apps-closed[aria-busy="true"]::before {
+      animation: apps-busy-slide 1.2s ease-in-out infinite;
+    }
+  }
+  /*
+    One bar per page, above the first section. Nested under the toggle, the closed rows rely on
+    the active list's bar and only keep aria-busy: a second bar there read as the toggle's underline.
+  */
+  .closed-toggle .apps-closed[aria-busy="true"]::before {
+    content: none;
+  }
+  /* -43% and 143% put the 30% wide segment just outside either edge. */
+  @keyframes apps-busy-slide {
+    from {
+      background-position: -43% 0;
+    }
+    to {
+      background-position: 143% 0;
+    }
+  }
+  /* Programmatic focus target (decision D14); keyboard focus still shows the ring. */
+  .apps-list:focus:not(:focus-visible) {
+    outline: none;
+  }
+  .arow-main {
+    min-width: 0;
+  }
+  .arow-link {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  /* One link per row, stretched over it (spec 4.3 #5). */
+  .arow-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .arow-link:focus-visible {
+    outline: none;
+  }
+  .arow-link:focus-visible::after {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .arow-sub {
+    margin: 2px 0 0;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .arow-cell {
+    margin: 0;
+    font-size: var(--fs-14);
+    color: var(--text-2);
+  }
+  /* Screen-reader text from 768 px (the column head shows the words); visible below (D12). */
+  .arow-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .next-cell {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .next-cell.t-warn {
+    color: var(--warn-text);
+    font-weight: 700;
+  }
+  .next-cell.t-danger {
+    color: var(--danger);
+  }
+  .when-cell {
+    font-variant-numeric: tabular-nums;
+  }
+  .applications .list-foot {
+    padding-inline: 0;
+  }
+  .apps-partial {
+    margin: 0 0 8px;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .applications .jrows-loading,
+  .applications .inbox-notice {
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+  .apps-search {
+    position: relative;
+    width: 280px;
+  }
+  .apps-search .ico {
+    position: absolute;
+    top: 50%;
+    left: 10px;
+    translate: 0 -50%;
+    color: var(--text-3);
+    pointer-events: none;
+  }
+  .apps-search .input {
+    width: 100%;
+    padding-left: 34px;
+  }
+  /* Phase strip (decision D4, usability #12): five toggles with counts and one tick per application. */
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0 16px;
+    min-height: 96px;
+    margin: 0 0 40px;
+  }
+  /*
+    The stage rule alone is about 2:1 on the page in light mode, so a control-grade hairline below
+    gives every toggle a >= 3:1 boundary (spec 4.3 #5, SC2).
+  */
+  .strip-item {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-height: 44px;
+    padding: 10px 8px 12px;
+    border: 0;
+    border-top: 4px solid var(--c);
+    border-bottom: 1px solid var(--line-control);
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .strip-item:hover {
+    background: var(--hover);
+  }
+  /* Pressed is shown by an ink underline, not by colour alone. */
+  .strip-item[aria-pressed="true"] {
+    background: var(--selected);
+    box-shadow: inset 0 -3px 0 var(--text);
+  }
+  .strip-item:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* The loading placeholder (R11): real items, invisible, so the heights match at any font size. */
+  .strip-ghost {
+    --c: var(--line);
+    cursor: default;
+  }
+  .strip-ghost:hover {
+    background: none;
+  }
+  .strip-ghost > * {
+    visibility: hidden;
+  }
+  /* Narrow columns wrap between the number and the label, never inside a word. */
+  .strip-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    min-width: 0;
+    font-size: var(--fs-13);
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .strip-count {
+    font: 720 32px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+  .strip-ticks {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    min-height: 13px;
+  }
+  .strip-tick {
+    width: 4px;
+    height: 13px;
+    background: var(--c);
+  }
+  .strip-more {
+    font-size: var(--fs-13);
+    line-height: 1;
+    color: var(--text-2);
+  }
+  .phase-empty {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-14);
+    color: var(--text-2);
+  }
+  .phase-empty p {
+    margin: 0;
+  }
+  /* Prototype .closed-toggle; the rows reuse the .arow grid, so their columns line up. */
+  .closed-toggle {
+    margin-top: 44px;
+  }
+  .closed-toggle .disclosure-body {
+    max-width: none;
+    font-size: inherit;
+    color: inherit;
+  }
+  .closed-toggle .mag {
+    margin-top: 18px;
+  }
+  /*
+    Beside the sidebar, five columns are too narrow for "Abgeschlossen" (88 px at 13 px) below
+    about 960 px, so the strip takes two rows of three there, like on phones, and no label has to
+    break inside its word.
+  */
+  @media (max-width: 959px) {
+    .strip {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px 16px;
+    }
+  }
+  @media (max-width: 767px) {
+    .applications .mast-actions,
+    .apps-search {
+      flex-basis: 100%;
+      width: 100%;
+    }
+    .apps-search .input {
+      min-height: 44px;
+    }
+    .mag + .mag {
+      margin-top: 40px;
+    }
+    .mag-head {
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+    }
+    .mag-no,
+    .mag-title,
+    .mag-count {
+      font-size: 32px;
+    }
+    .mag-hint {
+      grid-column: 1 / -1;
+      font-size: var(--fs-13);
+    }
+    /* Two rows of three without ticks (D12). */
+    .strip {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      min-height: 0;
+    }
+    .strip-count {
+      font-size: 24px;
+    }
+    .strip-ticks,
+    .strip-no {
+      display: none;
+    }
+    .arows-head {
+      display: none;
+    }
+    .arows-head + .arows {
+      margin-top: 10px;
+    }
+    .arow {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 4px;
+      min-height: 44px;
+      padding: 14px 0;
+    }
+    .arow-main {
+      margin-bottom: 4px;
+    }
+    .arow-label {
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+      white-space: normal;
+      font-size: var(--fs-13);
+      color: var(--text-3);
+    }
+  }
+  /* Narrowest phones (320 px): a tighter gap and padding keep "Abgeschlossen" on one line; the
+     break inside the word is only the fallback for a wider font, so the label never spills. */
+  @media (max-width: 359px) {
+    .strip {
+      gap: 8px 4px;
+    }
+    .strip-item {
+      padding-inline: 2px;
+    }
+    .strip-head {
+      overflow-wrap: anywhere;
+    }
+  }
+}

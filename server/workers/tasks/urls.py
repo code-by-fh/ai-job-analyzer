@@ -4,13 +4,22 @@ import os
 from urllib.parse import urlparse
 
 import redis
-import requests
 
 from core.celery_config import celery_app
 from core.logger import get_logger
+from core.url_safety import host_for_log
 from database.core import SessionLocal, JobEntry, JobPlatform
+from workers.crawl_control import INTERNAL_FAILURE, fail_crawl_job
 
 logger = get_logger(__name__)
+
+
+def _own_url_pattern(db, platform_id, user_id):
+    """The platform's url_pattern, only for the crawl's owner: the platform id reaches /scraper/search from the client."""
+    if not platform_id:
+        return None
+    platform = db.query(JobPlatform).filter(JobPlatform.id == platform_id, JobPlatform.user_id == user_id).first()
+    return platform.url_pattern if platform else None
 
 
 @celery_app.task(name="ai.filter_urls")
@@ -33,7 +42,8 @@ def filter_urls_task(args):
         else:
             base_url, urls_list = args
     except ValueError:
-        logger.error(f"Invalid args unpacking in filter_urls: {args}")
+        # The count only: the args hold the start URL and every page link with path and query.
+        logger.error(f"Invalid args unpacking in filter_urls: {len(args)} items")
         return []
 
     r_check = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
@@ -48,11 +58,7 @@ def filter_urls_task(args):
 
     db = SessionLocal()
     try:
-        url_pattern = None
-        if platform_id:
-            platform = db.query(JobPlatform).filter(JobPlatform.id == platform_id).first()
-            if platform:
-                url_pattern = platform.url_pattern
+        url_pattern = _own_url_pattern(db, platform_id, user_id)
 
         if not url_pattern:
             logger.warning(f"No url_pattern set for platform {platform_id}, skipping all URLs")
@@ -88,17 +94,10 @@ def filter_urls_task(args):
         return [filtered_urls, user_id, job_id, platform_id]
 
     except Exception as e:
-        logger.error(f"Filter error for {base_url}: {e}", exc_info=True)
+        logger.error(f"Filter error for host {host_for_log(base_url)}: {e}", exc_info=True)
         if job_id:
-            SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
-            try:
-                requests.post(
-                    f"{SCRAPER_URL}/fail-crawl",
-                    json={"job_id": job_id, "user_id": user_id, "error_message": str(e)},
-                    timeout=5,
-                )
-            except Exception:
-                pass
+            # Direct call: the worker has no session cookie for the scraper's /fail-crawl endpoint.
+            fail_crawl_job(r_check, job_id, user_id, failure=INTERNAL_FAILURE)
         return []
     finally:
         db.close()

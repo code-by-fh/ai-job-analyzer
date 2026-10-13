@@ -13,7 +13,11 @@ from database.core import SessionLocal, UserProfile, JobEntry
 from services import render_client
 
 # Logging Setup
+from core.crawl_registry import touch_crawl_progress
 from core.logger import get_logger
+from workers.crawl_control import INTERNAL_FAILURE, UNREACHABLE_FAILURE, fail_crawl_job
+from core.url_safety import canonical_http_url, host_for_log, is_public_http_url
+from workers.tasks.platform_runs import record_platform_run
 
 logger = get_logger(__name__)
 
@@ -35,48 +39,13 @@ def _is_cancelled(r, job_id):
         return False
 
 
-_PRIVATE_RANGES = [
-    # loopback
-    (0x7F000000, 0x7FFFFFFF),
-    # RFC 1918
-    (0x0A000000, 0x0AFFFFFF),
-    (0xAC100000, 0xAC1FFFFF),
-    (0xC0A80000, 0xC0A8FFFF),
-    # link-local
-    (0xA9FE0000, 0xA9FEFFFF),
-]
-
-
 def _is_safe_url(url: str) -> bool:
-    """Return True only if the URL is http(s) and does not point to a private/loopback address."""
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        hostname = parsed.hostname or ""
-        if hostname.lower() in ("localhost",):
-            return False
-        import socket
+    """http(s) to public addresses only (core/url_safety.py); the name stays because tests patch it.
 
-        try:
-            ip_str = socket.gethostbyname(hostname)
-        except Exception:
-            return False
-        parts = ip_str.split(".")
-        if len(parts) != 4:
-            return False
-        ip_int = (
-            (int(parts[0]) << 24)
-            | (int(parts[1]) << 16)
-            | (int(parts[2]) << 8)
-            | int(parts[3])
-        )
-        for lo, hi in _PRIVATE_RANGES:
-            if lo <= ip_int <= hi:
-                return False
-        return True
-    except Exception:
-        return False
+    Runs right before every render call, so a name re-pointed since the API check is refused; the
+    render service still resolves again itself (DNS rebinding residual, see core/url_safety.py).
+    """
+    return is_public_http_url(url)
 
 
 def get_html(url: str) -> str | None:
@@ -85,15 +54,18 @@ def get_html(url: str) -> str | None:
 
 
 def get_html_with_browser(url: str) -> str | None:
-    if not _is_safe_url(url):
-        logger.warning(f"Blocked SSRF attempt for URL: {url}")
+    host = host_for_log(url)
+    target = canonical_http_url(url)
+    if target is None or not _is_safe_url(target):
+        logger.warning(f"Blocked SSRF attempt for host: {host}")
         return None
-    logger.info(f"[RenderClient] Fetching: {url}")
-    html = render_client.fetch_html(url)
+    # Render the canonical form: it names exactly the host the check above resolved.
+    logger.info(f"[RenderClient] Fetching from host: {host}")
+    html = render_client.fetch_html(target)
     if html:
-        logger.info(f"[RenderClient] Fetched {len(html)} bytes from {url}")
+        logger.info(f"[RenderClient] Fetched {len(html)} bytes from host {host}")
     else:
-        logger.warning(f"[RenderClient] Empty response for {url}")
+        logger.warning(f"[RenderClient] Empty response from host {host}")
     return html
 
 
@@ -144,15 +116,22 @@ def get_clean_content(html):
 
 
 @celery_app.task(name="scraper.fetch_links")
-def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
+def fetch_links_task(start_url, user_id, job_id=None, platform_id=None):
     logger.info(
-        f"[TASK] Fetching links started for: {start_url} (User: {user_id}, Job: {job_id})"
+        f"[TASK] Fetching links started for host: {host_for_log(start_url)} (User: {user_id}, Job: {job_id})"
     )
 
     r = redis.from_url(REDIS_URL)
 
     try:
+        # Before the first write: a reaped or cancelled crawl has no hash, and hset would recreate it unlocked.
+        if _is_cancelled(r, job_id):
+            logger.info(f"[fetch_links] Job {job_id} was cancelled — skipping.")
+            r.delete("system:crawling")
+            return None
+
         if job_id:
+            touch_crawl_progress(r, job_id)
             r.hset(f"crawl_job:{job_id}", "status", "fetching_links")
             r.publish(
                 "job_updates",
@@ -162,6 +141,7 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
                         "job_id": job_id,
                         "user_id": user_id,
                         "platform": start_url,
+                        "platform_id": platform_id,
                         "started_at": str(int(time.time() * 1000)),
                     }
                 ),
@@ -176,18 +156,13 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
 
         html = get_html(start_url)
         if not html:
-            logger.warning(f"Failed to fetch content from {start_url}. Aborting crawl.")
+            logger.warning(f"Failed to fetch content from host {host_for_log(start_url)}. Aborting crawl.")
             if job_id:
-                from scraper_api import fail_crawl_job
-
-                fail_crawl_job(
-                    job_id,
-                    user_id,
-                    error_message=f"Failed to fetch content from {start_url}",
-                )
+                # Fixed text: it reaches the user's crawl error and must not carry the URL.
+                fail_crawl_job(r, job_id, user_id, failure=UNREACHABLE_FAILURE)
             else:
                 r.delete("system:crawling")
-                r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+                r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
             return None
 
         soup = BeautifulSoup(html, "html.parser")
@@ -205,23 +180,18 @@ def fetch_links_task(start_url, user_id=1, job_id=None, platform_id=None):
                 continue
             all_links.add(full_url)
 
-        logger.info(f"Found {len(all_links)} internal links on {start_url}")
-        if all_links:
-            sample = list(all_links)[:20]
-            logger.info(f"[fetch_links] Sample links (up to 20): {sample}")
-        else:
+        logger.info(f"Found {len(all_links)} internal links on host {host_for_log(start_url)}")
+        if not all_links:
             logger.warning(f"[fetch_links] No internal <a href> links found — page may be SPA-rendered without href attributes")
         return [start_url, list(all_links), user_id, job_id, platform_id]
 
     except Exception as e:
-        logger.error(f"Error in fetch_links_task for {start_url}: {e}", exc_info=True)
+        logger.error(f"Error in fetch_links_task for host {host_for_log(start_url)}: {e}", exc_info=True)
         if job_id:
-            from scraper_api import fail_crawl_job
-
-            fail_crawl_job(job_id, user_id, error_message=str(e))
+            fail_crawl_job(r, job_id, user_id, failure=INTERNAL_FAILURE)
         else:
             r.delete("system:crawling")
-            r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+            r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
         return None
 
 
@@ -260,6 +230,7 @@ def schedule_crawls_task(args):
                 )
 
                 r.hset(f"crawl_job:{job_id}", "status", "completed")
+                record_platform_run(r, job_id)
                 r.srem(f"user:{user_id}:active_crawls", job_id)
                 r.publish(
                     "job_updates",
@@ -275,7 +246,7 @@ def schedule_crawls_task(args):
                 )
 
             r.delete("system:crawling")
-            r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+            r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
             return
 
         logger.info(
@@ -290,6 +261,7 @@ def schedule_crawls_task(args):
                 if existing_total_found is not None
                 else len(filtered_links)
             )
+            touch_crawl_progress(r, job_id)
             r.hset(
                 f"crawl_job:{job_id}",
                 mapping={
@@ -359,6 +331,7 @@ def schedule_crawls_task(args):
 
             if job_id:
                 n = len(filtered_links)
+                touch_crawl_progress(r, job_id)
                 r.hset(
                     f"crawl_job:{job_id}",
                     mapping={
@@ -368,6 +341,7 @@ def schedule_crawls_task(args):
                         "status": "completed",
                     },
                 )
+                record_platform_run(r, job_id)
                 r.srem(f"user:{user_id}:active_crawls", job_id)
                 r.delete("system:crawling")
                 r.publish(
@@ -382,7 +356,7 @@ def schedule_crawls_task(args):
                         }
                     ),
                 )
-                r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+                r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
             return
 
         # Re-check right before dispatch: a cancel may have arrived while we
@@ -409,9 +383,7 @@ def schedule_crawls_task(args):
     except Exception as e:
         logger.error(f"Error in schedule_crawls_task: {e}", exc_info=True)
         if job_id:
-            from scraper_api import fail_crawl_job
-
-            fail_crawl_job(job_id, user_id, error_message=str(e))
+            fail_crawl_job(r, job_id, user_id, failure=INTERNAL_FAILURE)
 
 
 def _mark_scrape_failed(r, job_id, user_id):
@@ -422,6 +394,7 @@ def _mark_scrape_failed(r, job_id, user_id):
     if not job_id:
         return
     # Increment first, then read fresh state to avoid stale reads
+    touch_crawl_progress(r, job_id)
     jobs_skipped = int(r.hincrby(f"crawl_job:{job_id}", "jobs_skipped", 1))
     job_hash = r.hgetall(f"crawl_job:{job_id}")
     if not job_hash:
@@ -433,6 +406,7 @@ def _mark_scrape_failed(r, job_id, user_id):
         total_found_raw = job_hash.get(b"total_found")
         total_found = int(total_found_raw) if total_found_raw else total
         r.hset(f"crawl_job:{job_id}", "status", "completed")
+        record_platform_run(r, job_id)
         r.srem(f"user:{stored_user_id}:active_crawls", job_id)
         r.delete("system:crawling")
         r.publish(
@@ -447,12 +421,13 @@ def _mark_scrape_failed(r, job_id, user_id):
                 }
             ),
         )
-        r.publish("job_updates", json.dumps({"type": "crawl_completed"}))
+        r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": stored_user_id}))
 
 
 @celery_app.task(name="scraper.scrape_detail")
-def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_browser=False):
-    logger.info(f"[TASK] Scraping Detail for: {url} (User: {user_id}, Job: {job_id})")
+def scrape_job_detail_task(url, user_id, job_id=None, platform_id=None, force_browser=False):
+    host = host_for_log(url)
+    logger.info(f"[TASK] Scraping Detail for host: {host} (User: {user_id}, Job: {job_id})")
 
     r = redis.from_url(REDIS_URL)
     db = SessionLocal()
@@ -460,7 +435,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
     try:
         # Bail out immediately if the crawl job was cancelled
         if _is_cancelled(r, job_id):
-            logger.info(f"[TASK] Crawl job {job_id} cancelled — skipping {url}")
+            logger.info(f"[TASK] Crawl job {job_id} cancelled — skipping a page on {host}")
             return
 
         html = get_html(url)
@@ -469,47 +444,28 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
         # in the meantime, stop here — before any AI work, DB writes or hincrby that
         # would resurrect the deleted crawl job and keep the pipeline alive.
         if _is_cancelled(r, job_id):
-            logger.info(f"[TASK] Crawl job {job_id} cancelled during fetch — discarding {url}")
+            logger.info(f"[TASK] Crawl job {job_id} cancelled during fetch — discarding a page on {host}")
             return
 
         if not html:
-            logger.warning(f"Skipping {url} due to download failure.")
+            logger.warning(f"Failing the crawl: a page on {host} could not be downloaded.")
             if job_id:
-                r.hset(f"crawl_job:{job_id}", "status", "failed")
-                r.hset(
-                    f"crawl_job:{job_id}",
-                    "error_message",
-                    "URL konnte nicht erreicht werden",
-                )
-                r.srem(f"user:{user_id}:active_crawls", job_id)
-                r.delete("system:crawling")
-                r.publish(
-                    "job_updates",
-                    json.dumps(
-                        {
-                            "type": "crawl_job_failed",
-                            "job_id": job_id,
-                            "user_id": user_id,
-                            "reason": "error",
-                            "error_message": "URL konnte nicht erreicht werden",
-                        }
-                    ),
-                )
+                # A dead detail link fails the whole run (stored as unreachable); see the tracker's Open Questions.
+                fail_crawl_job(r, job_id, user_id, failure=UNREACHABLE_FAILURE)
             return
 
         content = get_clean_content(html)
         if not content:
-            logger.warning(f"No clean content extracted from {url}")
+            logger.warning(f"No clean content extracted from a page on {host}")
 
         # Intelligent extraction of job details using AI
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        if not profile:
-            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
         user_language = getattr(profile, "language", "de") if profile else "de"
         client, model = get_client_and_model("extract_job_details", db)
 
         if job_id:
+            touch_crawl_progress(r, job_id)
             extracting_count = int(
                 r.hincrby(f"crawl_job:{job_id}", "extracting_count", 1)
             )
@@ -533,7 +489,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
                 ),
             )
 
-        logger.info(f"Extracting job details intelligently for {url}...")
+        logger.info(f"Extracting job details intelligently for a page on {host}...")
         intelligent_content = extract_job_details(
             content, model=model, client=client, language=user_language
         )
@@ -548,7 +504,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
         )
 
         extracted_job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{url}"))
-        logger.info(f"Extracted Job: '{title}' (ID: {extracted_job_id}) from {url}")
+        logger.info(f"Extracted Job: '{title}' (ID: {extracted_job_id}) from {host}")
 
         job_data = {
             "id": extracted_job_id,
@@ -565,6 +521,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
         logger.info(f"Triggered ai.analyze_job for {extracted_job_id}")
 
         if job_id:
+            touch_crawl_progress(r, job_id)
             scraping_completed = int(
                 r.hincrby(f"crawl_job:{job_id}", "scraping_completed", 1)
             )
@@ -597,7 +554,7 @@ def scrape_job_detail_task(url, user_id=1, job_id=None, platform_id=None, force_
             )
 
     except Exception as e:
-        logger.error(f"Error in scrape_job_detail_task for {url}: {e}", exc_info=True)
+        logger.error(f"Error in scrape_job_detail_task for host {host}: {e}", exc_info=True)
         _mark_scrape_failed(r, job_id, user_id)
     finally:
         db.close()

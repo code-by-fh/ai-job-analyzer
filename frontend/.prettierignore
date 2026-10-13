@@ -1,0 +1,7 @@
+.next
+node_modules
+pnpm-lock.yaml
+test-results
+playwright-report
+tests/e2e/__screenshots__
+next-env.d.ts

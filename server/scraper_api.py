@@ -1,23 +1,94 @@
 import os
 import time
-from typing import Optional
+from typing import NamedTuple, Optional
 import logging
 import uuid
 import json
 from celery import chain
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from core.scraper_celery_config import celery_app
 import redis
 
 from core.auth import get_current_user
 from database.core import User
+from core.crawl_errors import CRAWL_INTERNAL_ERROR_MESSAGE
+from core.crawl_registry import (
+    ALREADY_RUNNING,
+    CRAWL_TTL_SECONDS,
+    PROGRESS_FIELD,
+    QUEUED_STATUS,
+    acquire_crawl_lock,
+    active_crawl_for_platform,
+    release_crawl_lock,
+)
 from core.logger import get_logger
+from core.url_safety import public_http_url
+from workers.crawl_control import CrawlFailure, cleanup_crawl_job, crawl_failed_event, fail_crawl_job
+from workers.tasks.platform_runs import ERROR_FAILED, record_platform_run
 
 logger = get_logger(__name__)
 
-app = FastAPI()
+
+REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
+r = redis.from_url(REDIS_URL)
+
+
+def _clear_stale_job(user_key, job_id: str, job_data: dict) -> None:
+    """Record the interrupted run (it frees the platform lock by token), drop the crawl and tell the web it ended."""
+    record_platform_run(r, job_id, error=ERROR_FAILED)
+    stored_user_id = int(job_data.get(b"user_id", b"0"))
+    r.srem(user_key, job_id)
+    r.delete(f"crawl_job:{job_id}")
+    r.delete(f"crawl_job:{job_id}:all_job_titles")
+    r.delete(f"crawl_job:{job_id}:task_ids")
+    r.delete(f"crawl_job:{job_id}:cancelled")
+    # The web learns of a crawl end only from events, so a silent removal would leave the row running.
+    r.publish("job_updates", json.dumps(crawl_failed_event(job_id, stored_user_id)))
+    logger.info(f"Cleared job {job_id} (user {stored_user_id})")
+
+
+def cleanup_stale_jobs():
+    """Remove all in-flight and completed crawl jobs on startup.
+
+    Any job that was running when the server/worker last stopped is now
+    orphaned — Celery workers have restarted and will never finish them.
+    Clean them all up so the frontend starts with a blank slate.
+    """
+    logger.info("Cleaning up stale crawl jobs from Redis...")
+    total_removed = 0
+    for user_key in r.keys("user:*:active_crawls"):
+        for job_id_bytes in r.smembers(user_key):
+            job_id = job_id_bytes.decode("utf-8")
+            job_data = r.hgetall(f"crawl_job:{job_id}")
+            # Every job goes regardless of status: workers restarted, so an in-flight job never completes.
+            if job_data:
+                _clear_stale_job(user_key, job_id, job_data)
+            else:
+                r.srem(user_key, job_id)
+            total_removed += 1
+    r.delete("system:crawling")
+    logger.info(f"Cleanup complete. Removed {total_removed} stale jobs.")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Clear orphaned crawls when the scraper API starts, never at import: Celery workers import this module too.
+
+    Crawl locks are left alone; their TTL and the end-of-crawl release free orphans.
+    """
+    try:
+        cleanup_stale_jobs()
+    except Exception as e:
+        logger.warning(f"Startup cleanup skipped (Redis not ready): {e}")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
@@ -32,157 +103,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
-r = redis.from_url(REDIS_URL)
 
-
-def cleanup_stale_jobs():
-    """Remove all in-flight and completed crawl jobs on startup.
-
-    Any job that was running when the server/worker last stopped is now
-    orphaned — Celery workers have restarted and will never finish them.
-    Clean them all up so the frontend starts with a blank slate.
-    """
-    logger.info("Cleaning up stale crawl jobs from Redis...")
-
-    user_keys = r.keys("user:*:active_crawls")
-    total_removed = 0
-
-    for user_key in user_keys:
-        job_ids = r.smembers(user_key)
-        for job_id_bytes in job_ids:
-            job_id = job_id_bytes.decode("utf-8")
-            job_data = r.hgetall(f"crawl_job:{job_id}")
-
-            if not job_data:
-                r.srem(user_key, job_id)
-                total_removed += 1
-            else:
-                # Remove every job regardless of status — workers restarted,
-                # so any in-flight job will never complete.
-                user_id_raw = job_data.get(b"user_id", b"0")
-                stored_user_id = int(user_id_raw)
-                r.srem(user_key, job_id)
-                r.delete(f"crawl_job:{job_id}")
-                r.delete(f"crawl_job:{job_id}:all_job_titles")
-                r.delete(f"crawl_job:{job_id}:task_ids")
-                r.delete(f"crawl_job:{job_id}:cancelled")
-                total_removed += 1
-                logger.info(f"Cleared job {job_id} (user {stored_user_id})")
-
-    r.delete("system:crawling")
-    logger.info(f"Cleanup complete. Removed {total_removed} stale jobs.")
-
-
-def cleanup_crawl_job(job_id, user_id, reason="error"):
-    """
-    Cleanup all Redis data for a crawl job.
-    Called on error or cancellation.
-    """
-    try:
-        logger.info(f"🧹 Cleaning up crawl job {job_id} (reason: {reason})")
-
-        # 1. Set a resurrection-safe cancellation marker FIRST. In-flight tasks
-        #    check this marker (never recreated by hincrby/hset), so a task that
-        #    finishes after cancellation cannot revive the job and keep crawling.
-        r.setex(f"crawl_job:{job_id}:cancelled", 600, "1")
-
-        # 2. Revoke any queued/running scrape_detail tasks by their real Celery
-        #    task ids so they are discarded from the broker queue immediately.
-        try:
-            task_ids = [
-                tid.decode("utf-8")
-                for tid in r.smembers(f"crawl_job:{job_id}:task_ids")
-            ]
-            if task_ids:
-                # No terminate=True: revoking without terminate discards tasks that
-                # are still queued (they never launch a browser), while a task that
-                # is mid-navigation is left to finish and close its browser cleanly
-                # via its own finally block. The cancellation marker then makes it
-                # bail at the post-fetch checkpoint before creating any job.
-                celery_app.control.revoke(task_ids)
-                logger.info(f"Revoked {len(task_ids)} tasks for crawl job {job_id}")
-        except Exception as rev_e:
-            logger.error(f"Error revoking tasks for job {job_id}: {rev_e}")
-
-        # 3. Tear down the remaining tracking state.
-        r.delete(f"crawl_job:{job_id}")
-        r.delete(f"crawl_job:{job_id}:all_job_titles")
-        r.delete(f"crawl_job:{job_id}:task_ids")
-        r.srem(f"user:{user_id}:active_crawls", job_id)
-        r.delete("system:crawling")
-
-        r.publish(
-            "job_updates",
-            json.dumps(
-                {
-                    "type": (
-                        "crawl_job_failed"
-                        if reason == "error"
-                        else "crawl_job_cancelled"
-                    ),
-                    "job_id": job_id,
-                    "user_id": user_id,
-                    "reason": reason,
-                }
-            ),
-        )
-
-    except Exception as e:
-        logger.error(f"Error during cleanup of job {job_id}: {e}")
-
-
-def fail_crawl_job(job_id: str, user_id: int, error_message: str):
-    """
-    Broadcast a crawl failure event and immediately clean up all Redis data.
-    No user confirmation required — the frontend auto-dismisses after a timeout.
-    """
-    try:
-        logger.info(f"Failing crawl job {job_id} (error: {error_message})")
-        r.delete("system:crawling")
-
-        # Stop any in-flight/queued tasks for this job (resurrection-safe marker + revoke)
-        r.setex(f"crawl_job:{job_id}:cancelled", 600, "1")
-        try:
-            task_ids = [
-                tid.decode("utf-8")
-                for tid in r.smembers(f"crawl_job:{job_id}:task_ids")
-            ]
-            if task_ids:
-                # See cleanup_crawl_job: revoke without terminate so an in-flight
-                # browser navigation finishes and closes cleanly.
-                celery_app.control.revoke(task_ids)
-        except Exception as rev_e:
-            logger.error(f"Error revoking tasks for failed job {job_id}: {rev_e}")
-
-        r.publish(
-            "job_updates",
-            json.dumps(
-                {
-                    "type": "crawl_job_failed",
-                    "job_id": job_id,
-                    "user_id": user_id,
-                    "reason": "error",
-                    "error_message": error_message,
-                }
-            ),
-        )
-
-        # Clean up immediately — no lingering failed state
-        r.delete(f"crawl_job:{job_id}")
-        r.delete(f"crawl_job:{job_id}:all_job_titles")
-        r.delete(f"crawl_job:{job_id}:task_ids")
-        r.srem(f"user:{user_id}:active_crawls", job_id)
-
-        logger.info(f" Crawl job {job_id} failed and cleaned up")
-    except Exception as e:
-        logger.error(f"Error during fail of job {job_id}: {e}")
-
-
-try:
-    cleanup_stale_jobs()
-except Exception as e:
-    logger.warning(f"Startup cleanup skipped (Redis not ready): {e}")
+# Fixed text: the refusal never echoes the URL or what it resolved to.
+URL_REFUSED_MESSAGE = "URL muss mit http(s) beginnen und auf eine öffentliche Adresse zeigen."
 
 
 class JobSearch(BaseModel):
@@ -192,16 +115,16 @@ class JobSearch(BaseModel):
     is_initial_run: bool = False
 
 
-def _is_http_url(url: str) -> bool:
-    from urllib.parse import urlparse
-    try:
-        parsed = urlparse(url)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except Exception:
-        return False
+def _fetchable_url(url: str) -> Optional[str]:
+    """The canonical URL to queue, or None for a private target; the worker checks again before fetching.
+
+    Resolves DNS (blocking, bounded): async endpoints call it through run_in_threadpool.
+    """
+    return public_http_url(url)
 
 
 def _init_crawl_job(job_id: str, user_id: int, platform_url: str, total: int, is_initial_run: bool) -> None:
+    started_at = str(int(time.time() * 1000))
     r.hset(
         f"crawl_job:{job_id}",
         mapping={
@@ -211,35 +134,74 @@ def _init_crawl_job(job_id: str, user_id: int, platform_url: str, total: int, is
             "scraping_completed": 0,
             "analysis_completed": 0,
             "jobs_saved": 0,
-            "status": "starting",
-            "started_at": str(int(time.time() * 1000)),
+            "status": QUEUED_STATUS,
+            "started_at": started_at,
+            PROGRESS_FIELD: started_at,
             "is_initial_run": int(is_initial_run),
         },
     )
-    r.expire(f"crawl_job:{job_id}", 3600)
+    r.expire(f"crawl_job:{job_id}", CRAWL_TTL_SECONDS)
     r.sadd(f"user:{user_id}:active_crawls", job_id)
 
 
-@app.post("/search")
-async def search_jobs(search: JobSearch, current_user: User = Depends(get_current_user)):
-    if not _is_http_url(search.query):
-        return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
+def _remember_platform(job_id: str, platform_id: Optional[int]) -> None:
+    """Keep the platform on the crawl hash so the finished run can be summarised on it."""
+    if platform_id is not None:
+        r.hset(f"crawl_job:{job_id}", "platform_id", platform_id)
 
-    user_id = current_user.id
-    job_id = str(uuid.uuid4())
 
-    _init_crawl_job(job_id, user_id, search.query, total=0, is_initial_run=search.is_initial_run)
+def _claim_platform(user_id: int, platform_id: int, job_id: str) -> bool:
+    """One crawl per source: a second would double every job and race the first one's summary.
+
+    The registry read refuses a crawl started before the lock existed; the SET NX lock makes the claim atomic.
+    """
+    if active_crawl_for_platform(r, user_id, platform_id):
+        return False
+    return acquire_crawl_lock(r, user_id, platform_id, job_id)
+
+
+class CrawlStart(NamedTuple):
+    search: "JobSearch"
+    user_id: int
+    job_id: str
+    query_url: str
+
+
+def _queue_crawl(start: CrawlStart) -> None:
+    search, user_id, job_id, query_url = start
+    _init_crawl_job(job_id, user_id, query_url, total=0, is_initial_run=search.is_initial_run)
+    _remember_platform(job_id, search.platform_id)
 
     workflow = chain(
         celery_app.signature(
             "scraper.fetch_links",
-            args=[search.query, user_id, job_id, search.platform_id],
+            args=[query_url, user_id, job_id, search.platform_id],
             queue="scraper_queue",
         ),
         celery_app.signature("ai.filter_urls", queue="ai_queue"),
         celery_app.signature("scraper.schedule_crawls", queue="scraper_queue"),
     )
     workflow.apply_async()
+
+
+@app.post("/search")
+async def search_jobs(search: JobSearch, current_user: User = Depends(get_current_user)):
+    query_url = await run_in_threadpool(_fetchable_url, search.query)
+    if query_url is None:
+        return {"status": "Error", "message": URL_REFUSED_MESSAGE}
+
+    user_id = current_user.id
+    job_id = str(uuid.uuid4())
+    if search.platform_id is not None and not _claim_platform(user_id, search.platform_id, job_id):
+        return {"status": "Error", "code": ALREADY_RUNNING, "message": "Crawl already running."}
+
+    try:
+        _queue_crawl(CrawlStart(search, user_id, job_id, query_url))
+    except Exception:
+        # The claim is made before queueing; a start that never got queued must not block the source for an hour.
+        if search.platform_id is not None:
+            release_crawl_lock(r, user_id, search.platform_id, job_id)
+        raise
     return {"status": "Started", "job_id": job_id}
 
 
@@ -249,29 +211,34 @@ class JobImport(BaseModel):
 
 @app.post("/import-job")
 async def import_job(data: JobImport, current_user: User = Depends(get_current_user)):
-    if not _is_http_url(data.url):
-        return {"status": "Error", "message": "URL muss mit http(s) beginnen."}
+    job_url = await run_in_threadpool(_fetchable_url, data.url)
+    if job_url is None:
+        return {"status": "Error", "message": URL_REFUSED_MESSAGE}
 
     user_id = current_user.id
     job_id = str(uuid.uuid4())
 
-    _init_crawl_job(job_id, user_id, data.url, total=1, is_initial_run=False)
+    _init_crawl_job(job_id, user_id, job_url, total=1, is_initial_run=False)
 
     # Notify frontend that crawl job started
     r.publish("job_updates", json.dumps({
         "type": "crawl_job_started",
         "job_id": job_id,
         "user_id": user_id,
-        "platform": data.url,
+        "platform": job_url,
         "started_at": str(int(time.time() * 1000)),
     }))
 
     celery_app.send_task(
         "scraper.scrape_detail",
-        args=[data.url, user_id, job_id, None],
+        args=[job_url, user_id, job_id, None],
         queue="scraper_queue",
     )
     return {"status": "Started", "job_id": job_id}
+
+
+def _optional_int(raw) -> Optional[int]:
+    return int(raw) if raw not in (None, b"", "") else None
 
 
 @app.get("/crawl-status")
@@ -298,6 +265,7 @@ async def get_crawl_status(current_user: User = Depends(get_current_user)):
                 {
                     "job_id": job_id,
                     "platform": job_data.get(b"platform_url", b"").decode("utf-8"),
+                    "platform_id": _optional_int(job_data.get(b"platform_id")),
                     "total": total,
                     "total_found": total_found,
                     "scraping_completed": int(job_data.get(b"scraping_completed", 0)),
@@ -333,12 +301,12 @@ async def cancel_crawl(request: CancelCrawlRequest, current_user: User = Depends
         return {"status": "error", "message": "Unauthorized"}
 
     try:
-        cleanup_crawl_job(request.job_id, user_id, reason="cancelled")
+        cleanup_crawl_job(r, request.job_id, user_id, reason="cancelled")
         logger.info(f"Successfully cancelled crawl job {request.job_id}")
         return {"status": "success", "message": "Crawl job cancelled"}
     except Exception as e:
-        logger.error(f"Error cancelling job {request.job_id}: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error cancelling job {request.job_id}: {e}", exc_info=True)
+        return {"status": "error", "message": CRAWL_INTERNAL_ERROR_MESSAGE}
 
 
 @app.post("/cancel-all-crawls")
@@ -349,7 +317,7 @@ async def cancel_all_crawls(current_user: User = Depends(get_current_user)):
 
     for job_id_bytes in job_ids_bytes:
         job_id = job_id_bytes.decode("utf-8")
-        cleanup_crawl_job(job_id, user_id, reason="cancelled")
+        cleanup_crawl_job(r, job_id, user_id, reason="cancelled")
         cancelled.append(job_id)
 
     logger.info(f"Cancelled all {len(cancelled)} crawl jobs for user {user_id}")
@@ -362,24 +330,25 @@ class PreviewLinksRequest(BaseModel):
 
 @app.post("/preview-links")
 def preview_links(request: PreviewLinksRequest, current_user: User = Depends(get_current_user)):
-    if not _is_http_url(request.url):
+    page_url = _fetchable_url(request.url)
+    if page_url is None:
         return {"links": []}
 
     from workers.scraper_worker import get_html_with_browser
     from bs4 import BeautifulSoup
     from urllib.parse import urlparse, urljoin
 
-    html = get_html_with_browser(request.url)
+    html = get_html_with_browser(page_url)
     if not html:
         return {"links": []}
 
     soup = BeautifulSoup(html, "html.parser")
     links: set = set()
-    base_domain = urlparse(request.url).netloc
+    base_domain = urlparse(page_url).netloc
 
     link_map: dict = {}
     for a in soup.find_all("a", href=True):
-        full_url = urljoin(request.url, a["href"])
+        full_url = urljoin(page_url, a["href"])
         if urlparse(full_url).netloc != base_domain:
             continue
         if any(full_url.lower().endswith(x) for x in [".pdf", ".jpg", ".png", ".css", ".js"]):
@@ -416,9 +385,9 @@ async def fail_crawl(request: FailCrawlRequest, current_user: User = Depends(get
         logger.info(f"Job {request.job_id} failed due to: {request.error_message}")
 
         # Broadcast error event, then clean up immediately
-        fail_crawl_job(request.job_id, user_id, request.error_message)
+        fail_crawl_job(r, request.job_id, user_id, CrawlFailure(request.error_message, ERROR_FAILED))
 
         return {"status": "success", "message": "Crawl job failed"}
     except Exception as e:
-        logger.error(f"Error failing job {request.job_id}: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error failing job {request.job_id}: {e}", exc_info=True)
+        return {"status": "error", "message": CRAWL_INTERNAL_ERROR_MESSAGE}

@@ -1,0 +1,317 @@
+/* App shell ported from docs/prototype/clickdummy-editorial.html. */
+@layer components {
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  /* Sidebar and bottom bar are always ink: they re-map the tokens for everything inside. */
+  .sidebar,
+  .bottombar {
+    --surface: var(--sb-raised);
+    --float: var(--sb-raised);
+    --hover: var(--sb-raised);
+    --line: var(--sb-line);
+    --line-strong: var(--sb-line);
+    --text: var(--sb-text);
+    --text-2: var(--sb-text-2);
+    --text-3: var(--sb-text-3);
+    --accent: var(--sb-accent);
+    --accent-text: var(--sb-accent);
+    --focus: var(--sb-accent);
+    --on-accent: var(--sb-bg);
+    --bg: var(--sb-bg);
+    background: var(--sb-bg);
+    color: var(--sb-text);
+  }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+    padding: 22px 0 14px;
+    z-index: 30;
+    overflow-y: auto;
+  }
+  :root[data-mode="dark"] .sidebar {
+    border-right: 1px solid var(--sb-line);
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 22px 30px;
+  }
+  .brand-word {
+    font: 700 23px/1 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.035em;
+  }
+  .brand-mark {
+    width: 9px;
+    height: 9px;
+    background: var(--accent);
+    flex: none;
+    align-self: center;
+  }
+  .nav {
+    display: flex;
+    flex-direction: column;
+  }
+  .nav a,
+  .nav button {
+    position: relative;
+    display: grid;
+    grid-template-columns: 26px minmax(max-content, 1fr) auto;
+    align-items: baseline;
+    gap: 4px;
+    padding: 9px 22px 10px;
+    color: var(--text-2);
+    text-decoration: none;
+    transition: color var(--t-fast) var(--ease);
+  }
+  .nav-no {
+    font: 600 13px/1 var(--font-ui);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-3);
+  }
+  .nav-label {
+    font: 600 23px/1.05 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.03em;
+  }
+  .nav a:hover,
+  .nav button:hover {
+    color: var(--text);
+  }
+  .nav a[aria-current="page"] {
+    color: var(--text);
+  }
+  .nav a[aria-current="page"] .nav-no {
+    color: var(--accent);
+  }
+  .nav a[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 9px;
+    width: 5px;
+    background: var(--accent);
+  }
+  .nav a .count-badge,
+  .nav a .count-plain {
+    align-self: center;
+    justify-self: end; /* one right-aligned badge column */
+    margin-inline-start: 4px; /* plus the 4 px grid gap: 8 px to the label */
+  }
+  .nav a .count-badge {
+    font-size: var(--fs-13);
+  }
+  .nav a .count-plain {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--fs-13);
+  }
+  /* Due count: ink text colour as the pill on the ink bar, so vermilion stays for new matches.
+     --sb-bg on --sb-text is the pair that reads on both the sidebar and the bottom bar (13 px). */
+  .nav a .count-badge-neutral,
+  .bb-item .count-badge-neutral {
+    background: var(--sb-text);
+    color: var(--sb-bg);
+  }
+  .nav a .t-danger {
+    color: var(--sb-danger);
+  }
+  .nav-sheet a,
+  .nav-sheet button {
+    align-items: center;
+    height: 48px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sidebar-foot {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    border-top: 1px solid var(--line);
+    padding: 10px 10px 0;
+  }
+  .side-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: var(--r-ctl);
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    text-decoration: none;
+  }
+  .side-btn:hover {
+    background: var(--hover);
+    color: var(--text);
+    text-decoration: none;
+  }
+  .side-btn[aria-current="page"] {
+    color: var(--text);
+    background: var(--hover);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .side-btn .end {
+    margin-left: auto;
+  }
+  /* The search key hint (D10, ruling 29): 13 px, from the sidebar's re-mapped tokens. */
+  .side-btn kbd {
+    font: 600 var(--fs-13) / 1 var(--font-code);
+    color: var(--text-3);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-ctl);
+    padding: 3px 6px;
+  }
+  /* Global search dialog (D10): the hint at 13 px, every result a 44 px target (ruling 29). */
+  .search-panel .hint {
+    font-size: var(--fs-13);
+  }
+  .search-status {
+    margin-top: 12px;
+  }
+  .search-group {
+    margin-top: 20px;
+  }
+  .search-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .search-list li {
+    border-top: 1px solid var(--line);
+  }
+  .search-list li:first-child {
+    border-top: 0;
+  }
+  .search-hit {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-height: 44px;
+    padding: 8px 0;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .search-hit:hover .search-hit-title {
+    color: var(--accent-text);
+  }
+  .search-hit-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .search-hit .meta {
+    overflow-wrap: anywhere;
+  }
+  .activity-live {
+    color: var(--text);
+  }
+  .avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--text);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex: none;
+  }
+  .bottombar {
+    display: none;
+  }
+
+  @media (max-width: 767px) {
+    .app {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .sidebar {
+      display: none;
+    }
+    .main {
+      padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    }
+    .bottombar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bb-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 62px;
+      border: 0;
+      background: none;
+      color: var(--text-2);
+      font-size: var(--fs-13);
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .bb-item[aria-current="page"] {
+      color: var(--text);
+    }
+    .bb-item[aria-current="page"]::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 22%;
+      right: 22%;
+      height: 4px;
+      background: var(--accent);
+    }
+    .bb-item .count-badge {
+      position: absolute;
+      top: 7px;
+      left: calc(50% + 6px);
+      min-width: 20px;
+      height: 20px;
+      font-size: var(--fs-13);
+      padding: 0 5px;
+    }
+    /* Same pill as the inbox count, in crimson. --sb-danger against the bar (--sb-bg) is 6.82:1
+       light / 7.61:1 dark (>= 3:1 for the shape), and the ink icon (--sb-bg) on the pill is the same
+       pair (>= 4.5:1). The sentence ("1 Fehler") is screen-reader text inside the pill. */
+    .bb-item .count-badge-danger {
+      background: var(--sb-danger);
+      color: var(--sb-bg);
+    }
+    .bb-item .count-badge-danger .ico {
+      width: 12px;
+      height: 12px;
+    }
+  }
+}

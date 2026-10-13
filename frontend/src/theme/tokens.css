@@ -1,0 +1,181 @@
+/*
+  Editorial design tokens, copied from docs/prototype/clickdummy-editorial.html.
+  Paper and ink plus one vermilion signal colour; errors use crimson (hue 10).
+  Contrast (WCAG 2, computed in the prototype): light text 16.9:1, text-3 >= 4.76:1,
+  accent text 5.4:1, white on vermilion 4.8:1; dark text 16.6:1, text-3 >= 5.1:1.
+*/
+:root {
+  --font-ui:
+    var(--font-hanken), "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-serif:
+    var(--font-source-serif), "Iowan Old Style", "Charter", "Sitka Text", Cambria, Georgia, serif;
+  --font-code: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-body: 14.5px;
+  --fs-list: 14px;
+
+  --r-ctl: 3px;
+  --r-panel: 4px;
+  --r-pill: 999px;
+  --ctl-h: 34px;
+  --ctl-h-sm: 28px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --page-pad: 48px;
+  --sidebar-w: 252px;
+  --list-w: 420px;
+  --rule-w: 4px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --t-fast: 120ms;
+  --t-mid: 200ms;
+
+  /* Overlay layers: a dialog (a confirmation) can open over a drawer, so its scrim dims the drawer. */
+  --z-drawer-scrim: 50;
+  --z-drawer: 51;
+  --z-dialog-scrim: 52;
+  --z-dialog: 53;
+
+  /* light: paper and ink */
+  --bg: oklch(0.977 0.004 80);
+  --surface: oklch(0.995 0.002 80);
+  --sunken: oklch(0.95 0.006 75);
+  --raised: oklch(0.962 0.006 75);
+  --float: oklch(0.995 0.002 80);
+  --hover: oklch(0.945 0.007 75);
+  --selected: oklch(0.935 0.009 70);
+  --field: oklch(0.995 0.002 80);
+  --line: oklch(0.885 0.006 70);
+  --line-strong: oklch(0.79 0.008 70);
+  /*
+    Border of interactive controls (WCAG 1.4.11, spec 4.3 #5: 3:1). --line-strong is only about 1.8:1.
+    Light, WCAG 2 contrast: 3.90 on surface and field, 3.70 on bg, 3.54 on raised, 3.36 on hover.
+  */
+  --line-control: oklch(0.6 0.01 70);
+  --rule: oklch(0.2 0.008 60);
+  --text: oklch(0.2 0.008 60);
+  --text-2: oklch(0.42 0.01 60);
+  --text-3: oklch(0.51 0.012 60);
+  --accent: oklch(0.575 0.205 33);
+  --accent-hover: oklch(0.52 0.2 33);
+  --accent-soft: oklch(0.95 0.03 40);
+  --accent-text: oklch(0.53 0.19 33);
+  --on-accent: oklch(0.995 0.002 80);
+  --focus: oklch(0.575 0.205 33);
+  --danger: oklch(0.5 0.18 10);
+  --danger-soft: oklch(0.955 0.025 15);
+  --warn: oklch(0.74 0.14 70);
+  --warn-text: oklch(0.48 0.1 65);
+  --warn-soft: oklch(0.955 0.04 85);
+  --ok: oklch(0.5 0.11 150);
+  --scrim: oklch(0.2 0.008 60 / 0.35);
+  --shadow-float: 0 1px 0 oklch(0.2 0.008 60 / 0.06), 0 14px 34px -10px oklch(0.2 0.008 60 / 0.28);
+  /* stages: a refined secondary set that never competes with the signal */
+  --st-open: oklch(0.7 0.01 70);
+  --st-drafted: oklch(0.72 0.11 85);
+  --st-applied: oklch(0.56 0.09 245);
+  --st-interview: oklch(0.58 0.08 190);
+  --st-offer: oklch(0.56 0.11 150);
+  --st-closed: oklch(0.76 0.008 70);
+  /* printed proof */
+  --paper: oklch(0.995 0.002 85);
+  --paper-ink: oklch(0.2 0.008 60);
+  --paper-muted: oklch(0.48 0.01 60);
+  --paper-rule: oklch(0.86 0.006 70);
+  --desk: oklch(0.925 0.008 72);
+  --mark: oklch(0.42 0.01 60);
+  /* sidebar, bottom bar: always ink */
+  --sb-bg: oklch(0.2 0.008 60);
+  --sb-raised: oklch(0.255 0.009 60);
+  --sb-text: oklch(0.96 0.006 80);
+  --sb-text-2: oklch(0.76 0.008 70);
+  --sb-text-3: oklch(0.66 0.008 70);
+  --sb-line: oklch(0.34 0.01 60);
+  --sb-accent: oklch(0.68 0.19 36);
+  /* Crimson for errors on the ink sidebar: 6.82:1 on --sb-bg (L 0.2), 7.61:1 in dark mode (L 0.125); vermilion stays the next-move colour. */
+  --sb-danger: oklch(0.72 0.15 15);
+  /* inverse surface for toasts */
+  --inv-bg: oklch(0.2 0.008 60);
+  --inv-hover: oklch(0.29 0.009 60);
+  --inv-line: oklch(0.4 0.01 60);
+  --inv-text: oklch(0.96 0.006 80);
+  --inv-text-2: oklch(0.8 0.008 70);
+  --inv-text-3: oklch(0.68 0.008 70);
+  --inv-accent: oklch(0.74 0.16 38);
+  color-scheme: light;
+}
+:root[data-mode="dark"] {
+  --bg: oklch(0.165 0.004 60);
+  --surface: oklch(0.205 0.005 60);
+  --sunken: oklch(0.145 0.004 60);
+  --raised: oklch(0.215 0.006 60);
+  --float: oklch(0.235 0.007 60);
+  --hover: oklch(0.24 0.007 60);
+  --selected: oklch(0.25 0.008 60);
+  --field: oklch(0.185 0.005 60);
+  --line: oklch(0.3 0.008 60);
+  --line-strong: oklch(0.4 0.01 60);
+  /* Dark, WCAG 2 contrast: 3.69 on surface, 3.96 on bg, 3.83 on field, 3.60 on raised, 3.39 on hover. */
+  --line-control: oklch(0.55 0.01 60);
+  --rule: oklch(0.95 0.006 80);
+  --text: oklch(0.95 0.006 80);
+  --text-2: oklch(0.78 0.008 70);
+  --text-3: oklch(0.66 0.008 70);
+  --accent: oklch(0.68 0.19 36);
+  --accent-hover: oklch(0.74 0.17 38);
+  --accent-soft: oklch(0.27 0.05 35);
+  --accent-text: oklch(0.74 0.16 38);
+  --on-accent: oklch(0.17 0.004 60);
+  --focus: oklch(0.74 0.16 38);
+  --danger: oklch(0.72 0.15 15);
+  --danger-soft: oklch(0.26 0.05 15);
+  --warn: oklch(0.78 0.12 80);
+  --warn-text: oklch(0.83 0.11 80);
+  --warn-soft: oklch(0.27 0.04 75);
+  --ok: oklch(0.74 0.11 150);
+  --scrim: oklch(0.05 0 0 / 0.6);
+  --shadow-float: 0 1px 0 oklch(0 0 0 / 0.3), 0 16px 40px -10px oklch(0 0 0 / 0.6);
+  --st-open: oklch(0.6 0.01 70);
+  --st-drafted: oklch(0.78 0.11 85);
+  --st-applied: oklch(0.7 0.09 245);
+  --st-interview: oklch(0.72 0.08 190);
+  --st-offer: oklch(0.72 0.11 150);
+  --st-closed: oklch(0.5 0.008 70);
+  --desk: oklch(0.13 0.004 60);
+  --mark: oklch(0.66 0.008 70);
+  --sb-bg: oklch(0.125 0.004 60);
+  --sb-raised: oklch(0.2 0.006 60);
+  --sb-line: oklch(0.28 0.008 60);
+  --sb-text-3: oklch(0.62 0.008 70);
+  --inv-bg: oklch(0.93 0.006 80);
+  --inv-hover: oklch(0.87 0.008 75);
+  --inv-line: oklch(0.75 0.01 70);
+  --inv-text: oklch(0.2 0.008 60);
+  --inv-text-2: oklch(0.38 0.01 60);
+  --inv-text-3: oklch(0.45 0.01 60);
+  --inv-accent: oklch(0.5 0.19 33);
+  color-scheme: dark;
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --page-pad: 32px;
+  }
+}
+@media (max-width: 767px) {
+  :root {
+    --page-pad: 16px;
+    --rule-w: 3px;
+  }
+}

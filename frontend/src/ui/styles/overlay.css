@@ -1,0 +1,283 @@
+/* Overlays ported from docs/prototype/clickdummy-editorial.html. */
+@layer components {
+  .scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    z-index: var(--z-drawer-scrim);
+  }
+  /* ModalLayer renders the scrim right before its panel; a dialog's scrim covers an open drawer. */
+  .scrim:has(+ .dialog) {
+    z-index: var(--z-dialog-scrim);
+  }
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(var(--drawer-w, 900px), 100vw);
+    background: var(--bg);
+    border-left: var(--rule-w) solid var(--rule);
+    box-shadow: var(--shadow-float);
+    z-index: var(--z-drawer);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .drawer.narrow {
+    --drawer-w: 540px;
+  }
+  .drawer.sheet {
+    top: auto;
+    left: 0;
+    width: 100vw;
+    max-height: 85vh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: var(--r-panel) var(--r-panel) 0 0;
+  }
+  .dialog {
+    position: fixed;
+    z-index: var(--z-dialog);
+    top: 12vh;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: min(640px, calc(100vw - 32px));
+    max-height: 76vh;
+    overflow-y: auto;
+    background: var(--bg);
+    color: var(--text);
+    border-top: var(--rule-w) solid var(--rule);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-float);
+  }
+  .panel-in {
+    padding: 24px 28px 44px;
+  }
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+  .panel-title {
+    font: 720 32px/1 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.035em;
+    overflow-wrap: anywhere;
+  }
+  .panel-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 26px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  /* A footer with only a primary action keeps it on the right. */
+  .panel-foot-end {
+    justify-content: flex-end;
+  }
+
+  .pop-anchor {
+    position: relative;
+  }
+  .popover {
+    position: absolute;
+    z-index: 60;
+    min-width: 264px;
+    background: var(--float);
+    color: var(--text);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-float);
+    padding: 6px;
+    font-size: var(--fs-13);
+  }
+  .popover.up {
+    bottom: calc(100% + 6px);
+    left: 0;
+  }
+  .popover.down-right {
+    top: calc(100% + 4px);
+    right: 0;
+  }
+  .pop-head {
+    padding: 8px 10px 6px;
+    font-weight: 700;
+    font-size: var(--fs-13);
+  }
+  .pop-caption {
+    padding: 4px 10px;
+  }
+  .pop-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 0;
+    background: none;
+    border-radius: var(--r-ctl);
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font-size: var(--fs-13);
+    text-decoration: none;
+  }
+  .pop-item:hover {
+    background: var(--hover);
+    text-decoration: none;
+  }
+  .pop-item[aria-pressed="true"] {
+    color: var(--accent-text);
+    font-weight: 700;
+  }
+  .pop-check {
+    margin-left: auto;
+  }
+  .pop-sep {
+    height: 1px;
+    background: var(--line);
+    margin: 6px 4px;
+  }
+  .task {
+    padding: 8px 10px;
+  }
+  .task + .task {
+    border-top: 1px solid var(--line);
+  }
+  .task-title {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-weight: 600;
+  }
+  .task-sub {
+    font-size: var(--fs-12);
+    color: var(--text-3);
+    margin: 3px 0 6px 24px;
+  }
+  .task .progress {
+    margin-left: 24px;
+  }
+
+  .toasts {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    /* The two live regions carry the gap between items; a gap here would also space an empty region. */
+    gap: 0;
+    z-index: 90;
+    align-items: center;
+    pointer-events: none;
+  }
+  .toast {
+    --float: var(--inv-bg);
+    --surface: var(--inv-bg);
+    --bg: var(--inv-bg);
+    --hover: var(--inv-hover);
+    --line: var(--inv-line);
+    --line-strong: var(--inv-line);
+    --text: var(--inv-text);
+    --text-2: var(--inv-text-2);
+    --text-3: var(--inv-text-3);
+    --accent-text: var(--inv-accent);
+    --accent-soft: var(--inv-hover);
+    --focus: var(--inv-accent);
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    min-width: 300px;
+    max-width: min(580px, calc(100vw - 32px));
+    padding: 11px 10px 11px 14px;
+    background: var(--float);
+    color: var(--text);
+    border-left: 5px solid var(--inv-accent);
+    border-radius: var(--r-ctl);
+    box-shadow: var(--shadow-float);
+    font-size: var(--fs-13);
+    font-weight: 500;
+    animation: rise var(--t-mid) var(--ease);
+  }
+  .toast-region {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .toast .msg {
+    flex: 1 1 200px;
+  }
+  .toast .ico.lead {
+    color: var(--accent-text);
+  }
+  .toast.err {
+    border-left-color: var(--danger);
+  }
+  .toast.err .ico.lead {
+    color: var(--text);
+  }
+  .toast .btn-ghost {
+    color: var(--text);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--inv-line);
+  }
+  .toast .btn-icon {
+    text-decoration: none;
+  }
+
+  .anim-drawer {
+    animation: slide-in 240ms var(--ease);
+  }
+  .anim-fade {
+    animation: fade var(--t-fast) var(--ease);
+  }
+  .anim-pop {
+    animation: rise var(--t-fast) var(--ease);
+  }
+
+  @media (max-width: 767px) {
+    .drawer,
+    .drawer.narrow {
+      width: 100vw;
+      border-left: 0;
+    }
+    .dialog {
+      top: 16px;
+    }
+    .panel-in {
+      padding: 18px 16px 40px;
+    }
+    .panel-title {
+      font-size: 28px;
+    }
+    /* Above the bottom bar; two toasts plus the bar stay under a quarter of the screen (spec 4.3.7). */
+    .toasts {
+      bottom: calc(78px + env(safe-area-inset-bottom));
+    }
+    .toast {
+      min-width: 0;
+      width: calc(100vw - 32px);
+    }
+    /* 44px hit targets (spec 4.3): .btn-sm is only 36px on mobile. */
+    .pop-item {
+      min-height: 44px;
+    }
+    .toast .btn-sm {
+      height: 44px;
+    }
+    .toast .btn-sm.btn-icon {
+      width: 44px;
+    }
+  }
+}

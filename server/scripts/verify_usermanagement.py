@@ -52,7 +52,7 @@ def main():
     if resp.status_code == 200:
         logger.info("    User created.")
         user_id = resp.json()["id"]
-    elif resp.status_code == 400 and "already registered" in resp.text:
+    elif resp.status_code == 409 and "username_taken" in resp.text:
         logger.info("    User already exists (skipping creation).")
         # Need to get ID? login and /me
     else:

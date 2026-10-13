@@ -1,18 +1,24 @@
 """Profile-wide document store (references / certificates) + template listing."""
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response
+from dataclasses import dataclass
+
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, status
 from sqlalchemy.orm import Session
 
-from database.core import ProfileDocument, UserProfile, User
+from database.core import ProfileDocument, UserProfile, User, iso_utc
 from core.auth import get_current_user, get_db
 from services.storage import get_storage_service
 from services.document_renderer import list_templates
 from core.logger import get_logger
+from core.uploads import (
+    FALLBACK_FILENAME, MAX_UPLOAD_BYTES, UNSUPPORTED_TYPE, content_disposition, field_error, read_upload,
+    require_type,
+)
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_FILE_SIZE = MAX_UPLOAD_BYTES
 ALLOWED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -22,6 +28,18 @@ ALLOWED_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 VALID_TYPES = {"REFERENCE", "CERTIFICATE"}
+MAX_LABEL_LENGTH = 200
+MAX_FILENAME_LENGTH = 255
+INVALID_DOC_TYPE = "invalid_doc_type"
+DB_PREFIX = "db://"
+DRIVE_PREFIX = "gdrive://"
+
+
+@dataclass(frozen=True)
+class _Upload:
+    content: bytes
+    name: str
+    mime: str
 
 
 def _serialize(d: ProfileDocument) -> dict:
@@ -32,8 +50,41 @@ def _serialize(d: ProfileDocument) -> dict:
         "original_filename": d.original_filename,
         "file_size": d.file_size,
         "mime_type": d.mime_type,
-        "created_at": d.created_at.isoformat() if d.created_at else None,
+        "created_at": iso_utc(d.created_at),
+        # Drive files and rows without content cannot be served (400 on view/download); the web disables their buttons.
+        "downloadable": _is_downloadable(d),
     }
+
+
+def _is_downloadable(doc: ProfileDocument) -> bool:
+    return doc.filename.startswith(DB_PREFIX) and doc.content is not None
+
+
+async def _checked_upload(file: UploadFile, doc_type: str) -> _Upload:
+    """An allowed upload with its bytes, stored name and type; every refusal is a fixed code (no echo)."""
+    if doc_type not in VALID_TYPES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            detail=[field_error("doc_type", INVALID_DOC_TYPE)])
+    mime = file.content_type or ""
+    if mime not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=UNSUPPORTED_TYPE)
+    content = await read_upload(file, MAX_FILE_SIZE)
+    require_type(content, mime)
+    return _Upload(content=content, name=_stored_name(file), mime=mime)
+
+
+def _stored_name(file: UploadFile) -> str:
+    return (file.filename or FALLBACK_FILENAME)[:MAX_FILENAME_LENGTH]
+
+
+async def _stored_location(profile: UserProfile | None, upload: _Upload) -> tuple[str, bytes | None]:
+    """Where the file lives: on the user's Google Drive when connected, otherwise as a DB blob."""
+    storage = get_storage_service(profile) if profile else None
+    if not storage:
+        return f"{DB_PREFIX}{upload.name}", upload.content
+    if not await storage.upload_file(upload.content, upload.name, mime_type=upload.mime):
+        raise HTTPException(status_code=500, detail="Upload to Google Drive failed")
+    return f"{DRIVE_PREFIX}{upload.name}", None
 
 
 @router.get("/profile/templates")
@@ -59,40 +110,18 @@ def list_profile_documents(
 async def upload_profile_document(
     file: UploadFile = File(...),
     doc_type: str = Form(...),
-    label: str = Form(""),
+    label: str = Form("", max_length=MAX_LABEL_LENGTH),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if doc_type not in VALID_TYPES:
-        raise HTTPException(status_code=400, detail=f"Invalid doc_type: {doc_type}")
-
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
-    mime = file.content_type or "application/octet-stream"
-    if mime not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=415, detail=f"File type not allowed: {mime}")
-
+    upload = await _checked_upload(file, doc_type)
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        storage = get_storage_service(profile) if profile else None
-        if storage:
-            ok = await storage.upload_file(content, file.filename or "document", mime_type=mime)
-            if not ok:
-                raise HTTPException(status_code=500, detail="Upload to Google Drive failed")
-            stored_filename, db_content = f"gdrive://{file.filename}", None
-        else:
-            stored_filename, db_content = f"db://{file.filename}", content
-
+        stored_filename, db_content = await _stored_location(profile, upload)
         doc = ProfileDocument(
-            user_id=current_user.id,
-            doc_type=doc_type,
-            label=label or (file.filename or ""),
-            filename=stored_filename,
-            original_filename=file.filename or "document",
-            file_size=len(content),
-            mime_type=mime,
-            content=db_content,
+            user_id=current_user.id, doc_type=doc_type, label=label or upload.name,
+            filename=stored_filename, original_filename=upload.name, file_size=len(upload.content),
+            mime_type=upload.mime, content=db_content,
         )
         db.add(doc)
         db.commit()
@@ -102,8 +131,8 @@ async def upload_profile_document(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Profile document upload error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Profile document upload failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Document upload failed")
 
 
 @router.delete("/profile/documents/{doc_id}")
@@ -151,10 +180,10 @@ def _serve(doc_id: int, current_user: User, db: Session, disposition: str):
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not doc.filename.startswith("db://") or doc.content is None:
+    if not _is_downloadable(doc):
         raise HTTPException(status_code=400, detail="File not available for direct download")
     return Response(
         content=doc.content,
         media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": f'{disposition}; filename="{doc.original_filename}"'},
+        headers={"Content-Disposition": content_disposition(disposition, doc.original_filename)},
     )

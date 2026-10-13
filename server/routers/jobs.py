@@ -1,27 +1,54 @@
 import os
 from datetime import datetime
 from io import BytesIO
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 import markdown
-from fastapi import APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import func, or_
 from xhtml2pdf import pisa
 
 from database.core import (
     SessionLocal,
+    iso_utc,
     User,
     JobEntry,
     JobStatusHistory,
     JobDocument,
     UserProfile,
     JobPatchRequest,
+    MAX_DRAFT_LENGTH,
 )
 from core.auth import get_current_user
 from core.celery_config import celery_app
+from core.job_status import (
+    ARCHIVE_BY_USER_VALUES,
+    RESTORE_BY_USER_VALUES,
+    STATUS_FAILED,
+    STATUS_GENERATING,
+    STATUS_OPEN,
+    STATUS_SEEN,
+    ArchiveReason,
+    GenerationOutcome,
+    StatusNotSettable,
+    TransitionNotAllowed,
+    archive_job,
+    check_transition,
+    finish_generation,
+    restore_job,
+    start_generation,
+)
 from routers.deps import limiter, UPLOAD_DIR, APPLICATION_STATUSES
+from core.like_pattern import LIKE_ESCAPE, contains_pattern
 from core.logger import get_logger
+from core.uploads import (
+    MAX_UPLOAD_BYTES, UNSUPPORTED_TYPE, content_disposition, read_upload, require_type,
+)
+from services.company_domain import CompanyDomain
 from services.document_renderer import render_cover_letter_html
+from services.user_data import delete_job_rows
+from services.safe_fetch import xhtml2pdf_link_callback
 
 logger = get_logger(__name__)
 
@@ -36,19 +63,17 @@ ALLOWED_MIME_TYPES = {
     "image/webp",
     "text/plain",
 }
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+# Plain text has no magic bytes to check, so it is accepted by its declared type.
+_UNSIGNED_TYPES = {"text/plain"}
+MAX_FILE_SIZE = MAX_UPLOAD_BYTES
 
 
 class BulkDeleteRequest(BaseModel):
     job_ids: List[str]
 
 
-class StatusUpdateRequest(BaseModel):
-    status: str
-
-
 class GenerateRequest(BaseModel):
-    improvement_notes: Optional[str] = None
+    improvement_notes: Optional[str] = Field(None, max_length=MAX_DRAFT_LENGTH)
 
 
 class GeneratePackageRequest(BaseModel):
@@ -57,8 +82,176 @@ class GeneratePackageRequest(BaseModel):
     generate_letter: bool = True
 
 
+# Matches MAX_HTML_LENGTH in the web client.
+MAX_DOCUMENT_HTML_LENGTH = 1_000_000
+
+
 class SaveHtmlRequest(BaseModel):
-    html: str
+    html: str = Field(max_length=MAX_DOCUMENT_HTML_LENGTH)
+
+
+MAX_STATUS_NOTE_LENGTH = 2000
+CLEARABLE_DATE_FIELDS = frozenset({"next_follow_up_at", "interview_at"})
+
+
+class StatusChangeRequest(BaseModel):
+    to: str
+    note: Optional[str] = Field(None, max_length=MAX_STATUS_NOTE_LENGTH)
+
+
+_JOB_DETAIL_COLUMNS = (
+    "id", "title", "company", "company_domain", "description", "match_score",
+    "reasoning", "application_draft", "cv_draft", "interview_prep_material",
+    "status", "url", "is_favorite", "contact_persons", "recruiter_info",
+    "salary_benchmark", "notes", "is_archived", "archive_reason", "platform_id",
+    "generation_error", "checklist", "todos", "pre_generation_status",
+)
+
+
+def _derived_job_fields(job: JobEntry) -> dict:
+    """ISO timestamps plus presence flags, so clients never need the large HTML bodies."""
+    return {
+        "created_at": iso_utc(job.created_at),
+        "next_follow_up_at": iso_utc(job.next_follow_up_at),
+        "interview_at": iso_utc(job.interview_at),
+        "cv_html_present": bool(job.cv_html),
+        "cover_letter_html_present": bool(job.cover_letter_html),
+    }
+
+
+def _job_detail(job: JobEntry) -> dict:
+    detail = {column: getattr(job, column) for column in _JOB_DETAIL_COLUMNS}
+    detail.update(_derived_job_fields(job))
+    return detail
+
+
+def _get_owned_job(db, job_id: str, user_id: int) -> JobEntry:
+    job = db.query(JobEntry).filter(JobEntry.id == job_id, JobEntry.user_id == user_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+MAX_PAGE_SIZE = 100
+MAX_SEARCH_LENGTH = 200
+MAX_COMPANY_FILTER_LENGTH = 200
+MAX_STATUSES_FILTER_LENGTH = 200
+
+_JOB_LIST_COLUMNS = (
+    "id", "title", "company", "company_domain", "match_score", "reasoning", "url",
+    "status", "generation_error", "is_favorite", "is_archived", "archive_reason",
+    "platform_id", "checklist", "pre_generation_status",
+)
+
+
+class JobListQuery(BaseModel):
+    limit: int = Field(MAX_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)
+    offset: int = Field(0, ge=0)
+    filter_type: Optional[str] = None
+    sort_by: Optional[str] = "date"
+    has_application: Optional[bool] = None
+    status_filter: Optional[str] = None
+    statuses: Optional[str] = Field(None, max_length=MAX_STATUSES_FILTER_LENGTH)
+    platform_id: Optional[int] = None
+    is_archived: bool = False
+    q: Optional[str] = Field(None, max_length=MAX_SEARCH_LENGTH)
+    company: Optional[str] = Field(None, max_length=MAX_COMPANY_FILTER_LENGTH)
+    company_domain: Optional[CompanyDomain] = None
+    archive_reason: Optional[ArchiveReason] = None
+
+
+def _job_list_item(job: JobEntry, status_changed_at: Optional[datetime] = None) -> dict:
+    item = {column: getattr(job, column) for column in _JOB_LIST_COLUMNS}
+    item.update(_derived_job_fields(job))
+    # The prep text is large; the inbox "Anstehend" card only needs to know that it exists.
+    item["interview_prep_present"] = bool(job.interview_prep_material)
+    # A letter from POST /generate may exist only as text; the list needs presence, not the text.
+    item["application_draft_present"] = bool(job.application_draft)
+    item["status_changed_at"] = iso_utc(status_changed_at)
+    return item
+
+
+def _apply_legacy_filters(query, filters: JobListQuery):
+    if filters.filter_type == "favorite":
+        query = query.filter(JobEntry.is_favorite == True)
+    elif filters.filter_type == "no_favorite":
+        query = query.filter(JobEntry.is_favorite == False)
+    elif filters.filter_type == "applications":
+        query = query.filter(JobEntry.application_draft.isnot(None))
+    if filters.has_application is True:
+        query = query.filter(JobEntry.application_draft.isnot(None))
+    elif filters.has_application is False:
+        query = query.filter(JobEntry.application_draft.is_(None))
+    if filters.status_filter:
+        query = query.filter(JobEntry.status == filters.status_filter)
+    if filters.platform_id:
+        query = query.filter(JobEntry.platform_id == filters.platform_id)
+    return query
+
+
+def _parse_statuses(raw: Optional[str]) -> List[str]:
+    return [status.strip() for status in (raw or "").split(",") if status.strip()]
+
+
+def _apply_text_search(query, raw: Optional[str]):
+    search = (raw or "").strip()
+    if not search:
+        return query
+    pattern = contains_pattern(search)
+    return query.filter(or_(
+        JobEntry.title.ilike(pattern, escape=LIKE_ESCAPE),
+        JobEntry.company.ilike(pattern, escape=LIKE_ESCAPE),
+    ))
+
+
+def _apply_search_filters(query, filters: JobListQuery):
+    query = _apply_text_search(query, filters.q)
+    if filters.company:
+        query = query.filter(JobEntry.company == filters.company)
+    if filters.company_domain:
+        query = query.filter(JobEntry.company_domain == filters.company_domain)
+    statuses = _parse_statuses(filters.statuses)
+    if statuses:
+        query = query.filter(JobEntry.status.in_(statuses))
+    if filters.archive_reason:
+        query = query.filter(JobEntry.archive_reason == filters.archive_reason.value)
+    return query
+
+
+def _apply_sort(query, sort_by: Optional[str]):
+    # The id tiebreaker keeps offset pagination stable when many rows share a score or timestamp.
+    if sort_by == "date":
+        return query.order_by(JobEntry.created_at.desc(), JobEntry.id)
+    return query.order_by(JobEntry.match_score.desc().nullslast(), JobEntry.id)
+
+
+def _set_archived(job: JobEntry, archived: bool) -> None:
+    # Archiving again is not a no-op: it turns a threshold archive into the user's own discard.
+    if archived:
+        archive_job(job, ArchiveReason.USER)
+    elif job.is_archived:
+        restore_job(job)
+
+
+def _check_transition_or_raise(current: Optional[str], target: str) -> None:
+    try:
+        check_transition(current, target)
+    except StatusNotSettable as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except TransitionNotAllowed as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+def _apply_status_change(db, job: JobEntry, request: StatusChangeRequest) -> None:
+    _check_transition_or_raise(job.status, request.to)
+    # job was loaded with an owner filter, so job.user_id is the authenticated actor
+    db.add(JobStatusHistory(
+        job_id=job.id, from_status=job.status, to_status=request.to,
+        changed_by=job.user_id, note=request.note,
+    ))
+    job.status = request.to
+    if job.is_archived:
+        restore_job(job)
 
 
 @router.get("/jobs/counts")
@@ -117,58 +310,36 @@ def get_job_domains(current_user: User = Depends(get_current_user)):
         db.close()
 
 
+def _status_changed_at(db, job_ids: List[str]) -> dict:
+    """Latest status change per job in one query. Only user status changes write history (B1)."""
+    if not job_ids:
+        return {}
+    rows = (
+        db.query(JobStatusHistory.job_id, func.max(JobStatusHistory.changed_at))
+        .filter(JobStatusHistory.job_id.in_(job_ids))
+        .group_by(JobStatusHistory.job_id)
+        .all()
+    )
+    return dict(rows)
+
+
 @router.get("/jobs")
 def get_jobs(
+    filters: Annotated[JobListQuery, Query()],
     current_user: User = Depends(get_current_user),
-    limit: Optional[int] = None,
-    offset: int = 0,
-    filter_type: Optional[str] = None,
-    sort_by: Optional[str] = "date",
-    has_application: Optional[bool] = None,
-    status_filter: Optional[str] = None,
-    platform_id: Optional[int] = None,
-    is_archived: bool = False,
 ):
     db = SessionLocal()
     try:
         query = db.query(JobEntry).filter(
             JobEntry.user_id == current_user.id,
-            JobEntry.is_archived == is_archived,
+            JobEntry.is_archived == filters.is_archived,
             JobEntry.status != "SEEN",
         )
-
-        # Filtering
-        if filter_type == "favorite":
-            query = query.filter(JobEntry.is_favorite == True)
-        elif filter_type == "no_favorite":
-            query = query.filter(JobEntry.is_favorite == False)
-        elif filter_type == "applications":
-            query = query.filter(JobEntry.application_draft.isnot(None))
-
-        if has_application is True:
-            query = query.filter(JobEntry.application_draft.isnot(None))
-        elif has_application is False:
-            query = query.filter(JobEntry.application_draft.is_(None))
-
-        if status_filter:
-            query = query.filter(JobEntry.status == status_filter)
-
-        if platform_id:
-            query = query.filter(JobEntry.platform_id == platform_id)
-
-        # Sorting
-        if sort_by == "date":
-            query = query.order_by(JobEntry.created_at.desc())
-        else:
-            query = query.order_by(JobEntry.match_score.desc())
-
-        # Pagination (Backward Compatibility: if limit is None, return all)
-        if limit is not None:
-            query = query.offset(offset).limit(limit)
-        else:
-            query = query.limit(1000)
-
-        return query.all()
+        query = _apply_search_filters(_apply_legacy_filters(query, filters), filters)
+        total = query.count()
+        page = _apply_sort(query, filters.sort_by).offset(filters.offset).limit(filters.limit).all()
+        changed = _status_changed_at(db, [job.id for job in page])
+        return {"items": [_job_list_item(job, changed.get(job.id)) for job in page], "total": total}
     finally:
         db.close()
 
@@ -177,36 +348,7 @@ def get_jobs(
 def get_single_job(job_id: str, current_user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        job = (
-            db.query(JobEntry)
-            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
-            .first()
-        )
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return {
-            "id": job.id,
-            "title": job.title,
-            "company": job.company,
-            "company_domain": job.company_domain,
-            "description": job.description,
-            "match_score": job.match_score,
-            "reasoning": job.reasoning,
-            "application_draft": job.application_draft,
-            "cv_draft": job.cv_draft,
-            "interview_prep_material": job.interview_prep_material,
-            "status": job.status,
-            "url": job.url,
-            "is_favorite": job.is_favorite,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
-            "next_follow_up_at": (
-                job.next_follow_up_at.isoformat() if job.next_follow_up_at else None
-            ),
-            "contact_persons": job.contact_persons,
-            "recruiter_info": job.recruiter_info,
-            "salary_benchmark": job.salary_benchmark,
-            "notes": job.notes,
-        }
+        return _job_detail(_get_owned_job(db, job_id, current_user.id))
     finally:
         db.close()
 
@@ -251,7 +393,7 @@ def trigger_generation(request: Request, job_id: str, body: Optional[GenerateReq
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        job.status = "GENERATING"
+        start_generation(job)
         db.commit()
         improvement_notes = body.improvement_notes if body else None
         celery_app.send_task(
@@ -281,7 +423,7 @@ def trigger_package_generation(
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        job.status = "GENERATING"
+        start_generation(job)
         db.commit()
         include_docs = body.include_profile_documents if body else True
         gen_cv = body.generate_cv if body else True
@@ -355,7 +497,7 @@ def download_application_pdf(
         pdf_buffer = BytesIO()
         try:
             pisa_status = pisa.CreatePDF(
-                styled_html, dest=pdf_buffer, encoding="utf-8"
+                styled_html, dest=pdf_buffer, encoding="utf-8", link_callback=xhtml2pdf_link_callback
             )
 
             if pisa_status.err:
@@ -397,12 +539,19 @@ def cancel_generation(job_id: str, current_user: User = Depends(get_current_user
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job.status == "GENERATING":
-            job.status = "DRAFTED" if job.application_draft else "OPEN"
+        if job.status == STATUS_GENERATING:
+            finish_generation(job, GenerationOutcome.CANCELLED)
             db.commit()
         return {"status": "cancelled"}
     finally:
         db.close()
+
+
+def _delete_job_with_rows(db, job: JobEntry) -> None:
+    """History and document rows reference the job (foreign keys), so they are removed first."""
+    db.query(JobStatusHistory).filter(JobStatusHistory.job_id == job.id).delete(synchronize_session=False)
+    db.query(JobDocument).filter(JobDocument.job_id == job.id).delete(synchronize_session=False)
+    db.delete(job)
 
 
 @router.delete("/jobs/{job_id}")
@@ -417,11 +566,11 @@ def delete_job(job_id: str, current_user: User = Depends(get_current_user)):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.is_archived:
-            db.delete(job)
+            _delete_job_with_rows(db, job)
             db.commit()
             return {"status": "deleted"}
 
-        job.is_archived = True
+        archive_job(job, ArchiveReason.USER)
         db.commit()
         return {"status": "archived"}
     except HTTPException:
@@ -456,7 +605,7 @@ def delete_bulk_jobs(
             JobEntry.user_id == current_user.id,
             JobEntry.id.in_(request.job_ids),
             JobEntry.is_archived == False
-        ).update({"is_archived": True}, synchronize_session=False)
+        ).update(dict(ARCHIVE_BY_USER_VALUES), synchronize_session=False)
 
         db.commit()
         return {"status": "success", "archived": archived_count, "permanently_deleted": perm_deleted}
@@ -484,7 +633,7 @@ def restore_bulk_jobs(
             JobEntry.user_id == current_user.id,
             JobEntry.id.in_(request.job_ids),
             JobEntry.is_archived == True
-        ).update({"is_archived": False}, synchronize_session=False)
+        ).update(dict(RESTORE_BY_USER_VALUES), synchronize_session=False)
 
         db.commit()
         return {"status": "success", "restored": restored_count}
@@ -498,36 +647,20 @@ def restore_bulk_jobs(
         db.close()
 
 
-@router.patch("/jobs/{job_id}/update-status")
-def update_job_status(
+@router.post("/jobs/{job_id}/status")
+def change_job_status(
     job_id: str,
-    request: StatusUpdateRequest,
+    request: StatusChangeRequest,
     current_user: User = Depends(get_current_user),
 ):
-    logger.info(
-        f"Updating status for job {job_id} to {request.status} for user {current_user.username}"
-    )
+    """Move a job to another status through the transition table; always writes history."""
     db = SessionLocal()
     try:
-        job = (
-            db.query(JobEntry)
-            .filter(JobEntry.id == job_id, JobEntry.user_id == current_user.id)
-            .first()
-        )
-        if not job:
-            logger.warning(f"Job {job_id} not found for user {current_user.username}")
-            raise HTTPException(status_code=404, detail="Job not found")
-        job.status = request.status
+        job = _get_owned_job(db, job_id, current_user.id)
+        _apply_status_change(db, job, request)
         db.commit()
         db.refresh(job)
-        logger.info(f"Status updated successfully for job {job_id}")
-        return {"status": "updated", "new_status": job.status}
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error updating status: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
+        return _job_detail(job)
     finally:
         db.close()
 
@@ -548,30 +681,19 @@ def patch_job(
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        # Track status change for history
-        if request.status is not None and request.status != job.status:
-            history_entry = JobStatusHistory(
-                job_id=job_id,
-                from_status=job.status,
-                to_status=request.status,
-                changed_by=current_user.id,
-                note=request.note,
-            )
-            db.add(history_entry)
-            job.status = request.status
-
         if request.is_favorite is not None:
             job.is_favorite = request.is_favorite
         if request.company_domain is not None:
             job.company_domain = request.company_domain
         if request.contact_persons is not None:
-            job.contact_persons = request.contact_persons
+            job.contact_persons = [contact.model_dump() for contact in request.contact_persons]
         if request.recruiter_info is not None:
-            job.recruiter_info = request.recruiter_info
+            job.recruiter_info = request.recruiter_info.model_dump()
         if request.salary_benchmark is not None:
-            job.salary_benchmark = request.salary_benchmark
-        if request.next_follow_up_at is not None:
-            job.next_follow_up_at = datetime.fromisoformat(request.next_follow_up_at)
+            job.salary_benchmark = request.salary_benchmark.model_dump()
+        # Dates are clearable: an explicit null clears, an omitted field keeps the value.
+        for date_field in CLEARABLE_DATE_FIELDS & request.model_fields_set:
+            setattr(job, date_field, getattr(request, date_field))
         if request.notes is not None:
             job.notes = request.notes
         if request.application_draft is not None:
@@ -579,7 +701,11 @@ def patch_job(
         if request.cv_draft is not None:
             job.cv_draft = request.cv_draft
         if request.is_archived is not None:
-            job.is_archived = request.is_archived
+            _set_archived(job, request.is_archived)
+        if request.checklist is not None:
+            job.checklist = request.checklist.model_dump()
+        if request.todos is not None:
+            job.todos = [todo.model_dump() for todo in request.todos]
 
         db.commit()
         db.refresh(job)
@@ -616,7 +742,7 @@ def get_job_history(job_id: str, current_user: User = Depends(get_current_user))
                 "id": h.id,
                 "from_status": h.from_status,
                 "to_status": h.to_status,
-                "changed_at": h.changed_at.isoformat() if h.changed_at else None,
+                "changed_at": iso_utc(h.changed_at),
                 "note": h.note,
             }
             for h in history
@@ -648,6 +774,12 @@ def toggle_favorite(job_id: str, current_user: User = Depends(get_current_user))
         db.close()
 
 
+# "Keep applications" means everything the user moved past the inbox; OPEN is a match, not an application.
+_ARCHIVE_ALL_KEPT_STATUSES = [name for name in APPLICATION_STATUSES if name != STATUS_OPEN] + [
+    STATUS_GENERATING, STATUS_FAILED,
+]
+
+
 @router.delete("/jobs")
 def delete_all_jobs(
     keep_favorites: bool = True,
@@ -660,7 +792,10 @@ def delete_all_jobs(
 
     db = SessionLocal()
     try:
-        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id)
+        # SEEN rows are dedup placeholders the crawler relies on, never a job the user saw. A legacy NULL
+        # status counts as OPEN: compared directly, NULL would match neither the filter nor its negation.
+        status_or_open = func.coalesce(JobEntry.status, STATUS_OPEN)
+        query = db.query(JobEntry).filter(JobEntry.user_id == current_user.id, status_or_open != STATUS_SEEN)
         if company:
             query = query.filter(JobEntry.company == company)
 
@@ -669,7 +804,7 @@ def delete_all_jobs(
         if keep_favorites:
             exclude_conditions.append(JobEntry.is_favorite == True)
         if keep_applications:
-            exclude_conditions.append(JobEntry.status.in_(APPLICATION_STATUSES))
+            exclude_conditions.append(status_or_open.in_(_ARCHIVE_ALL_KEPT_STATUSES))
 
         if exclude_conditions:
             query = query.filter(~or_(*exclude_conditions))
@@ -677,13 +812,13 @@ def delete_all_jobs(
         if permanent:
             # Only delete if they are already archived
             query = query.filter(JobEntry.is_archived == True)
-            deleted_count = query.delete(synchronize_session=False)
+            deleted_count = delete_job_rows(db, [job_id for (job_id,) in query.with_entities(JobEntry.id)])
             db.commit()
             return {"status": "deleted", "count": deleted_count}
         else:
             # Standard path: archive non-archived items
             query = query.filter(JobEntry.is_archived == False)
-            archived_count = query.update({"is_archived": True}, synchronize_session=False)
+            archived_count = query.update(dict(ARCHIVE_BY_USER_VALUES), synchronize_session=False)
             db.commit()
             return {"status": "archived", "count": archived_count}
     except Exception as e:
@@ -758,6 +893,17 @@ async def regenerate_interview_prep_endpoint(
         db.close()
 
 
+async def _checked_job_upload(file: UploadFile) -> tuple[bytes, str]:
+    """The bounded bytes and the declared type of an allowed upload; every refusal is a fixed code (no echo)."""
+    mime = file.content_type or ""
+    if mime not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=UNSUPPORTED_TYPE)
+    content = await read_upload(file, MAX_FILE_SIZE)
+    if mime not in _UNSIGNED_TYPES:
+        require_type(content, mime)
+    return content, mime
+
+
 @router.post("/jobs/{job_id}/documents")
 async def upload_job_document(
     job_id: str,
@@ -774,15 +920,7 @@ async def upload_job_document(
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
-
-        mime = file.content_type or "application/octet-stream"
-        if mime not in ALLOWED_MIME_TYPES:
-            raise HTTPException(
-                status_code=415, detail=f"File type not allowed: {mime}"
-            )
+        content, mime = await _checked_job_upload(file)
 
         from services.storage import get_storage_service
         profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -818,15 +956,15 @@ async def upload_job_document(
             "original_filename": doc.original_filename,
             "file_size": doc.file_size,
             "mime_type": doc.mime_type,
-            "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            "uploaded_at": iso_utc(doc.uploaded_at),
             "storage": "google_drive" if storage else "database"
         }
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Document upload error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Document upload failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Document upload failed")
     finally:
         db.close()
 
@@ -855,7 +993,7 @@ def list_job_documents(job_id: str, current_user: User = Depends(get_current_use
                 "file_size": d.file_size,
                 "mime_type": d.mime_type,
                 "kind": d.kind,
-                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+                "uploaded_at": iso_utc(d.uploaded_at),
             }
             for d in docs
         ]
@@ -904,9 +1042,7 @@ def download_job_document(
         return Response(
             content=data,
             media_type=doc.mime_type or "application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
-            },
+            headers={"Content-Disposition": content_disposition("attachment", doc.original_filename)},
         )
     finally:
         db.close()
@@ -953,9 +1089,7 @@ def view_job_document(
         return Response(
             content=data,
             media_type=doc.mime_type or "application/octet-stream",
-            headers={
-                "Content-Disposition": f'inline; filename="{doc.original_filename}"'
-            },
+            headers={"Content-Disposition": content_disposition("inline", doc.original_filename)},
         )
     finally:
         db.close()

@@ -1,0 +1,497 @@
+/*
+ * Einstellungen, ported from docs/prototype/clickdummy-editorial.html (.settings, .snav). D2: the
+ * layout values are profile.css's, so both pages look alike.
+ */
+@layer components {
+  /* The layout follows the main column, which the sidebar narrows, so it is a container query. */
+  .settings {
+    container: settings / inline-size;
+  }
+  /*
+   * These shared primitives are 12 px; meaningful text here is at least 13 px. Dialogs portal
+   * outside .settings, so their panels carry .settings-dialog (preflight ruling 17).
+   */
+  .settings .hint,
+  .settings .btn-sm,
+  .settings .seg button,
+  .settings .tag,
+  .settings .code,
+  .settings-dialog .hint,
+  .settings-dialog .btn-sm {
+    font-size: var(--fs-13);
+  }
+  /* Usability layout: 200 px sub-nav, pane up to about 900 px, forms up to 620 px. */
+  .settings-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 40px;
+    max-width: 1140px;
+  }
+  .settings-pane {
+    min-width: 0;
+    max-width: 900px;
+  }
+  /* The whole nav sticks, so the Administration group stays with the user sections. */
+  .settings-nav {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+  }
+  .settings-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+  }
+  /* Prototype .snav-group, at 13 px (R4): the label above the admin sections (D1). */
+  .settings-nav-group {
+    margin: 16px 0 6px;
+    padding-left: 15px;
+    font-size: var(--fs-13);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  /* 44 px at every width, since the column can be wide on a small (touch) viewport. */
+  .settings-nav a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-left: 3px solid transparent;
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    text-decoration: none;
+  }
+  .settings-nav a:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+  .settings-nav a[aria-current="page"] {
+    border-left-color: var(--accent);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .settings-intro {
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+  .settings-section .form-max {
+    max-width: 620px;
+  }
+  /* Prototype setGeneral: the first field sits 18 px below the intro. */
+  .settings-intro + .form-max {
+    margin-top: 18px;
+  }
+  /* PreferenceSegs is a flex column; its segs keep their own width instead of stretching. */
+  .settings-block .seg {
+    align-self: flex-start;
+  }
+  /* Allgemein: the blocks and fields of a section stand apart like the prototype's groups. */
+  .settings-block + .settings-block,
+  .settings-block + .field {
+    margin-top: 28px;
+  }
+  .settings-block .sec-title-sm {
+    margin-bottom: 12px;
+  }
+  /* The OAuth callback's notice sits above the first block; the empty live region takes no room. */
+  .settings-callback:not(:empty) {
+    margin-bottom: 20px;
+  }
+  /* Speicherort: a fieldset without the browser's frame; the time zone field is a .field. */
+  fieldset.settings-block {
+    border: 0;
+    margin-inline: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .field + .settings-block {
+    margin-top: 28px;
+  }
+  .settings-block legend.sec-title-sm {
+    padding: 0;
+    margin-bottom: 4px;
+  }
+  /* Prototype .radio-row: radio, title and hint; 44 px so the whole row is a touch target. */
+  .radio-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 0;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  .radio-row + .radio-row {
+    border-top: 1px solid var(--line);
+  }
+  .radio-row input {
+    margin: 3px 0 0;
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+  .radio-row:has(input:disabled) {
+    cursor: default;
+  }
+  .radio-row .radio-title {
+    display: block;
+    font-weight: 500;
+  }
+  .radio-row .meta {
+    display: block;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+  }
+  /* Under the Drive row, aligned with its text (15 px radio plus the 12 px gap). */
+  .radio-detail {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+    padding-left: 27px;
+  }
+  .storage-connected {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  /* R4, preflight ruling 17: every button in the pane and its dialogs is a touch target at every width. */
+  .settings-pane .btn,
+  .settings-pane .seg button,
+  .settings-dialog .btn {
+    min-height: 44px;
+  }
+  .settings-pane .btn-icon,
+  .settings-dialog .btn-icon {
+    min-width: 44px;
+  }
+  /* Benutzer (D5): one row per user; the delete button sits at the row's end. */
+  .user-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .user-list li {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 44px;
+    border-top: 1px solid var(--line);
+  }
+  .user-name {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .user-delete {
+    margin-left: auto;
+  }
+  .user-list + .meta {
+    margin: 8px 0 0;
+  }
+  /* Vorlagen (D8): one row per template; its editor opens below the row, as a channel's form does. */
+  .template-intro {
+    margin: 0 0 12px;
+  }
+  .template-group {
+    margin-top: 20px;
+  }
+  .template-group-title {
+    margin: 0 0 4px;
+    font-size: var(--fs-13);
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .template-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .template-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-height: 44px;
+    padding: 6px 0;
+    border-top: 1px solid var(--line);
+  }
+  .template-name {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .template-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .template-editor {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .template-list .template-editor .drawer-section {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .template-new {
+    margin-top: 16px;
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+  }
+  .template-new .template-editor {
+    justify-self: stretch;
+  }
+  .template-kind {
+    margin: 0;
+  }
+  .template-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .template-preview-hint {
+    margin: 0 0 12px;
+  }
+  /* Preflight ruling 30: the email renders on paper in both themes, like the A4 sheet. */
+  .template-preview iframe {
+    display: block;
+    width: 100%;
+    min-height: 420px;
+    border: 1px solid var(--line-control);
+    background: var(--paper);
+  }
+  .template-preview-text {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: inherit;
+    font-size: var(--fs-14);
+  }
+  /* D2: below 720 px the sub-nav is one seg row, ink when selected like the app's .seg. */
+  @container settings (max-width: 719px) {
+    .settings-layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+    .settings-nav {
+      position: static;
+    }
+    /* The group label sits above the second seg row, flush with the row's frame. */
+    .settings-nav-group {
+      margin: 14px 0 6px;
+      padding-left: 0;
+    }
+    .settings-nav ul {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      border: 1.5px solid var(--text);
+      border-radius: var(--r-ctl);
+      overflow: hidden;
+    }
+    .settings-nav li + li a {
+      border-left: 1px solid var(--line-control);
+    }
+    .settings-nav a {
+      justify-content: center;
+      padding: 0 4px;
+      border-left: 0;
+      text-align: center;
+      font-weight: 600;
+    }
+    /* The ul clips its children, so the global outside ring would be cut off; draw it inside. */
+    .settings-nav a:focus-visible {
+      outline-offset: -3px;
+    }
+    .settings-nav a[aria-current="page"] {
+      background: var(--text);
+      color: var(--bg);
+    }
+  }
+  /* Preflight ruling 18: "Benachrichtigungen" does not fit a third of the row; one row per link. */
+  @container settings (max-width: 479px) {
+    .settings-nav ul {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .settings-nav li + li a {
+      border-left: 0;
+      border-top: 1px solid var(--line-control);
+    }
+    /* 7b ruling 17: the three short admin links stay one seg row of three below their label. */
+    .settings-nav ul[aria-labelledby] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .settings-nav ul[aria-labelledby] li + li a {
+      border-top: 0;
+      border-left: 1px solid var(--line-control);
+    }
+  }
+  /* KI (D2): the test button, why it waits, and its result line below (a live region, never hidden). */
+  .conn-test,
+  .model-load {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+  }
+  .conn-result {
+    flex-basis: 100%;
+    margin: 0;
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    font-size: var(--fs-13);
+    overflow-wrap: anywhere;
+  }
+  .conn-result .ico {
+    flex: none;
+    margin-top: 2px;
+  }
+  /* KI › Aufgaben (D4): one row per task, its name beside the provider seg. */
+  .routing-intro {
+    margin: 0;
+  }
+  .routing-list {
+    display: grid;
+    gap: 8px;
+  }
+  .routing-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    min-height: 44px;
+  }
+  /* Preflight ruling 22: below 480 px the task name stacks above its seg, so neither is clipped. */
+  @container settings (max-width: 479px) {
+    .routing-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+      justify-items: start;
+    }
+  }
+  /* Its text lines up with the key field; the ghost button's padding hangs into the margin. */
+  .ai-key-remove {
+    justify-self: start;
+    margin-left: -10px;
+  }
+  /* Konto (D10): each clean-up action is text, its options and one button, left-aligned. */
+  .account-block {
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+  }
+  .account-block .sec-title-sm,
+  .account-block .prose {
+    margin: 0;
+  }
+  /* The factory reset's password sits below the question, apart from its last line. */
+  .settings-dialog .prose + .field {
+    margin-top: 16px;
+  }
+  /* Preflight ruling 49: the factory reset stands apart in crimson, always with an icon and words. */
+  .danger-zone {
+    border: 1px solid var(--danger);
+    border-radius: var(--r-panel);
+    padding: 16px 18px;
+  }
+  .danger-zone h3 {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--danger);
+  }
+  /* Systemfehler: the calm AI line is --ok text with a check icon, never colour alone. */
+  .status-line {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0;
+  }
+  .ai-error-text {
+    margin: 0 0 8px;
+  }
+  /* The wipe's scope radios: a fieldset without the browser's frame inside the danger zone. */
+  .wipe-scope {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    justify-self: stretch;
+  }
+  .wipe-scope legend {
+    padding: 0;
+  }
+  /* Benachrichtigungen, prototype .chan: one row per channel, its form opens below the row. */
+  .chan-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .chan {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 16px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+  }
+  .chan-name {
+    margin: 0;
+    font-weight: 600;
+  }
+  .chan-state {
+    margin: 2px 0 0;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .chan-state.on {
+    color: var(--ok);
+  }
+  .chan-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .chan-form {
+    grid-column: 1 / -1;
+  }
+  /* The inline form sits inside the row's frame; the row's top line already separates it. */
+  .chan-form .drawer-section {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
+  }
+  /* Its text lines up with the fields; the ghost button's padding hangs into the margin. */
+  .chan-remove {
+    justify-self: start;
+    margin-left: -10px;
+  }
+  .settings-section .drawer-section + .settings-block {
+    margin-top: 28px;
+  }
+  .chan-sources {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  @container settings (max-width: 719px) {
+    .chan {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .chan-actions {
+      justify-content: flex-start;
+    }
+  }
+}

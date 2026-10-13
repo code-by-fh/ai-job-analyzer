@@ -19,6 +19,16 @@ from intelligence.service import get_client_and_model, format_cv_for_prompt
 
 logger = get_logger(__name__)
 
+MAX_COMPANY_NAME_LENGTH = 200
+
+
+def _shared_company_name(existing, own_job, domain: str) -> str:
+    """Name for the shared profile: the stored one wins, so a later user cannot rename it."""
+    if existing and existing.name:
+        return existing.name
+    name = (own_job.company if own_job else None) or domain
+    return name[:MAX_COMPANY_NAME_LENGTH]
+
 
 @celery_app.task(name="worker.generate_interview_prep_task", bind=True, max_retries=2)
 def generate_interview_prep_task(self, job_id: str, user_id: int):
@@ -64,7 +74,7 @@ def generate_interview_prep_task(self, job_id: str, user_id: int):
         r = redis.from_url(redis_url)
         r.publish(
             "job_updates",
-            json.dumps({"type": "interview_prep_ready", "job_id": job_id}),
+            json.dumps({"type": "interview_prep_ready", "job_id": job_id, "user_id": user_id}),
         )
 
         logger.info(f"Interview prep generated for job {job_id}")
@@ -100,45 +110,33 @@ def generate_company_profile(self, domain: str, user_id: int):
 
     db = SessionLocal()
     try:
-        jobs = db.query(JobEntry).filter(JobEntry.company_domain == domain).limit(3).all()
-        company_name = jobs[0].company or domain if jobs else domain
-        job_title = jobs[0].title or "" if jobs else ""
-        key_requirements = (jobs[0].description or "")[:3000] if jobs else ""
+        # The profile is shared by all users: only the requester's own job may name the company,
+        # and no job text at all flows into the prompt.
+        own_job = (
+            db.query(JobEntry)
+            .filter(JobEntry.company_domain == domain, JobEntry.user_id == user_id)
+            .order_by(JobEntry.created_at.desc())
+            .first()
+        )
+        existing = db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
+        company_name = _shared_company_name(existing, own_job, domain)
 
         client, model = get_client_and_model("company_profile", db)
         user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         user_language = getattr(user_profile, "language", "de") if user_profile else "de"
 
-        user_profile_str = ""
-        if user_profile:
-            parts = []
-            if user_profile.role:
-                parts.append(f"Aktuelle Rolle: {user_profile.role}")
-            if user_profile.skills:
-                parts.append(f"Skills: {user_profile.skills}")
-            spoken = getattr(user_profile, "spoken_languages", None) or []
-            if spoken:
-                parts.append(f"Spoken Languages: {', '.join(spoken)}")
-            if user_profile.cv_data:
-                parts.append(format_cv_for_prompt(user_profile.cv_data))
-            user_profile_str = "\n".join(parts)
-
         profile_data = generate_company_profile_summary(
             company_name=company_name,
-            job_title=job_title,
-            industry="",
-            key_requirements=key_requirements,
-            user_profile=user_profile_str,
+            domain=domain,
             model=model,
             client=client,
         )
 
-        company = db.query(CompanyProfile).filter(CompanyProfile.domain == domain).first()
+        company = existing
         if not company:
-            company = CompanyProfile(domain=domain)
+            company = CompanyProfile(domain=domain, name=company_name)
             db.add(company)
 
-        company.name = company_name
         company.description = profile_data.get("executive_summary", "")[:500] if isinstance(profile_data.get("executive_summary"), str) else ""
         company.culture_summary = ""
         company.tech_stack = []
@@ -149,7 +147,7 @@ def generate_company_profile(self, domain: str, user_id: int):
         redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
         redis.from_url(redis_url).publish(
             "job_updates",
-            json.dumps({"type": "company_profile_ready", "domain": domain}),
+            json.dumps({"type": "company_profile_ready", "domain": domain, "user_id": user_id}),
         )
 
         logger.info(f"Company profile generated for {domain}")

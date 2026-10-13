@@ -2,14 +2,19 @@
 
 import os
 import json
+import zoneinfo
 from datetime import datetime, timezone
+from typing import Optional
 
 import redis
 import requests
 
 from core.celery_config import celery_app
+from core.crawl_registry import ALREADY_RUNNING, SCRAPER_START_TIMEOUT_SECONDS, is_started
 from core.logger import get_logger
-from database.core import SessionLocal, JobEntry, UserProfile, User
+from database.core import SessionLocal, JobEntry, JobPlatform, UserProfile, User, as_utc
+from workers.crawl_control import reap_stalled_crawls
+from workers.tasks.platform_runs import record_failed_run
 
 logger = get_logger(__name__)
 
@@ -75,175 +80,160 @@ def check_follow_ups():
         db.close()
 
 
+FALLBACK_TIMEZONE = "Europe/Berlin"
+
+
+def _user_timezone(db, user_id: int) -> tuple:
+    """(name, tzinfo) of the user's timezone; an unknown or unreadable one falls back to Berlin."""
+    name = FALLBACK_TIMEZONE
+    try:
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if profile and profile.timezone:
+            name = profile.timezone
+    except Exception as e:
+        logger.warning(f"[SCHEDULE] Could not read the timezone of user {user_id}: {e}")
+    try:
+        return name, zoneinfo.ZoneInfo(name)
+    except Exception:
+        return name, zoneinfo.ZoneInfo(FALLBACK_TIMEZONE)
+
+
+def _slot_consumed(p, scheduled_local: datetime, user_tz) -> bool:
+    """True when today's slot already has its run: a crawl started after it, or a run finished after it.
+
+    A refused start records a failed run, so a refusal consumes the slot instead of being retried every minute.
+    """
+    if p.last_crawl_at:
+        last_local = p.last_crawl_at.replace(tzinfo=timezone.utc).astimezone(user_tz)
+        if last_local >= scheduled_local:
+            logger.info(f"[SCHEDULE] Skipped: already crawled today at {last_local.strftime('%H:%M')} (after scheduled {p.schedule_time})")
+            return True
+    finished_at = (p.last_run or {}).get("finished_at")
+    if finished_at and as_utc(datetime.fromisoformat(finished_at)) >= scheduled_local:
+        logger.info(f"[SCHEDULE] Skipped '{p.name}': a run already finished after today's slot {p.schedule_time}")
+        return True
+    return False
+
+
+def _is_due(p, now_local: datetime, user_tz) -> bool:
+    if not (p.schedule_time and p.schedule_days is not None):
+        logger.info(f"[SCHEDULE] Skipped '{p.name}': no schedule defined")
+        return False
+    if now_local.weekday() not in p.schedule_days:  # 0=Mon, 6=Sun
+        logger.info(f"[SCHEDULE] Skipped: today={now_local.weekday()} not in {p.schedule_days}")
+        return False
+    try:
+        hour, minute = map(int, p.schedule_time.split(":"))
+        scheduled_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now_local < scheduled_local:
+            logger.info(f"[SCHEDULE] Skipped: {p.schedule_time} not yet reached (now_local={now_local.strftime('%H:%M')})")
+            return False
+        return not _slot_consumed(p, scheduled_local, user_tz)
+    except (ValueError, AttributeError, TypeError) as e:
+        logger.error(f"[SCHEDULE] Error parsing schedule for {p.name}: {e}")
+        return False
+
+
+def _is_platform_due(db, p, now_utc: datetime) -> bool:
+    tz_name, user_tz = _user_timezone(db, p.user_id)
+    now_local = now_utc.astimezone(user_tz)
+    logger.info(
+        f"[SCHEDULE] Checking '{p.name}' (id={p.id}) | tz={tz_name} | "
+        f"now_local={now_local.strftime('%H:%M')} | "
+        f"schedule_time={p.schedule_time!r} schedule_days={p.schedule_days!r} | "
+        f"last_crawl_at={p.last_crawl_at!r}"
+    )
+    return _is_due(p, now_local, user_tz)
+
+
+def _post_search(p, platform_user):
+    from core.auth import create_access_token, token_claims
+
+    scraper_url = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
+    token = create_access_token(token_claims(platform_user))
+    return requests.post(
+        f"{scraper_url}/search",
+        json={
+            "query": p.url,
+            "location": "Remote",
+            "platform_id": p.id,
+            "is_initial_run": not p.last_crawl_at,
+        },
+        headers={"Cookie": f"access_token={token}"},
+        timeout=SCRAPER_START_TIMEOUT_SECONDS,
+    )
+
+
+def _apply_answer(p, resp, now_utc: datetime) -> bool:
+    """True when the scraper started a crawl (the only answer that stamps last_crawl_at)."""
+    if resp.status_code != 200:
+        logger.error(f"Failed to trigger crawl for {p.name}: {resp.status_code}")
+        return False
+    answer = resp.json()
+    if is_started(answer):
+        p.last_crawl_at = now_utc
+        return True
+    if answer.get("code") == ALREADY_RUNNING:
+        # The running crawl reports its own run; it also keeps this slot from starting a second crawl.
+        logger.info(f"Scheduled crawl of platform {p.id} skipped: a crawl is already running")
+        return False
+    logger.error(f"Scraper refused the scheduled crawl of platform {p.id}")
+    record_failed_run(p.id, p.user_id)
+    return False
+
+
+def _attempt_crawl(db, p, now_utc: datetime) -> Optional[bool]:
+    """None: no request was made. True: a crawl started. False: refused or failed."""
+    logger.info(f"Platform {p.name} (ID: {p.id}) is due for crawl. Triggering...")
+    platform_user = db.query(User).filter(User.id == p.user_id).first()
+    if not platform_user:
+        logger.error(f"User {p.user_id} not found for platform {p.name}, skipping")
+        return None
+    try:
+        return _apply_answer(p, _post_search(p, platform_user), now_utc)
+    except Exception as e:
+        logger.error(f"Error triggering periodic crawl for {p.name}: {e}")
+        return False
+
+
 @celery_app.task(name="ai.check_platforms_for_crawl")
 def check_platforms_for_crawl():
     logger.info(" Checking platforms for scheduled crawls...")
     db = SessionLocal()
     try:
-        from datetime import timedelta
-        from database.core import JobPlatform
-
-        import zoneinfo
         now_utc = datetime.now(timezone.utc)
-
-        # Load platforms that are active and either never crawled or interval passed
         platforms = db.query(JobPlatform).filter(
             JobPlatform.is_active == True,
             JobPlatform.setup_status == 'active',
         ).all()
-
-        triggered_count = 0
-        SCRAPER_URL = os.getenv("SCRAPER_SERVICE_URL", "http://127.0.0.1:8081")
-
-        for p in platforms:
-            is_due = False
-
-            # Resolve user timezone for this platform
-            user_tz_str = "Europe/Berlin"
-            try:
-                user_profile = db.query(UserProfile).filter(UserProfile.user_id == p.user_id).first()
-                if user_profile and user_profile.timezone:
-                    user_tz_str = user_profile.timezone
-            except Exception:
-                pass
-            try:
-                user_tz = zoneinfo.ZoneInfo(user_tz_str)
-            except Exception:
-                user_tz = zoneinfo.ZoneInfo("Europe/Berlin")
-
-            now_local = now_utc.astimezone(user_tz)
-
-            logger.info(
-                f"[SCHEDULE] Checking '{p.name}' (id={p.id}) | tz={user_tz_str} | "
-                f"now_local={now_local.strftime('%H:%M')} | "
-                f"schedule_time={p.schedule_time!r} schedule_days={p.schedule_days!r} | "
-                f"last_crawl_at={p.last_crawl_at!r}"
-            )
-
-            if p.schedule_time and p.schedule_days is not None:
-                today_weekday = now_local.weekday()  # 0=Mon, 6=Sun
-                if today_weekday in p.schedule_days:
-                    try:
-                        h, m = map(int, p.schedule_time.split(":"))
-                        scheduled_local = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
-                        if now_local >= scheduled_local:
-                            if not p.last_crawl_at:
-                                is_due = True
-                            else:
-                                last_local = p.last_crawl_at.replace(tzinfo=timezone.utc).astimezone(user_tz)
-                                if last_local < scheduled_local:
-                                    is_due = True
-                                else:
-                                    logger.info(f"[SCHEDULE] Skipped: already crawled today at {last_local.strftime('%H:%M')} (after scheduled {p.schedule_time})")
-                        else:
-                            logger.info(f"[SCHEDULE] Skipped: {p.schedule_time} not yet reached (now_local={now_local.strftime('%H:%M')})")
-                    except (ValueError, AttributeError) as e:
-                        logger.error(f"[SCHEDULE] Error parsing schedule for {p.name}: {e}")
-                else:
-                    logger.info(f"[SCHEDULE] Skipped: today={today_weekday} not in {p.schedule_days}")
-            else:
-                logger.info(f"[SCHEDULE] Skipped '{p.name}': no schedule defined")
-
-            if is_due:
-                is_initial_run = not p.last_crawl_at
-                logger.info(
-                    f"🚀 Platform {p.name} (ID: {p.id}) is due for crawl. Triggering..."
-                )
-                try:
-                    from core.auth import create_access_token
-                    platform_user = db.query(User).filter(User.id == p.user_id).first()
-                    if not platform_user:
-                        logger.error(f"User {p.user_id} not found for platform {p.name}, skipping")
-                        continue
-                    _internal_token = create_access_token({"sub": platform_user.username, "tv": platform_user.token_version})
-                    resp = requests.post(
-                        f"{SCRAPER_URL}/search",
-                        json={
-                            "query": p.url,
-                            "location": "Remote",
-                            "platform_id": p.id,
-                            "is_initial_run": is_initial_run,
-                        },
-                        headers={"Cookie": f"access_token={_internal_token}"},
-                        timeout=5,
-                    )
-                    if resp.status_code == 200:
-                        p.last_crawl_at = now_utc
-                        triggered_count += 1
-                    else:
-                        logger.error(
-                            f"Failed to trigger crawl for {p.name}: {resp.status_code}"
-                        )
-                except Exception as e:
-                    logger.error(f"Error triggering periodic crawl for {p.name}: {e}")
-
-        if triggered_count > 0:
-            db.commit()
-            logger.info(f" Triggered {triggered_count} periodic crawls.")
-        else:
-            logger.info("No platforms due for crawl.")
-
+        outcomes = [
+            _attempt_crawl(db, p, now_utc) for p in platforms if _is_platform_due(db, p, now_utc)
+        ]
+        _finish_check(db, outcomes)
     except Exception as e:
         logger.error(f"Error in check_periodic_crawls_task: {e}")
     finally:
         db.close()
 
 
+def _finish_check(db, outcomes: list) -> None:
+    started = outcomes.count(True)
+    if started:
+        db.commit()
+        logger.info(f" Triggered {started} periodic crawls.")
+    elif all(outcome is None for outcome in outcomes):
+        logger.info("No platforms due for crawl.")
+
+
 @celery_app.task(name="ai.cleanup_stale_redis_jobs")
 def cleanup_stale_redis_jobs():
-    """Remove crawl jobs from Redis that have been running for more than 5 minutes."""
-    import time as time_module
-
-    STALE_THRESHOLD_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+    """Remove crawl jobs from Redis that made no progress for STALE_NO_PROGRESS_SECONDS."""
     redis_url = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
     r = redis.from_url(redis_url, decode_responses=True)
-
-    now_ms = int(time_module.time() * 1000)
-    removed = 0
-
     try:
-        job_keys = r.keys("crawl_job:*")
-        # Filter out sub-keys like crawl_job:{id}:all_job_titles
-        job_keys = [k for k in job_keys if k.count(":") == 1]
-
-        for key in job_keys:
-            job_data = r.hgetall(key)
-            if not job_data:
-                continue
-
-            started_at = job_data.get("started_at")
-            if not started_at:
-                continue
-
-            age_ms = now_ms - int(started_at)
-            if age_ms < STALE_THRESHOLD_MS:
-                continue
-
-            job_id = key.split(":", 1)[1]
-            user_id = job_data.get("user_id")
-            status = job_data.get("status", "")
-
-            # Skip jobs that are already completed (they have their own TTL)
-            if status == "completed":
-                continue
-
-            logger.info(
-                f"🧹 Removing stale Redis job {job_id} (age={age_ms // 1000}s, status={status})"
-            )
-            r.delete(key)
-            r.delete(f"crawl_job:{job_id}:all_job_titles")
-            if user_id:
-                r.srem(f"user:{user_id}:active_crawls", job_id)
-            removed += 1
-
-        if removed:
-            r.delete("system:crawling")
-            logger.info(f" Removed {removed} stale Redis crawl job(s).")
-        else:
-            logger.debug("No stale Redis crawl jobs found.")
-
+        removed = reap_stalled_crawls(r)
+        (logger.info if removed else logger.debug)(f" Removed {removed} stalled Redis crawl job(s).")
         return {"removed": removed}
-
     except Exception as e:
         logger.error(f"Error during stale Redis job cleanup: {e}")
         return {"removed": 0, "error": str(e)}

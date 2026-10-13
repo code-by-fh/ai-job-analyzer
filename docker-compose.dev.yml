@@ -12,7 +12,7 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-    command: sh -c "alembic -c database/alembic.ini upgrade head && supervisord -c supervisord.dev.conf"
+    command: sh -c "python -m database.schema && supervisord -c supervisord.dev.conf"
     volumes:
       - ./server:/app
       - /app/__pycache__
@@ -21,13 +21,18 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    ports:
-      - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${APP_API_URL:-http://localhost:8002}
+      # Windows bind mounts deliver no file events
+      - WATCHPACK_POLLING=true
+    # The image runs as the non-root "node" user; the anonymous volumes inherit its ownership.
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       - ai-job-agent-server

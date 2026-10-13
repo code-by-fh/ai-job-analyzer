@@ -3,7 +3,7 @@
 import os
 import json
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from typing import Optional
 
 import redis
 from openai import (
@@ -15,8 +15,11 @@ from openai import (
 )
 
 from core.celery_config import celery_app
+from core.job_status import ArchiveReason
 from core.logger import get_logger
-from database.core import SessionLocal, JobEntry, UserProfile, JobPlatform, User
+from core.crawl_registry import touch_crawl_progress
+from services.company_domain import normalised_host
+from database.core import SessionLocal, JobEntry, UserProfile, JobPlatform, User, iso_utc
 from intelligence.service import get_client_and_model, format_cv_for_prompt, analyze_job
 
 from workers.notifications.push import send_notification
@@ -25,9 +28,40 @@ from workers.notifications.email import (
     _send_via_mailjet_batch,
     _send_via_smtp_batch,
 )
+from workers.crawl_control import AI_FAILURE, INTERNAL_FAILURE, fail_crawl_job
 from workers.tasks.crawl_status import maybe_complete_crawl
 
 logger = get_logger(__name__)
+
+
+def _own_job_id(job: JobEntry, user_id) -> Optional[str]:
+    """The duplicate's id, only when it belongs to the crawl's user (events reach that user only)."""
+    return job.id if job.user_id == user_id else None
+
+
+def posting_company_domain(db, job_url, user_id):
+    """The employer domain of a posting, or None when it lives on one of the user's job boards."""
+    host = normalised_host(job_url)
+    if host is None or host in _platform_hosts(db, user_id):
+        return None
+    return host
+
+
+def _platform_hosts(db, user_id) -> set:
+    urls = db.query(JobPlatform.url).filter(JobPlatform.user_id == user_id).all()
+    return {normalised_host(url) for (url,) in urls}
+
+
+def _crawl_stopped(redis_client, crawl_job_id: Optional[str]) -> bool:
+    """A cancelled or vanished crawl: its tasks stop before any Redis write.
+
+    Checks the dedicated cancellation marker (resurrection-safe) as well as the main key: a late
+    hincrby would otherwise recreate the hash without TTL or started_at, and the reaper never collects it.
+    """
+    return bool(crawl_job_id) and bool(
+        redis_client.exists(f"crawl_job:{crawl_job_id}:cancelled")
+        or not redis_client.exists(f"crawl_job:{crawl_job_id}")
+    )
 
 
 @celery_app.task(name="ai.analyze_job")
@@ -42,20 +76,15 @@ def analyze_job_task(job_data):
     db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
 
-    # Bail out immediately if the crawl job was cancelled.
-    # Check the dedicated cancellation marker (resurrection-safe) as well as the
-    # main key, so a job cancelled mid-pipeline never gets analyzed or notified.
     crawl_job_id = job_data.get("crawl_job_id")
-    if crawl_job_id and (
-        r.exists(f"crawl_job:{crawl_job_id}:cancelled")
-        or not r.exists(f"crawl_job:{crawl_job_id}")
-    ):
+    if _crawl_stopped(r, crawl_job_id):
         logger.info(f"[TASK] Crawl job {crawl_job_id} cancelled — skipping analysis for {job_id}")
         return
 
     # Notify frontend that analysis is starting
     crawl_job_id = job_data.get("crawl_job_id")
     if crawl_job_id:
+        touch_crawl_progress(r, crawl_job_id)
         analysis_completed = int(
             r.hincrby(f"crawl_job:{crawl_job_id}", "analysis_completed", 1)
         )
@@ -100,6 +129,7 @@ def analyze_job_task(job_data):
 
             if crawl_job_id:
                 # Increment skipped counter
+                touch_crawl_progress(r, crawl_job_id)
                 jobs_skipped = int(
                     r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_skipped", 1)
                 )
@@ -114,6 +144,7 @@ def analyze_job_task(job_data):
                             "user_id": user_id,
                             "job_title": job_title,
                             "jobs_skipped": jobs_skipped,
+                            "existing_job_id": _own_job_id(existing_job, user_id),
                         }
                     ),
                 )
@@ -122,16 +153,12 @@ def analyze_job_task(job_data):
                 maybe_complete_crawl(crawl_job_id, user_id, db, r)
             return
 
-        # Determine profile to use (User Specific or Admin/Default)
+        # Only the job owner's own profile may be used, never another user's
         profile = None
         if user_id:
             profile = (
                 db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
             )
-
-        # Fallback to Admin (ID=1) or default if no user speciifed
-        if not profile:
-            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
         user_language = getattr(profile, "language", "de") if profile else "de"
 
@@ -175,13 +202,7 @@ def analyze_job_task(job_data):
             )
 
         job_url = job_data.get("url")
-        company_domain = None
-        if job_url:
-            try:
-                parsed = urlparse(job_url)
-                company_domain = parsed.netloc.removeprefix("www.")
-            except Exception:
-                pass
+        company_domain = posting_company_domain(db, job_url, user_id)
 
         if existing_job and force_reanalyze:
             existing_job.match_score = float(data.get("score", 0))
@@ -205,6 +226,7 @@ def analyze_job_task(job_data):
                 platform_id=job_data.get("platform_id"),
                 company_domain=company_domain,
                 is_archived=auto_archive,
+                archive_reason=ArchiveReason.THRESHOLD.value if auto_archive else None,
             )
             db.add(db_job)
             db.commit()
@@ -214,6 +236,7 @@ def analyze_job_task(job_data):
         payload = json.dumps(
             {
                 "type": event_type,
+                "user_id": user_id,
                 "crawl_job_id": crawl_job_id,
                 "job": {
                     "id": db_job.id,
@@ -226,7 +249,7 @@ def analyze_job_task(job_data):
                     "status": db_job.status,
                     "is_archived": db_job.is_archived,
                     "created_at": (
-                        db_job.created_at.isoformat() if db_job.created_at else None
+                        iso_utc(db_job.created_at)
                     ),
                     "user_id": user_id,
                 },
@@ -239,7 +262,10 @@ def analyze_job_task(job_data):
         # Increment jobs_saved counter
         crawl_job_id = job_data.get("crawl_job_id")
         if crawl_job_id:
+            touch_crawl_progress(r, crawl_job_id)
             jobs_saved = int(r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_saved", 1))
+            if not auto_archive:
+                r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_matched", 1)
 
             # Notify that this specific job analysis is finished
             r.publish(
@@ -350,50 +376,15 @@ def analyze_job_task(job_data):
     ) as e:
         logger.error(f"OpenRouter API error in analyze_job_task for Job {job_id}: {e}")
         db.rollback()
-        crawl_job_id = job_data.get("crawl_job_id")
         if crawl_job_id:
-            try:
-                import requests as _req
-
-                SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
-                )
-                _req.post(
-                    f"{SCRAPER_URL}/fail-crawl",
-                    json={
-                        "job_id": crawl_job_id,
-                        "user_id": user_id,
-                        "error_message": str(e),
-                    },
-                    timeout=5,
-                )
-            except Exception as cleanup_e:
-                logger.error(f"Failed to trigger cleanup: {cleanup_e}")
+            # Direct call: the worker has no session cookie for the scraper's /fail-crawl endpoint.
+            fail_crawl_job(r, crawl_job_id, user_id, failure=AI_FAILURE)
     except Exception as e:
         logger.error(f"Analyze Error for Job {job_id}: {e}", exc_info=True)
         db.rollback()
-
-        crawl_job_id = job_data.get("crawl_job_id")
         if crawl_job_id:
-            try:
-                import requests
-
-                SCRAPER_URL = os.getenv(
-                    "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
-                )
-                requests.post(
-                    f"{SCRAPER_URL}/fail-crawl",
-                    json={
-                        "job_id": crawl_job_id,
-                        "user_id": user_id,
-                        "error_message": str(e),
-                    },
-                    timeout=5,
-                )
-            except Exception as cleanup_e:
-                logger.error(
-                    f"Failed to trigger cleanup for job {crawl_job_id}: {cleanup_e}"
-                )
+            # Direct call: the worker has no session cookie for the scraper's /fail-crawl endpoint.
+            fail_crawl_job(r, crawl_job_id, user_id, failure=INTERNAL_FAILURE)
     finally:
         db.close()
 
@@ -406,11 +397,15 @@ def save_job_basic_task(job_data):
     user_id = job_data.get("user_id")
     crawl_job_id = job_data.get("crawl_job_id")
 
-    db = SessionLocal()
     r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
+    if _crawl_stopped(r, crawl_job_id):
+        logger.info(f"[TASK] Crawl job {crawl_job_id} cancelled — skipping basic save for {job_id}")
+        return
+    db = SessionLocal()
 
     try:
         if crawl_job_id:
+            touch_crawl_progress(r, crawl_job_id)
             analysis_completed = int(
                 r.hincrby(f"crawl_job:{crawl_job_id}", "analysis_completed", 1)
             )
@@ -429,6 +424,7 @@ def save_job_basic_task(job_data):
         if db.query(JobEntry).filter(JobEntry.id == job_data["id"]).first():
             logger.info(f"Job {job_id} already exists. Skipping basic save.")
             if crawl_job_id:
+                touch_crawl_progress(r, crawl_job_id)
                 jobs_skipped = int(
                     r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_skipped", 1)
                 )
@@ -446,13 +442,7 @@ def save_job_basic_task(job_data):
             return
 
         job_url = job_data.get("url")
-        company_domain = None
-        if job_url:
-            try:
-                parsed = urlparse(job_url)
-                company_domain = parsed.netloc.removeprefix("www.")
-            except Exception:
-                pass
+        company_domain = posting_company_domain(db, job_url, user_id)
 
         db_job = JobEntry(
             id=job_data["id"],
@@ -476,6 +466,7 @@ def save_job_basic_task(job_data):
             "job_updates",
             json.dumps({
                 "type": "new_job",
+                "user_id": user_id,
                 "crawl_job_id": crawl_job_id,
                 "job": {
                     "id": db_job.id,
@@ -487,7 +478,7 @@ def save_job_basic_task(job_data):
                     "url": db_job.url,
                     "status": "OPEN",
                     "created_at": (
-                        db_job.created_at.isoformat() if db_job.created_at else None
+                        iso_utc(db_job.created_at)
                     ),
                     "user_id": user_id,
                 },
@@ -495,6 +486,7 @@ def save_job_basic_task(job_data):
         )
 
         if crawl_job_id:
+            touch_crawl_progress(r, crawl_job_id)
             jobs_saved = int(
                 r.hincrby(f"crawl_job:{crawl_job_id}", "jobs_saved", 1)
             )

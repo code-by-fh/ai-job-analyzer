@@ -322,10 +322,7 @@ Return ONLY valid JSON.
 
 def get_company_profile_summary_messages(
     company_name: str,
-    job_title: str = "",
-    industry: str = "",
-    key_requirements: str = "",
-    user_profile: str = "",
+    domain: str,
     language: str = "de",
     region: str = "Germany / Europe",
     perspective: str = "potential employee",
@@ -369,20 +366,18 @@ CRITICAL LANGUAGE RULE:
 - perspective: {perspective}
 - language: {language}
 
-### Candidate Context (MANDATORY USE)
+### Shared Profile
 
-- target_role: {job_title}
-- industry: {industry}
-- key_requirements: {key_requirements}
-- user_profile: {user_profile}
+- website domain: {domain}
 
-You MUST tailor all analysis to this context.
+This profile is shared between all users. It MUST describe the employer only and MUST NOT
+assume or invent anything about a specific candidate or a specific job posting.
 
 ---
 
 ## Research Task
 
-Conduct a comprehensive employer analysis of {company} tailored to the candidate context.
+Conduct a comprehensive employer analysis of {company} based on company facts only.
 
 Requirements:
 
@@ -410,15 +405,15 @@ Return EXACTLY this structure:
 {{
   "meta": {{
     "company": "{company}",
-    "role": "{job_title}",
+    "role": "",
     "region": "{region}",
     "language": "{language}"
   }},
   "executive_summary": {{
     "assessment": "",
     "confidence": "High | Moderate | Low | Insufficient",
-    "suitable_for": "",
-    "not_suitable_for": ""
+    "suitable_for": "<generic: what kind of people this employer is a good fit for, based on company facts only>",
+    "not_suitable_for": "<generic: what kind of people may not fit this employer, based on company facts only>"
   }},
   "analysis": [
     {{
@@ -499,7 +494,7 @@ Return EXACTLY this structure:
 ## BUTTON REQUIREMENTS
 
 - Generate 8–10 buttons
-- MUST be personalized to role and profile
+- MUST relate to the company only, never to a specific candidate or posting
 - MUST be actionable
 - MUST be specific (no generic advice)
 
@@ -524,10 +519,7 @@ Return ONLY valid JSON.
         .replace("{region}", region)
         .replace("{perspective}", perspective)
         .replace("{language}", language)
-        .replace("{job_title}", job_title)
-        .replace("{industry}", industry)
-        .replace("{key_requirements}", key_requirements)
-        .replace("{user_profile}", user_profile)
+        .replace("{domain}", domain)
     )
 
     return [{"role": "user", "content": filled_prompt}]

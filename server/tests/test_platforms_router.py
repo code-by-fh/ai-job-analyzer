@@ -1,4 +1,8 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
+import requests
+from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +12,8 @@ from main import app
 from database.core import Base, User, JobPlatform, JobEntry
 from core.auth import get_current_user, get_db
 from routers.platforms import _infer_url_pattern
+
+pytestmark = pytest.mark.usefixtures("fresh_rate_limits")
 
 # Create testing engine and session using StaticPool to share connection
 engine = create_engine(
@@ -157,7 +163,7 @@ def test_setup_creates_active_platform():
             "https://indeed.com/jobs/view/1",
             "https://indeed.com/jobs/view/2",
         ],
-        "run_initial_crawl": False,
+        "initial_run": "none",
     }
     response = client.post("/platforms/setup", json=payload)
     assert response.status_code == 200
@@ -189,7 +195,7 @@ def test_setup_reuses_pending_platform():
     payload = {
         "url": "https://indeed.com/jobs",
         "selected_urls": ["https://indeed.com/jobs/view/1"],
-        "run_initial_crawl": False,
+        "initial_run": "none",
     }
     response = client.post("/platforms/setup", json=payload)
     assert response.status_code == 200
@@ -216,7 +222,7 @@ def test_setup_rejects_active_duplicate():
     payload = {
         "url": "https://indeed.com/jobs",
         "selected_urls": ["https://indeed.com/jobs/view/1"],
-        "run_initial_crawl": False,
+        "initial_run": "none",
     }
     response = client.post("/platforms/setup", json=payload)
     assert response.status_code == 400
@@ -289,10 +295,14 @@ def test_delete_platform():
     db.commit()
     db.close()
 
-    # Test delete
-    response = client.delete("/platforms/12")
+    # Test delete, with a reachable crawl registry that has nothing running
+    registry = MagicMock()
+    registry.exists.return_value = 0
+    registry.smembers.return_value = set()
+    with patch("routers.platforms._crawl_redis", return_value=registry):
+        response = client.delete("/platforms/12")
     assert response.status_code == 200
-    assert response.json() == {"status": "deleted"}
+    assert response.json() == {"status": "deleted", "kept_jobs": 0}
 
     # Check is deleted
     db = TestingSessionLocal()
@@ -359,3 +369,133 @@ def test_delete_platform_jobs_filtering():
     remaining_ids = [j.id for j in db.query(JobEntry).all()]
     assert remaining_ids == []
     db.close()
+
+
+SETUP_PAYLOAD = {
+    "url": "https://indeed.com/jobs",
+    "selected_urls": ["https://indeed.com/jobs/view/1", "https://indeed.com/jobs/view/2"],
+}
+
+
+def _setup(initial_run, **trigger_kwargs):
+    trigger_kwargs.setdefault("return_value", {"status": "Started"})
+    with patch("routers.platforms._trigger_scraper_search", **trigger_kwargs) as trigger:
+        response = client.post("/platforms/setup", json={**SETUP_PAYLOAD, "initial_run": initial_run})
+    return response, trigger
+
+
+def test_setup_analyze_triggers_regular_crawl():
+    response, trigger = _setup("analyze")
+    assert trigger.call_args.kwargs["is_initial_run"] is False
+    assert response.json()["last_crawl_at"].endswith("+00:00")
+    assert response.json()["initial_crawl_started"] is True
+
+
+def test_setup_seed_triggers_initial_run():
+    response, trigger = _setup("seed")
+    assert trigger.call_args.kwargs["is_initial_run"] is True
+    assert response.json()["last_crawl_at"] is not None
+    assert response.json()["initial_crawl_started"] is False
+
+
+def _manual_crawl_is_initial(platform_id) -> bool:
+    with patch("routers.platforms._trigger_scraper_search", return_value={"status": "Started"}) as trigger:
+        client.post(f"/platforms/{platform_id}/crawl")
+    _, _, is_initial_run = trigger.call_args.args
+    return is_initial_run
+
+
+def test_setup_none_skips_crawl():
+    response, trigger = _setup("none")
+    trigger.assert_not_called()
+    assert response.json()["last_crawl_at"] is not None
+
+
+def test_crawl_after_setup_none_does_not_seed():
+    response, _ = _setup("none")
+    assert _manual_crawl_is_initial(response.json()["id"]) is False
+
+
+def test_crawl_after_failed_analyze_setup_does_not_seed():
+    response, _ = _setup("analyze", side_effect=requests.RequestException("down"))
+    assert _manual_crawl_is_initial(response.json()["id"]) is False
+
+
+def test_crawl_after_failed_seed_setup_still_seeds():
+    response, _ = _setup("seed", side_effect=requests.RequestException("down"))
+    assert response.json()["last_crawl_at"] is None
+    assert _manual_crawl_is_initial(response.json()["id"]) is True
+
+
+def test_get_platforms_items_omit_setup_only_fields():
+    _setup("analyze")
+    assert "initial_crawl_started" not in client.get("/platforms").json()[0]
+
+
+def test_setup_rejects_unknown_initial_run():
+    response, trigger = _setup("later")
+    assert response.status_code == 422
+    trigger.assert_not_called()
+
+
+def test_get_platforms_returns_last_run():
+    last_run = {"started_at": None, "finished_at": "2026-10-08T09:30:00+00:00", "found": 8, "new": 3, "matched": 2}
+    db = TestingSessionLocal()
+    db.add(JobPlatform(id=30, user_id=99, url="https://indeed.com/jobs", name="Indeed",
+                       setup_status="active", last_run=last_run))
+    db.commit()
+    db.close()
+    assert client.get("/platforms").json()[0]["last_run"] == last_run
+
+
+def test_setup_analyze_reports_unreachable_scraper():
+    response, _ = _setup("analyze", side_effect=requests.RequestException("down"))
+    assert response.status_code == 200
+    assert response.json()["initial_crawl_started"] is False
+
+
+def test_setup_analyze_reports_scraper_error_status():
+    response, _ = _setup("analyze", return_value={"status": "Error", "message": "x"})
+    assert response.status_code == 200
+    assert response.json()["initial_crawl_started"] is False
+
+
+@pytest.mark.parametrize("channel,sender", [
+    ("pushover", "_send_via_pushover"),
+    ("resend", "_send_via_resend_batch"),
+    ("mailjet", "_send_via_mailjet_batch"),
+    ("smtp", "_send_via_smtp_batch"),
+])
+def test_platform_notification_test_returns_fixed_reason(channel, sender):
+    from database.core import UserProfile
+
+    db = TestingSessionLocal()
+    db.add(JobPlatform(id=31, user_id=99, url="https://x.example", name="X", setup_status="active",
+                       resend_recipients=["me@x.de"], mailjet_recipients=["me@x.de"], smtp_recipients=["me@x.de"]))
+    db.add(UserProfile(
+        user_id=99, pushover_user_key="u", pushover_api_token="t", resend_api_key="r", resend_from_email="a@b.de",
+        mailjet_api_key="m", mailjet_secret_key="s", mailjet_from_email="a@b.de", smtp_host="h", smtp_user="u",
+        smtp_password="p",
+    ))
+    db.commit()
+    db.close()
+    with patch(f"routers.platforms.{sender}", side_effect=requests.Timeout("secret-internal-detail")):
+        response = client.post(f"/platforms/31/test-{channel}")
+    assert (response.status_code, response.json()) == (500, {"detail": "Zeitüberschreitung"})
+
+
+PLATFORM_TEST_RATE_LIMIT = 5
+
+
+def test_platform_notification_tests_are_rate_limited():
+    from database.core import UserProfile
+
+    db = TestingSessionLocal()
+    db.add(JobPlatform(id=32, user_id=99, url="https://x.example", name="X", setup_status="active"))
+    db.add(UserProfile(user_id=99, pushover_user_key="u", pushover_api_token="t"))
+    db.commit()
+    db.close()
+    with patch("routers.platforms._send_via_pushover", return_value=True):
+        answers = [client.post("/platforms/32/test-pushover").status_code for _ in range(PLATFORM_TEST_RATE_LIMIT + 1)]
+    assert answers[:PLATFORM_TEST_RATE_LIMIT] == [status.HTTP_200_OK] * PLATFORM_TEST_RATE_LIMIT
+    assert answers[PLATFORM_TEST_RATE_LIMIT] == status.HTTP_429_TOO_MANY_REQUESTS

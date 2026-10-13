@@ -77,14 +77,16 @@ def test_upload_profile_document():
     assert res["label"] == "Work Reference"
     assert res["original_filename"] == "my_reference.pdf"
     assert res["file_size"] > 0
+    assert res["created_at"].endswith("+00:00")
 
 
 def test_upload_profile_document_invalid_type():
     files = {"file": ("my_reference.pdf", b"%PDF-1.4 file content", "application/pdf")}
     data = {"doc_type": "INVALID_TYPE", "label": "Work Reference"}
     response = client.post("/profile/documents", data=data, files=files)
-    assert response.status_code == 400
-    assert "Invalid doc_type" in response.json()["detail"]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "doc_type"]
+    assert "INVALID_TYPE" not in response.text
 
 
 def test_download_and_view_document():

@@ -1,37 +1,43 @@
-#!/usr/bin/env sh
-# ================================================================================
-# File: env.sh
-# Description: Replaces environment variables in asset files.
-# Usage: Run this script in your terminal, ensuring APP_PREFIX and ASSET_DIRS are set.
-# ================================================================================
+#!/bin/sh
+# Container entrypoint. Production bundles contain the literal APP_API_URL (from .env.production).
+# On every start the pristine bundle (TEMPLATE_DIR, root-owned, read-only) is copied over ASSET_DIR and the
+# placeholder is replaced there, so a restart with a different URL always takes effect. Then the server starts.
+set -eu
 
-# Set the exit flag to exit immediately if any command fails
-set -e
+PLACEHOLDER="APP_API_URL"
+: "${APP_API_URL:?APP_API_URL must be set to the public API base URL, e.g. http://localhost:8002}"
+ASSET_DIR="${ASSET_DIR:-./.next/static}"
+TEMPLATE_DIR="${TEMPLATE_DIR:-./static-template}"
 
-# Check if APP_PREFIX is set
-: "${APP_PREFIX:?APP_PREFIX must be set (e.g. APP_PREFIX='APP_PREFIX_')}"
+case "$APP_API_URL" in
+  *'
+'*) echo "env.sh: APP_API_URL must not contain a newline" >&2; exit 1 ;;
+  http://*|https://*) ;;
+  *) echo "env.sh: APP_API_URL must start with http:// or https://" >&2; exit 1 ;;
+esac
 
-# Check if ASSET_DIRS is set
-: "${ASSET_DIR:?Must set ASSET_DIR to one path}"
-
-# Check if the directory exists
-if [ ! -d "$ASSET_DIR" ]; then
-    # If not, display a warning message and skip to the next iteration
-    echo "Warning: directory '$ASSET_DIR' not found, skipping."
-    continue
+# Allow-list: the URL is written into a JavaScript string literal, so quotes, spaces, angle
+# brackets and backslashes must never reach the bundle. "[" and "]" are allowed for IPv6 hosts
+# (http://[::1]:8002); "@" is not, so no credentials end up in the public bundle.
+# "]" must come first in the bracket expression and "-" last to be taken literally.
+URL_CHARACTERS='][A-Za-z0-9:/._~%?#=&+-'
+if printf '%s' "$APP_API_URL" | grep -q "[^$URL_CHARACTERS]"; then
+  echo "env.sh: APP_API_URL may only contain letters, digits and :/._~%?#=&+-[]" >&2
+  exit 1
 fi
 
-# Display the current directory being scanned
-echo "Scanning directory: $ASSET_DIR"
-
-# Iterate through each environment variable that starts with APP_PREFIX
-env | grep "^${APP_PREFIX}" | while IFS='=' read -r key value; do
-    # Display the variable being replaced
-    echo "  • Replacing ${key} → ${value}"
-
-    # Use find and sed to replace the variable in all files within the directory
-    find "$ASSET_DIR" -type f \
-        -exec sed -i "s|${key}|${value}|g" {} +
+for dir in "$ASSET_DIR" "$TEMPLATE_DIR"; do
+  if [ ! -d "$dir" ]; then
+    echo "env.sh: directory '$dir' not found" >&2
+    exit 1
+  fi
 done
+
+# Escape the sed replacement metacharacters (backslash, ampersand and the delimiter) so any URL is literal.
+ESCAPED_URL="$(printf '%s' "$APP_API_URL" | sed 's/[\\&|]/\\&/g')"
+
+echo "env.sh: rendering $PLACEHOLDER as $APP_API_URL into $ASSET_DIR"
+cp -R "$TEMPLATE_DIR"/. "$ASSET_DIR"/
+find "$ASSET_DIR" -type f -name '*.js' -exec sed -i "s|${PLACEHOLDER}|${ESCAPED_URL}|g" {} +
 
 exec "$@"

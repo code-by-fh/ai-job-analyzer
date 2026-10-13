@@ -1,12 +1,16 @@
-FROM node:20.18-alpine
-
+# Development image: next dev with the source mounted from the host (docker-compose.dev.yml).
+FROM node:22-alpine
+ENV NEXT_TELEMETRY_DISABLED=1 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 WORKDIR /app
-
-COPY package.json ./
-RUN npm install
-
+# Runs as the image's non-root "node" user. The compose service drops all capabilities, so root
+# could not write to node-owned paths anyway (no CAP_DAC_OVERRIDE).
+RUN chown node:node /app
+USER node
+COPY --chown=node:node package.json pnpm-lock.yaml ./
+# "corepack install" fetches the pnpm version pinned in package.json ("packageManager").
+RUN corepack install && pnpm install --frozen-lockfile
+# Pre-created so the anonymous volumes for node_modules and .next start out owned by "node".
+RUN mkdir .next
 EXPOSE 3000
-
-ENV NEXT_TELEMETRY_DISABLED=1
-
-CMD ["npm", "run", "dev"]
+CMD ["pnpm", "dev", "--hostname", "0.0.0.0"]

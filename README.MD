@@ -1,9 +1,9 @@
 # 🧠 AI Job Agent — Intelligent Application Assistant
 
 [![Python Version](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
-[![Next.js Version](https://img.shields.io/badge/next.js-16.1-black.svg)](https://nextjs.org/)
-[![React Version](https://img.shields.io/badge/react-19.0-61dafb.svg)](https://react.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/tailwind_css-v4.0-38bdf8.svg)](https://tailwindcss.com/)
+[![Next.js Version](https://img.shields.io/badge/next.js-16.4-black.svg)](https://nextjs.org/)
+[![React Version](https://img.shields.io/badge/react-19.3-61dafb.svg)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/tailwind_css-v4.3-38bdf8.svg)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 An production-ready, self-hosted web application for technical professionals to fully automate their job search pipeline. By combining automated background scraping, deep AI-powered analysis, an interactive Application Tracking System (ATS), and a browser-based template editor, the **AI Job Agent** handles everything from discovering postings to drafting tailored PDF packages.
@@ -144,7 +144,7 @@ For local development, it is highly recommended to run the infrastructure compon
 
 ### Prerequisites
 *   **Python 3.11** installed on your host system.
-*   **Node.js v20+** and **npm** installed.
+*   **Node.js 22.12+** and **pnpm 10** installed (`corepack enable` installs the pinned pnpm version).
 *   **Docker & Docker Compose** installed.
 
 ---
@@ -219,20 +219,16 @@ docker-compose up -d ai-job-agent-database ai-job-agent-redis ai-job-agent-rabbi
 
 2.  **Install Dependencies**:
     ```bash
-    npm install
+    pnpm install
     ```
 
-3.  **Set Up Local Env Variables**:
-    Create `.env` inside the `frontend/` directory:
-    ```env
-    NEXT_PUBLIC_API_URL=http://localhost:8002
-    NEXT_PUBLIC_LOG_LEVEL=info
-    ```
+3.  **API URL**:
+    `frontend/.env.development` already sets `NEXT_PUBLIC_API_URL=http://localhost:8002`.
     *(Note: Port `8002` is the mapped port forwarding to port `8080` on the backend).*
 
 4.  **Start the Next.js Dev Server**:
     ```bash
-    npm run dev
+    pnpm dev
     ```
     Open [http://localhost:3000](http://localhost:3000) to view the development frontend.
 
@@ -250,7 +246,7 @@ Run tests from the `server/` directory:
 # Ensure virtual environment is active
 pytest
 ```
-*Expected output: `64 passed, 1 skipped`.*
+*Expected output: all tests pass (about 1450 at the time of the frontend redesign).*
 
 ### B. Verify Configurations & Security
 The backend includes helper scripts in `server/scripts/` to verify configurations:
@@ -267,14 +263,24 @@ python scripts/smoke_test.py
 ```
 
 ### C. Frontend Lints & Builds
-Run code quality checks and static exports in the `frontend/` directory:
+Run code quality checks, tests and builds in the `frontend/` directory:
 ```bash
-# Run ESLint validation
-npm run lint
+# ESLint (zero warnings) and Prettier check
+pnpm lint
 
-# Compile Next.js production build
-npm run build
+# TypeScript check (also checks DE/EN dictionary parity)
+pnpm typecheck
+
+# Vitest unit tests
+pnpm test
+
+# Playwright end-to-end tests against a mocked API
+pnpm test:e2e
+
+# Next.js production build
+pnpm build
 ```
+See `frontend/README.md` for environment variables and the project structure.
 
 ---
 
@@ -290,7 +296,7 @@ If you're making code contributions to this repository, please adhere to the fol
     ```bash
     alembic -c database/alembic.ini revision --autogenerate -m "describe_changes"
     ```
-6.  **Internationalization (i18n)**: Do not write hardcoded text strings in JSX components. Use `t("key")` from `useLanguage()` and add translations in both English and German to `frontend/app/lib/languages.ts`.
+6.  **Internationalization (i18n)**: Do not write hardcoded text strings in JSX components. Use `t("key")` from `useI18n()` and add every key to both `frontend/src/i18n/de.ts` (source of truth) and `frontend/src/i18n/en.ts`.
 
 ---
 

@@ -30,6 +30,14 @@ from intelligence.prompts import (
 logger = logging.getLogger(__name__)
 
 AI_404_REDIS_KEY = "system:ai_404_error"
+# The stored error as a fixed code: the new web words it and never shows the German text.
+AI_ERROR_CODE_KEY = "system:ai_error_code"
+AI_ERROR_AUTH = "auth"
+AI_ERROR_RATE_LIMIT = "rate_limit"
+AI_ERROR_MODEL_NOT_FOUND = "model_not_found"
+AI_ERROR_CONNECTION = "connection"
+AI_ERROR_SERVER = "server"
+AI_ERROR_UNKNOWN = "unknown"
 
 TASK_DEFAULTS: dict[str, str] = {
     "job_analysis": "cloud",
@@ -73,10 +81,12 @@ def _get_redis():
     )
 
 
-def store_ai_404_error(message: str) -> None:
+def store_ai_404_error(message: str, code: str) -> None:
+    # The text stays for the old UI's /status until the cutover; the new UI reads only the code.
     try:
         r = _get_redis()
         r.set(AI_404_REDIS_KEY, message)
+        r.set(AI_ERROR_CODE_KEY, code)
         r.publish("job_updates", json.dumps({"type": "ai_error", "message": message}))
     except Exception as e:
         logger.error(f"Failed to store AI 404 error: {e}")
@@ -85,10 +95,18 @@ def store_ai_404_error(message: str) -> None:
 def clear_ai_404_error() -> None:
     try:
         r = _get_redis()
-        r.delete(AI_404_REDIS_KEY)
+        r.delete(AI_404_REDIS_KEY, AI_ERROR_CODE_KEY)
         r.publish("job_updates", json.dumps({"type": "ai_error_cleared"}))
     except Exception as e:
         logger.error(f"Failed to clear AI 404 error: {e}")
+
+
+def read_ai_error_code() -> Optional[str]:
+    """The stored error's code; `unknown` for a text stored before codes existed; None without error."""
+    r = _get_redis()
+    if not r.get(AI_404_REDIS_KEY):
+        return None
+    return r.get(AI_ERROR_CODE_KEY) or AI_ERROR_UNKNOWN
 
 
 def get_api_key(db=None) -> str:
@@ -104,6 +122,11 @@ def get_api_key(db=None) -> str:
     return ""
 
 
+# One analysis call must stay below the crawl stall threshold (core.crawl_registry.STALE_NO_PROGRESS_SECONDS).
+AI_REQUEST_TIMEOUT_SECONDS = 120
+AI_MAX_RETRIES = 1
+
+
 def get_ai_client(api_key: str = None, db: Any = None):
     key = (api_key or get_api_key(db)).strip()
     if not key:
@@ -114,6 +137,8 @@ def get_ai_client(api_key: str = None, db: Any = None):
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=key,
+        timeout=AI_REQUEST_TIMEOUT_SECONDS,
+        max_retries=AI_MAX_RETRIES,
         default_headers={
             "HTTP-Referer": "https://github.com/ai-job-analyzer",
             "X-Title": "Job Agent MVP",
@@ -133,21 +158,57 @@ def _resolve_local_url(url: str) -> str:
     return url
 
 
-def get_ollama_base_url(db=None) -> str:
+def _configured_ollama_url(db=None) -> str:
+    """The Ollama URL the admin stored or the deployment set via OLLAMA_BASE_URL; "" if neither."""
     try:
         if db:
             from database.core import SystemSettings
             settings = db.query(SystemSettings).first()
-            if settings and settings.ollama_base_url:
-                return _resolve_local_url(settings.ollama_base_url)
+            if settings and (settings.ollama_base_url or "").strip():
+                return settings.ollama_base_url.strip()
     except Exception:
         pass
-    return _resolve_local_url(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"))
+    return os.getenv("OLLAMA_BASE_URL", "").strip()
+
+
+# The task a newly found or imported job needs first; onboarding counts AI as ready only when it can run.
+SETUP_AI_TASK = "job_analysis"
+
+
+def is_ai_configured(db=None) -> bool:
+    """True when get_client_and_model can reach the provider routed for job analysis.
+
+    "local" needs a stored or env Ollama URL; any other routing needs an OpenRouter key.
+    """
+    if get_task_provider(SETUP_AI_TASK, db) == "local":
+        return bool(_configured_ollama_url(db))
+    return bool(get_api_key(db))
+
+
+def get_ollama_base_url(db=None) -> str:
+    return _resolve_local_url(_configured_ollama_url(db) or "http://localhost:11434/v1")
+
+
+def configured_ollama_base_url(db=None) -> str:
+    """The resolved local server URL the admin or the env set; "" when neither did (no localhost fallback)."""
+    configured = _configured_ollama_url(db)
+    return _resolve_local_url(configured) if configured else ""
+
+
+# Local models are slow, but one call must still end before the crawl stall threshold
+# (core.crawl_registry.STALE_NO_PROGRESS_SECONDS = 900 s). No retry: a second 600 s attempt would pass it.
+OLLAMA_REQUEST_TIMEOUT_SECONDS = 600
+OLLAMA_MAX_RETRIES = 0
 
 
 def get_ollama_client(db=None):
     """OpenAI-compatible client pointed at the local LM Studio / Ollama service."""
-    return OpenAI(base_url=get_ollama_base_url(db), api_key="ollama")
+    return OpenAI(
+        base_url=get_ollama_base_url(db),
+        api_key="ollama",
+        timeout=OLLAMA_REQUEST_TIMEOUT_SECONDS,
+        max_retries=OLLAMA_MAX_RETRIES,
+    )
 
 
 def get_ollama_model(db=None) -> str:
@@ -160,6 +221,10 @@ def get_ollama_model(db=None) -> str:
     except Exception:
         pass
     return os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+
+# Stored in jobs.interview_prep_material and shown to the owner: never the parser text or raw model output.
+INTERVIEW_PREP_PARSE_ERROR = "invalid_ai_response"
 
 
 def _call_openrouter(
@@ -188,29 +253,30 @@ def _call_openrouter(
     except AuthenticationError as e:
         logger.error(f"OpenRouter 401 in {func_name}: {e}")
         store_ai_404_error(
-            "OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen."
+            "OpenRouter API-Schlüssel ungültig (401). Bitte in den Einstellungen prüfen.", AI_ERROR_AUTH
         )
         raise
     except RateLimitError as e:
         logger.error(f"OpenRouter 429 in {func_name}: {e}")
-        store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.")
+        store_ai_404_error("OpenRouter Rate Limit erreicht (429). Bitte kurz warten.", AI_ERROR_RATE_LIMIT)
         raise
     except NotFoundError as e:
         logger.error(f"OpenRouter 404 in {func_name}: {e}")
         store_ai_404_error(
-            "KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen."
+            "KI-Modell auf OpenRouter nicht gefunden (404). Bitte Modell-Einstellung prüfen.", AI_ERROR_MODEL_NOT_FOUND
         )
         raise
     except APIConnectionError as e:
         logger.error(f"OpenRouter connection error in {func_name}: {e}")
         store_ai_404_error(
-            "Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen."
+            "Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.", AI_ERROR_CONNECTION
         )
         raise
     except APIStatusError as e:
         logger.error(f"OpenRouter API error {getattr(e, 'status_code', 'unknown')} in {func_name}: {e}")
         store_ai_404_error(
-            f"OpenRouter Serverfehler ({getattr(e, 'status_code', 'unknown')}). Bitte später erneut versuchen."
+            f"OpenRouter Serverfehler ({getattr(e, 'status_code', 'unknown')}). Bitte später erneut versuchen.",
+            AI_ERROR_SERVER,
         )
         raise
     except Exception as e:
@@ -255,7 +321,6 @@ def extract_json(text: str):
         return json.loads(text, strict=False)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON even with robust extraction: {e}")
-        logger.debug(f"Raw content: {text}")
         raise
 
 
@@ -435,10 +500,7 @@ def generate_interview_prep(
         return result
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse interview prep JSON: {e}")
-        return {
-            "error": str(e),
-            "raw_response": content if "content" in locals() else "",
-        }
+        return {"error": INTERVIEW_PREP_PARSE_ERROR}
     except Exception as e:
         logger.error(f"Interview prep generation error: {e}")
         raise
@@ -446,10 +508,7 @@ def generate_interview_prep(
 
 def generate_company_profile_summary(
     company_name: str,
-    job_title: str = "",
-    industry: str = "",
-    key_requirements: str = "",
-    user_profile: str = "",
+    domain: str,
     model: str = None,
     api_key: str = None,
     client=None,
@@ -464,10 +523,7 @@ def generate_company_profile_summary(
         client = get_ai_client(api_key=api_key)
     messages = get_company_profile_summary_messages(
         company_name=company_name,
-        job_title=job_title,
-        industry=industry,
-        key_requirements=key_requirements,
-        user_profile=user_profile,
+        domain=domain,
     )
     
     response = _call_openrouter(
@@ -619,24 +675,22 @@ def annotate_cv_template_with_jinja2(
 ) -> str:
     """Use AI to add Jinja2 variables to a raw HTML CV template (one-time annotation).
 
-    Returns the Jinja2-annotated HTML. On failure returns the original template unchanged.
+    Returns the Jinja2-annotated HTML. Raises when the AI call fails, times out
+    (``SoftTimeLimitExceeded``) or answers without content: the caller owns the
+    failure state, so a failed fill is never stored as a finished one.
     """
     if client is None:
         client, model = get_client_and_model("cv_tailoring", db)
 
     messages = get_annotate_cv_template_messages(template_html)
-    try:
-        response = _call_openrouter(
-            client=client,
-            model=model,
-            messages=messages,
-            temperature=0.1,
-            func_name="annotate_cv_template_with_jinja2",
-        )
-        content = response.choices[0].message.content.strip()
-        content = re.sub(r"^```(?:html)?\n?", "", content)
-        content = re.sub(r"\n?```$", "", content)
-        return content
-    except Exception as e:
-        logger.error(f"annotate_cv_template_with_jinja2 failed, returning original: {e}")
-        return template_html
+    response = _call_openrouter(
+        client=client,
+        model=model,
+        messages=messages,
+        temperature=0.1,
+        func_name="annotate_cv_template_with_jinja2",
+    )
+    content = response.choices[0].message.content.strip()
+    content = re.sub(r"^```(?:html)?\n?", "", content)
+    content = re.sub(r"\n?```$", "", content)
+    return content

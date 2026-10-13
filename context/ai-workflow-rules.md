@@ -37,7 +37,7 @@ Do not modify the following files unless explicitly requested by the user:
 * **Database migrations:** Never modify existing Alembic migrations under `server/database/migrations/versions/*`. Always create a new revision.
 * **Configuration files:** `server/database/alembic.ini` and `server/database/migrations/env.py`.
 * **Generated directories:** `frontend/.next/` and `frontend/node_modules/`.
-* **Lockfiles:** Do not edit `package-lock.json` manually; modify only using `npm` commands.
+* **Lockfiles:** Do not edit `frontend/pnpm-lock.yaml` manually; modify only using `pnpm` commands.
 
 ## 5. Definition of Done & Verification Commands
 
@@ -46,8 +46,9 @@ A task is considered complete only when the following verification steps are suc
 ### A. Verification Checklist — by Change Type
 
 **Frontend-only changes** (no backend/DB changes):
-* [ ] `npm run lint` passes.
-* [ ] `npm run build` passes without errors.
+* [ ] `pnpm lint`, `pnpm typecheck` and `pnpm test` pass.
+* [ ] `pnpm test:e2e` passes.
+* [ ] `pnpm build` passes without errors.
 * [ ] Feature verified visually in the browser (golden path + responsive breakpoint).
 
 **Backend-only changes** (no frontend/DB changes):
@@ -77,10 +78,16 @@ Developers and AI agents MUST run the following commands to verify compliance.
 
 | Service / Area | Action | Command | Working Directory |
 | --- | --- | --- | --- |
-| **Frontend** | Run Linter | `npm run lint` | `frontend/` |
-| **Frontend** | Production Build | `npm run build` | `frontend/` |
+| **Frontend** | Lint + Prettier | `pnpm lint` | `frontend/` |
+| **Frontend** | Type Check | `pnpm typecheck` | `frontend/` |
+| **Frontend** | Unit Tests | `pnpm test` | `frontend/` |
+| **Frontend** | E2E Tests | `pnpm test:e2e` | `frontend/` |
+| **Frontend** | Production Build | `pnpm build` | `frontend/` |
 | **Database** | Apply Migrations | `alembic -c database/alembic.ini upgrade head` | `server/` |
 | **Backend Tests** | Run Test Suite | `pytest` | `server/` |
 | **Smoke Tests** | Run Smoke Script | `python scripts/smoke_test.py` | `server/` |
 | **Admin Settings** | Verify Configs | `python scripts/verify_admin_settings.py` | `server/` |
 | **Security/Auth** | Verify Password/User | `python scripts/verify_password.py` and `python scripts/verify_usermanagement.py` | `server/` |
+
+> [!NOTE]
+> **`frontend/` in the local QA environment** (`~/.cache/ai-job-analyzer-qa`): `webrun.sh <script>` (`lint`, `typecheck`, `test`, `test:e2e`) syncs `frontend/` into the mirror `$QA/web` and runs pnpm there, so edit only the repo, never the mirror. Prettier must format the repo, not the mirror (`pnpm exec prettier --write $REPO/frontend/src $REPO/frontend/tests` from the mirror), because the next sync wipes a mirror-only format. Use `pnpm test:e2e` (it builds with the mock API URL), and copy new e2e screenshots back from the mirror after the final run.

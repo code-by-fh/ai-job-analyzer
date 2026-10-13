@@ -8,13 +8,12 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
 from core.logger import get_logger
+from services.safe_fetch import TEMPLATE_DIR, safe_url_fetcher, strip_attachment_links, xhtml2pdf_link_callback
 
 logger = get_logger(__name__)
 
-_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
-
 _env = Environment(
-    loader=FileSystemLoader(_TEMPLATE_DIR),
+    loader=FileSystemLoader(TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
 )
 
@@ -23,7 +22,7 @@ def list_templates() -> dict:
     """Return available template keys per category, e.g. {'cv': ['classic'], ...}."""
     result = {"cv": [], "cover_letter": []}
     for category in result:
-        cat_dir = os.path.join(_TEMPLATE_DIR, category)
+        cat_dir = os.path.join(TEMPLATE_DIR, category)
         if os.path.isdir(cat_dir):
             result[category] = sorted(
                 f[:-5] for f in os.listdir(cat_dir) if f.endswith(".html")
@@ -39,16 +38,22 @@ def _resolve(category: str, template_key: str) -> str:
 
 def _html_to_pdf(html: str) -> bytes:
     buf = BytesIO()
-    status = pisa.CreatePDF(html, dest=buf, encoding="utf-8")
+    status = pisa.CreatePDF(html, dest=buf, encoding="utf-8", link_callback=xhtml2pdf_link_callback)
     if status.err:
         raise RuntimeError(f"PDF generation failed (xhtml2pdf err={status.err})")
     return buf.getvalue()
 
 
 def html_to_pdf(html: str) -> bytes:
-    """Render HTML string to PDF bytes using WeasyPrint."""
+    """Render HTML string to PDF bytes using WeasyPrint.
+
+    The HTML is user-edited or AI-generated, so resources are restricted by `safe_url_fetcher`
+    and attachment links are removed before rendering.
+    """
     import weasyprint  # Deferred: WeasyPrint requires GTK libs not available on all hosts
-    return weasyprint.HTML(string=html).write_pdf()
+    document = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher)
+    strip_attachment_links(document.etree_element)
+    return document.write_pdf()
 
 
 def render_cv_html(cv_data: dict, template_key: str = "classic") -> str:

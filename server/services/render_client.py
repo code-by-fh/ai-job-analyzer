@@ -3,10 +3,19 @@ import os
 
 import requests
 
+from core.url_safety import host_for_log
+
 logger = logging.getLogger(__name__)
 
 _RENDER_API_URL = os.getenv("RENDER_API_URL", "http://localhost:8000/render")
-_HTTP_TIMEOUT = int(os.getenv("RENDER_API_HTTP_TIMEOUT", "90"))
+# The render service refuses requests without one of its API_KEYS (Bearer token).
+_RENDER_API_KEY = os.getenv("RENDER_API_KEY", "").strip()
+# Public: the API's preview proxy waits longer than this, or it gives up on a render the scraper still finishes.
+HTTP_TIMEOUT_SECONDS = int(os.getenv("RENDER_API_HTTP_TIMEOUT", "90"))
+
+
+def _auth_headers() -> dict:
+    return {"Authorization": f"Bearer {_RENDER_API_KEY}"} if _RENDER_API_KEY else {}
 
 
 def fetch_html(url: str, wait_for: str | None = None, timeout: int = 60) -> str | None:
@@ -24,7 +33,8 @@ def fetch_html(url: str, wait_for: str | None = None, timeout: int = 60) -> str 
         resp = requests.post(
             _RENDER_API_URL,
             json=payload,
-            timeout=_HTTP_TIMEOUT,
+            headers=_auth_headers(),
+            timeout=HTTP_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
@@ -32,5 +42,5 @@ def fetch_html(url: str, wait_for: str | None = None, timeout: int = 60) -> str 
             return resp.json().get("html")
         return resp.text
     except Exception as e:
-        logger.error(f"[RenderClient] Failed to fetch {url}: {e}", exc_info=True)
+        logger.error(f"[RenderClient] Failed to fetch from host {host_for_log(url)}: {e}", exc_info=True)
         return None

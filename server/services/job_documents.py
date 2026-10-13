@@ -7,6 +7,8 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
+ATTACHED_KINDS = ["ATTACHED_CERT", "ATTACHED_REFERENCE"]
+
 
 def store_generated_document(
     db,
@@ -19,13 +21,38 @@ def store_generated_document(
     storage=None,
 ):
     """Create a JobDocument for `content`, replacing any existing doc of the same
-    `kind` for this job. Uploads to external storage when `storage` is provided,
-    otherwise stores the blob in the DB."""
-    # Replace existing docs of this kind for the job.
+    `kind` for this job, and commit."""
     db.query(JobDocument).filter(
         JobDocument.job_id == job_id, JobDocument.kind == kind
     ).delete(synchronize_session=False)
+    doc = add_job_document(
+        db, job_id, user_id, content, original_filename, mime_type, kind, storage,
+    )
+    db.commit()
+    db.refresh(doc)
+    return doc
 
+
+def delete_attached_documents(db, job_id: str) -> None:
+    """Remove the job's previously attached profile documents (no commit)."""
+    db.query(JobDocument).filter(
+        JobDocument.job_id == job_id, JobDocument.kind.in_(ATTACHED_KINDS)
+    ).delete(synchronize_session=False)
+
+
+def add_job_document(
+    db,
+    job_id: str,
+    user_id: int,
+    content: bytes,
+    original_filename: str,
+    mime_type: str,
+    kind: str,
+    storage=None,
+) -> JobDocument:
+    """Add a JobDocument without replacing siblings and without committing, so
+    callers can group several inserts into one transaction. Uploads to external
+    storage when `storage` is provided, otherwise stores the blob in the DB."""
     db_content = None
     if storage is not None:
         try:
@@ -57,6 +84,4 @@ def store_generated_document(
         kind=kind,
     )
     db.add(doc)
-    db.commit()
-    db.refresh(doc)
     return doc

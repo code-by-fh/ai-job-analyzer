@@ -13,6 +13,7 @@
 server/.config/
 server/.local/
 server/.fontconfig/
+server/.ruff_cache/
 
 # External directories not belonging to this project
 muhfweeceevee/

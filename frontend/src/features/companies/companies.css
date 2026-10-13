@@ -1,0 +1,167 @@
+/* Firmen (D7, D8): the list of the user's companies and the company detail. */
+@layer components {
+  /* These shared primitives are 12 px; meaningful text here is at least 13 px (7b ruling 25). */
+  .companies .code {
+    font-size: var(--fs-13);
+  }
+  .companies .btn-sm,
+  .companies .tag {
+    font-size: var(--fs-13);
+  }
+  /* 44 px targets at every width (R4); the base .check already is 44 px. */
+  .companies .btn,
+  .companies .seg button {
+    min-height: 44px;
+  }
+  .companies .btn-icon {
+    min-width: 44px;
+  }
+  .companies-toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px 24px;
+    max-width: 720px;
+  }
+  .companies-toolbar .field {
+    flex: 1 1 320px;
+    min-width: 0;
+    margin: 0;
+  }
+  .company-count {
+    margin: 16px 0 4px;
+    min-height: 1lh;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .company-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 920px;
+  }
+  .company-list li {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+    min-height: 44px;
+    position: relative;
+    align-items: center;
+  }
+  .company-list li:hover {
+    background: var(--hover);
+  }
+  .company-main {
+    min-width: 0;
+  }
+  .company-list a {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  /* The name is the row's only control, stretched over the row (spec 4.3 #5). */
+  .company-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .company-link:focus-visible {
+    outline: none;
+  }
+  .company-link:focus-visible::after {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .company-meta {
+    margin: 2px 0 0;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .company-none {
+    margin: 16px 0 0;
+  }
+  .company-back {
+    min-height: 44px;
+    align-items: center;
+  }
+  .company-head {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    margin: 12px 0 16px;
+  }
+  .company-title {
+    font: 700 clamp(28px, 3.4vw, 40px) / 1.05 var(--font-display);
+    letter-spacing: -0.03em;
+    overflow-wrap: anywhere;
+  }
+  /*
+   * Detail (D8): the shared profile, then the user's jobs there. The h2s are .sec-title, so they
+   * rank above the profile's h3s (.sec-title-sm) and the 22 px empty-state h3.
+   */
+  .company-sec {
+    max-width: 760px;
+    margin-top: 28px;
+    padding-top: 12px;
+    border-top: 2px solid var(--rule);
+  }
+  .company-sec > h2 {
+    margin-bottom: 8px;
+  }
+  /* The section already has its rule; the profile's first heading needs no second one. */
+  .company-sec .company-profile > .prep-sec:first-child > h3 {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .company-sec > .dim-panel {
+    padding-top: 12px;
+  }
+  /* The phase 2 deep dive toggle is 32 px; here every target is 44 px (R4). */
+  .companies .disclosure {
+    min-height: 44px;
+  }
+  .company-jobs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .company-jobs li {
+    border-top: 1px solid var(--line);
+  }
+  .company-jobs li:first-child {
+    border-top: 0;
+  }
+  .company-job {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 16px;
+    min-height: 44px;
+    padding: 10px 0;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .company-job:hover .company-job-title {
+    color: var(--accent-text);
+  }
+  .company-job-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .company-job .company-meta {
+    margin: 0;
+  }
+
+  /* Under 560 px the scope check wraps below the search field. */
+  @media (max-width: 559px) {
+    .companies-toolbar {
+      flex-wrap: wrap;
+      align-items: stretch;
+    }
+  }
+}

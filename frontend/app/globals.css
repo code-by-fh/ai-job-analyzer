@@ -1,161 +1,67 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
+@import "../src/theme/tokens.css";
+@import "../src/theme/base.css";
+@import "../src/ui/styles/controls.css";
+@import "../src/ui/styles/layout.css";
+@import "../src/ui/styles/content.css";
+@import "../src/ui/styles/overlay.css";
+@import "../src/features/shell/shell.css";
+@import "../src/features/auth/auth.css";
+@import "../src/features/job/job.css";
+@import "../src/features/inbox/inbox.css";
+@import "../src/features/applications/applications.css";
+@import "../src/features/sources/sources.css";
+@import "../src/features/profile/profile.css";
+@import "../src/features/settings/settings.css";
+@import "../src/features/companies/companies.css";
 
-/* Configure Dark Mode to use 'class' strategy via variant override if needed, 
-   but usually v4 detects 'dark' class if configured or standard. 
-   Actually v4 uses media by default, let's force class strategy via standard way 
-   OR rely on the fact that we have the class 'dark' on html. 
-   
-   In v4, simply having the class might not trigger 'dark:' unless we specify the variant.
-   But let's trust standard behavior or use specific syntax if it fails.
+/*
+  Expose the Editorial tokens to Tailwind utilities (bg-surface, text-accent, text-muted, ...).
+  The default palette is removed so off-system colours such as indigo cannot slip in (spec 5).
 */
-@custom-variant dark (&:where(.dark, .dark *));
-
-@theme {
-  --color-slate-950: #020617;
-}
-
-@layer base {
-  :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-  }
-
-  body {
-    @apply bg-slate-50 text-slate-900 transition-colors duration-300;
-  }
-
-  /* Dark Mode Override */
-  .dark body {
-    @apply bg-slate-950 text-slate-100;
-    color-scheme: dark;
-  }
-
-  /* Typography Defaults */
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    @apply tracking-tight font-bold;
-  }
-
-  /* Custom Scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    @apply bg-slate-800 hover:bg-slate-700;
-  }
-
-  /* Resizer Color for Dark Mode */
-  .dark textarea::-webkit-resizer {
-    background-color: transparent; /* Makes it use the color-scheme or browser default */
-  }
-
-  /* Selection Color */
-  ::selection {
-    @apply bg-indigo-500/30 text-indigo-900;
-  }
-
-  .dark ::selection {
-    @apply bg-indigo-500/30 text-indigo-100;
-  }
-}
-
-/* Utility / Glassmorphism Helpers */
-@layer utilities {
-  .glass-panel {
-    @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-sm;
-  }
-
-  .dark .glass-panel {
-    @apply bg-slate-900/40 backdrop-blur-xl border border-white/5 shadow-none;
-  }
-
-  .glass-card {
-    @apply bg-white border border-slate-200 shadow-sm;
-  }
-
-  .dark .glass-card {
-    @apply bg-slate-900/60 border-slate-800 backdrop-blur-md shadow-none;
-  }
-
-  /* Text Gradients */
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600;
-  }
-
-  .dark .text-gradient {
-    @apply bg-gradient-to-r from-indigo-400 to-purple-400;
-  }
-
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-150%);
-    }
-    100% {
-      transform: translateX(350%);
-    }
-  }
-
-  .animate-shimmer {
-    animation: shimmer 1.5s ease-in-out infinite;
-  }
-
-  @keyframes dropdownFade {
-    from {
-      opacity: 0;
-      transform: translateY(-8px) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  .animate-dropdown-fade {
-    animation: dropdownFade 0.2s ease-out forwards;
-  }
-
-  @keyframes popupEntry {
-    from {
-      opacity: 0;
-      transform: scale(0.95) translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-    }
-  }
-
-  @keyframes backdropFade {
-    from {
-      opacity: 0;
-      backdrop-filter: blur(0);
-    }
-    to {
-      opacity: 1;
-      backdrop-filter: blur(2px);
-    }
-  }
-
-  .animate-popup-entry {
-    animation: popupEntry 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .animate-backdrop-fade {
-    animation: backdropFade 0.5s ease-out forwards;
-  }
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-raised: var(--raised);
+  --color-float: var(--float);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-field: var(--field);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-rule: var(--rule);
+  --color-ink: var(--text);
+  --color-muted: var(--text-2);
+  --color-faint: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-text: var(--warn-text);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-st-open: var(--st-open);
+  --color-st-drafted: var(--st-drafted);
+  --color-st-applied: var(--st-applied);
+  --color-st-interview: var(--st-interview);
+  --color-st-offer: var(--st-offer);
+  --color-st-closed: var(--st-closed);
+  --color-paper: var(--paper);
+  --color-paper-ink: var(--paper-ink);
+  --color-paper-muted: var(--paper-muted);
+  --color-desk: var(--desk);
+  --radius-ctl: var(--r-ctl);
+  --radius-panel: var(--r-panel);
+  --text-12: var(--fs-12);
+  --text-13: var(--fs-13);
+  --text-14: var(--fs-14);
+  --text-16: var(--fs-16);
+  --text-20: var(--fs-20);
+  --text-body: var(--fs-body);
 }

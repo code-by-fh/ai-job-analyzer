@@ -5,8 +5,8 @@ import redis as redis_sync
 import requests
 from fastapi import APIRouter, Depends
 
-from database.core import SessionLocal, User, JobEntry, UserProfile, JobPlatform
-from core.auth import get_current_user, create_access_token
+from database.core import SessionLocal, User, JobEntry, UserProfile, JobPlatform, iso_utc
+from core.auth import get_current_user, create_access_token, token_claims
 from routers.deps import _mask_profile
 from core.logger import get_logger
 
@@ -67,6 +67,7 @@ def get_dashboard_data(
         query = db.query(JobEntry).filter(
             JobEntry.user_id == current_user.id,
             JobEntry.is_archived == False,
+            JobEntry.status != "SEEN",
         )
         if filter_type == "favorite":
             query = query.filter(JobEntry.is_favorite == True)
@@ -104,7 +105,7 @@ def get_dashboard_data(
             SCRAPER_URL = os.getenv(
                 "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
             )
-            _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
+            _tok = create_access_token(token_claims(current_user))
             res = requests.get(
                 f"{SCRAPER_URL}/crawl-status", timeout=2,
                 headers={"Cookie": f"access_token={_tok}"},
@@ -192,9 +193,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     "crawl_interval_minutes": p.crawl_interval_minutes,
                     "schedule_time": p.schedule_time,
                     "schedule_days": p.schedule_days,
-                    "last_crawl_at": (
-                        p.last_crawl_at.isoformat() if p.last_crawl_at else None
-                    ),
+                    "last_crawl_at": iso_utc(p.last_crawl_at),
                     "is_active": p.is_active,
                     "is_notification_enabled": p.is_notification_enabled,
                     "notification_adapters": p.notification_adapters or [],
@@ -215,7 +214,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
             SCRAPER_URL = os.getenv(
                 "SCRAPER_SERVICE_URL", "http://127.0.0.1:8081"
             )
-            _tok = create_access_token({"sub": current_user.username, "tv": current_user.token_version})
+            _tok = create_access_token(token_claims(current_user))
             res = requests.get(
                 f"{SCRAPER_URL}/crawl-status", timeout=2,
                 headers={"Cookie": f"access_token={_tok}"},

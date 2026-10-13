@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -17,10 +19,11 @@ from database.core import Base, engine, SessionLocal, User
 from core.auth import get_password_hash
 from core.connection_manager import redis_listener
 from routers.deps import limiter, COOKIE_SECURE
+from core import process_hardening
 from core.logger import get_logger
 
 from routers import auth as auth_router
-from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage, profile_documents, templates
+from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage, profile_documents, templates, search
 
 logger = get_logger(__name__)
 
@@ -63,13 +66,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Redis listener task...")
     task = asyncio.create_task(redis_listener())
 
-    # Run pending Alembic migrations
+    # Run pending Alembic migrations (a fresh database is created and stamped instead)
     try:
-        from alembic.config import Config
-        from alembic import command
-        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "database", "alembic.ini"))
-        alembic_cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "database", "migrations"))
-        command.upgrade(alembic_cfg, "heads")
+        from database.schema import prepare_schema
+        prepare_schema(engine)
         logger.info("Alembic migrations applied")
     except Exception as e:
         logger.error(f"Alembic migration error: {e}")
@@ -109,6 +109,8 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
+process_hardening.disable_process_dump()
+
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -124,6 +126,29 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+# Pydantic echoes the rejected value ("input", and parser messages under ctx "error") into
+# every 422, e.g. a 1 MB template straight back to the client. The constraint values in
+# ctx (max_length, ...) come from the schema and stay.
+_INPUT_ECHO_KEY = "input"
+_INPUT_ECHO_CTX_KEYS = frozenset({"error"})
+
+
+def _without_input_echo(error: dict) -> dict:
+    redacted = {key: value for key, value in error.items() if key != _INPUT_ECHO_KEY}
+    if "ctx" in redacted:
+        redacted["ctx"] = {key: value for key, value in redacted["ctx"].items() if key not in _INPUT_ECHO_CTX_KEYS}
+        if not redacted["ctx"]:
+            del redacted["ctx"]
+    return redacted
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    """FastAPI's 422 body ({"detail": [...]}) without the echoed request input."""
+    detail = [_without_input_echo(error) for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(detail)})
+
+
 allowed_origins = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
@@ -136,6 +161,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    # The web client reads download filenames cross-origin from this header.
+    expose_headers=["Content-Disposition"],
 )
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -152,6 +179,7 @@ app.include_router(websocket.router)
 app.include_router(storage.router)
 app.include_router(profile_documents.router)
 app.include_router(templates.router)
+app.include_router(search.router)
 
 
 # Scraper runs as a separate internal service (see supervisord.conf). The frontend

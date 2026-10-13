@@ -1,0 +1,408 @@
+/* Profil, ported from docs/prototype/clickdummy-editorial.html (.subnav-tabs, .form-max). */
+@layer components {
+  /* D12: the layout follows the main column, which the sidebar narrows, so it is a container query. */
+  .profile {
+    container: profile / inline-size;
+  }
+  /* Preflight ruling 13: these shared primitives are 12 px; meaningful text here is at least 13 px. */
+  .profile .hint,
+  .profile .btn-sm,
+  .profile .seg button,
+  .profile .tag,
+  .profile-dialog .hint,
+  .profile-dialog .btn-sm {
+    font-size: var(--fs-13);
+  }
+  /* Usability layout: 200 px sub-nav, pane up to about 900 px, forms up to 620 px. */
+  .profile-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 40px;
+    max-width: 1140px;
+  }
+  .profile-pane {
+    min-width: 0;
+    max-width: 900px;
+  }
+  .profile-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+    position: sticky;
+    top: 24px;
+  }
+  /* Preflight ruling 34: 44 px at every width, since the column can be wide on a small viewport. */
+  .profile-nav a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-left: 3px solid transparent;
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    text-decoration: none;
+  }
+  .profile-nav a:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+  .profile-nav a[aria-current="page"] {
+    border-left-color: var(--accent);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .profile-intro {
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+  .profile-section .form-max {
+    max-width: 620px;
+  }
+  /* Ziel's chip editors (prototype chipEditor): one entry field, the chips below it. */
+  .chip-input {
+    display: flex;
+    gap: 8px;
+  }
+  .chip-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip-item {
+    height: auto;
+    min-height: 28px;
+    padding-right: 0;
+    gap: 2px;
+  }
+  .chip-remove {
+    display: inline-grid;
+    place-items: center;
+    border-radius: var(--r-ctl);
+    color: var(--text-2);
+  }
+  .chip-remove:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+  .cv-body > .notice {
+    margin-top: 16px;
+  }
+  /* D6: the import sits above the hint; its reading line spans the column. */
+  .cv-import {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+    margin-top: 16px;
+  }
+  .cv-import > .notice {
+    justify-self: stretch;
+  }
+  .cv-draft-kept {
+    margin-top: 16px;
+  }
+  .cv-draft-kept .btn {
+    margin-top: 8px;
+  }
+  /* Lebenslauf's entry lists (prototype .entry*, text lifted to at least 13 px). */
+  .entry-list {
+    display: grid;
+    gap: 8px;
+  }
+  .entry-list + .entry-list {
+    margin-top: 16px;
+  }
+  .entry-list-head {
+    align-items: center;
+    margin-bottom: 0;
+  }
+  /* Ruling R14 (e): the lists' h4 headings rank below the form's h3 (.sec-title-sm, 17 px). */
+  .entry-list-head .sec-title-sm {
+    font-size: var(--fs-14);
+  }
+  .entries {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 2px solid var(--rule);
+  }
+  .entry {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+  }
+  .entry-editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .entry-body {
+    min-width: 0;
+  }
+  .entry-fields {
+    display: grid;
+    gap: 12px;
+  }
+  .entry-title {
+    font: 650 18px/1.25 var(--font-display);
+    letter-spacing: -0.015em;
+    overflow-wrap: anywhere;
+  }
+  .entry-sub {
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+  }
+  .entry-text {
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    margin-top: 6px;
+    max-width: 70ch;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  /* Nachweise (D8): the type, then the file button; the hint and refusals take their own line. */
+  .proof-upload {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: 16px 0 20px;
+  }
+  .proof-upload-hint,
+  .proof-upload [role="alert"] {
+    flex-basis: 100%;
+  }
+  /* Preflight ruling 18: the input is visually hidden; its label shows the keyboard focus. */
+  .proof-upload:has(input:focus-visible) label {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .proof-blocked {
+    color: var(--text-2);
+  }
+  /*
+   * Touch targets (D12) at every width, as preflight ruling 34 did for the sub-nav: at 720-767 px
+   * the column still has the wide layout while the device is a touch one (fix round M7).
+   */
+  .entry-list .btn,
+  .proof-list .btn-sm {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .proof-upload .btn-sm,
+  .proof-upload .seg button {
+    min-height: 44px;
+  }
+  .proof-actions {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  /*
+   * Ruling R16 (b): the chip remove button, the section's small Speichern and the import notice's
+   * button are touch targets at every width too, scoped to the page so Sources keeps its own rule.
+   */
+  .profile .chip-remove {
+    width: 44px;
+    height: 44px;
+  }
+  .profile .drawer-section-foot .btn,
+  .profile .cv-draft-kept .btn {
+    min-height: 44px;
+  }
+  /* Vorlagen (D9): a grid of A4 cards per kind (prototype gallery); the default is outlined in ink. */
+  .tpl-section {
+    margin-top: 24px;
+  }
+  .gallery {
+    list-style: none;
+    margin: 16px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 26px;
+  }
+  .tpl {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .tpl-thumb {
+    aspect-ratio: 210 / 297;
+    background: var(--paper);
+    position: relative;
+    overflow: hidden;
+    container-type: inline-size;
+    /* Preflight ruling 33: tokens only, no literal shadow colour. */
+    box-shadow:
+      0 0 0 1px var(--line),
+      var(--shadow-float);
+  }
+  .tpl.is-default .tpl-thumb {
+    outline: 3px solid var(--text);
+    outline-offset: 4px;
+  }
+  .thumb-in {
+    position: absolute;
+    inset: 10cqw 11cqw;
+    display: flex;
+    flex-direction: column;
+    gap: 3.2cqw;
+  }
+  .thumb-in i {
+    display: block;
+    height: 2.6cqw;
+    background: var(--paper-rule);
+  }
+  .thumb-in i:first-child {
+    height: 6cqw;
+    width: 58%;
+    background: var(--paper-ink);
+    opacity: 0.8;
+  }
+  .tpl-thumb.is-letter .thumb-in i:nth-child(-n + 3) {
+    width: 40%;
+  }
+  .tpl-name {
+    font-weight: 600;
+    font-size: var(--fs-14);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .tpl-meta {
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    margin: 0;
+  }
+  /* The default line takes the button's 44 px, so every card's Vorschau sits on one line. */
+  .tpl-default {
+    font-size: var(--fs-13);
+    font-weight: 600;
+    margin: 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  .tpl-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Card buttons are touch targets (Global Constraints, Accessibility), at every width as above. */
+  .tpl .btn-sm {
+    min-height: 44px;
+  }
+  .tpl .btn-sm.btn-icon {
+    min-width: 44px;
+  }
+  /*
+   * D10: the fill state is static text. The degraded states are amber warnings (usable, without
+   * profile data), never crimson.
+   */
+  .tpl-state {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: 1.4;
+  }
+  .tpl-state.is-warn {
+    color: var(--warn-text);
+  }
+  .tpl-state svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  /* The upload card has the size of a thumbnail, so it sits in the grid like one more template. */
+  .tpl-upload-label {
+    aspect-ratio: 210 / 297;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 8px;
+    padding: 12px;
+    text-align: center;
+    border: 1px dashed var(--line-control);
+    border-radius: var(--r-panel);
+    font-weight: 600;
+    font-size: var(--fs-14);
+    cursor: pointer;
+  }
+  .tpl-upload-label:hover {
+    border-color: var(--text);
+  }
+  /* Preflight ruling 18: the input is visually hidden; its card shows the keyboard focus. */
+  .tpl-upload:has(input:focus-visible) .tpl-upload-label {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* D2: below 720 px the sub-nav is one seg row, ink when selected like the app's .seg. */
+  @container profile (max-width: 719px) {
+    .profile-layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+    .profile-nav ul {
+      position: static;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      border: 1.5px solid var(--text);
+      border-radius: var(--r-ctl);
+      overflow: hidden;
+    }
+    .profile-nav li + li a {
+      border-left: 1px solid var(--line-control);
+    }
+    .profile-nav a {
+      min-height: 44px;
+      justify-content: center;
+      padding: 0 4px;
+      border-left: 0;
+      text-align: center;
+      font-weight: 600;
+    }
+    /* .profile-nav ul clips its children, so the global outside ring would be cut off; draw it inside. */
+    .profile-nav a:focus-visible {
+      outline-offset: -3px;
+    }
+    .profile-nav a[aria-current="page"] {
+      background: var(--text);
+      color: var(--bg);
+    }
+    /* D12: a Nachweis row stacks (name and meta, then the buttons). */
+    .proof-list .file-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+    }
+    .gallery {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+  }
+  @container profile (max-width: 339px) {
+    .gallery {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* 2x2 below 420 px. */
+  @container profile (max-width: 419px) {
+    .profile-nav ul {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .profile-nav li:nth-child(odd) a {
+      border-left: 0;
+    }
+    .profile-nav li:nth-child(n + 3) a {
+      border-top: 1px solid var(--line-control);
+    }
+  }
+}

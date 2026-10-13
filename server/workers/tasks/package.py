@@ -6,8 +6,10 @@ import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import redis
+from celery.exceptions import SoftTimeLimitExceeded
 
 from core.celery_config import celery_app
+from core.job_status import GenerationOutcome, finish_generation, generation_cancelled, mark_generation_running
 from core.logger import get_logger
 from database.core import SessionLocal, JobEntry, UserProfile, ProfileDocument, User
 from intelligence.service import (
@@ -17,10 +19,19 @@ from intelligence.service import (
     generate_application,
 )
 from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
-from services.job_documents import store_generated_document
+from services.job_documents import add_job_document, delete_attached_documents, store_generated_document
 from services.storage import get_storage_service
-from services.template_filler import fill_template, render_jinja2_template
-from database.core import DocumentTemplate
+from services.template_access import TemplateRef, find_usable_template
+from services.template_filler import TemplateRejected, fill_template, render_jinja2_template
+from workers.tasks.time_limits import (
+    GENERATION_FAILED_ERROR,
+    GENERATION_HARD_TIME_LIMIT_SECONDS,
+    GENERATION_SOFT_TIME_LIMIT_SECONDS,
+    GENERATION_TIMEOUT_ERROR,
+    RENDER_HARD_TIME_LIMIT_SECONDS,
+    RENDER_SOFT_TIME_LIMIT_SECONDS,
+)
+from workers.tasks.generation_failure import TaskContext, fail_generation, record_failure
 
 logger = get_logger(__name__)
 
@@ -151,24 +162,39 @@ def _publish(r, job, status, **extra):
     r.publish("job_updates", json.dumps(payload))
 
 
-def _resolve_template_html(db, template_ref: str | None, doc_type: str) -> str | None:
-    """Return the HTML for a template reference, or None to use the legacy path.
+def _resolve_template_html(db, template_ref: str | None, doc_type: str, user_id: int) -> str | None:
+    """Return the HTML of a DocumentTemplate the user may use, or None to use the file-based template.
 
-    A numeric string → look up DocumentTemplate by id.
-    Non-numeric or None → legacy file-based path (return None).
+    A file key ("classic"), an unknown id and another user's template all fall back to the file path.
     """
-    if not template_ref:
-        return None
-    if not template_ref.isdigit():
-        return None  # "classic" or other file-key → legacy
-    t = db.query(DocumentTemplate).filter(
-        DocumentTemplate.id == int(template_ref),
-        DocumentTemplate.doc_type == doc_type,
-    ).first()
-    return t.html if t else None
+    template = find_usable_template(db, user_id, TemplateRef(doc_type, template_ref))
+    return template.html if template else None
 
 
-@celery_app.task(name="ai.generate_application_package")
+def _attach_profile_documents(db, job, user_id, storage) -> None:
+    """Replace the job's attached documents with the user's profile documents.
+    Only a non-empty attach set replaces the old one, so a profile without
+    copyable files never wipes earlier attachments. No commit: the caller's
+    final commit makes delete and inserts atomic."""
+    # Only DB-stored blobs can be copied for MVP.
+    copyable = [pd for pd in db.query(ProfileDocument).filter(
+        ProfileDocument.user_id == user_id).all() if pd.content is not None]
+    if not copyable:
+        return
+    delete_attached_documents(db, job.id)
+    for pd in copyable:
+        add_job_document(
+            db, job.id, user_id, pd.content, pd.original_filename,
+            pd.mime_type or "application/octet-stream",
+            _ATTACH_KIND.get(pd.doc_type, "ATTACHED_CERT"), storage,
+        )
+
+
+@celery_app.task(
+    name="ai.generate_application_package",
+    soft_time_limit=GENERATION_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=GENERATION_HARD_TIME_LIMIT_SECONDS,
+)
 def generate_application_package_task(job_id, user_id=None, include_profile_documents=True, generate_cv=True, generate_letter=True):
     logger.info(f"[TASK] Generating application package for Job {job_id}, User {user_id}")
     db = SessionLocal()
@@ -179,20 +205,16 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             logger.error(f"Job {job_id} not found")
             return
 
+        mark_generation_running(db, job)
+
         target_user_id = user_id or job.user_id
         profile = (
             db.query(UserProfile).filter(UserProfile.user_id == target_user_id).first()
             if target_user_id else None
         )
-        if not profile:
-            profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
 
         if not profile or not profile.cv_data:
-            msg = "Profil unvollständig. Bitte Lebenslauf im Profil hinterlegen."
-            job.status = "FAILED"
-            job.generation_error = msg
-            db.commit()
-            _publish(r, job, "FAILED", error=msg)
+            fail_generation(TaskContext(db, r), job, "Profil unvollständig. Bitte Lebenslauf im Profil hinterlegen.")
             return
 
         user = db.query(User).filter(User.id == target_user_id).first()
@@ -204,13 +226,16 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         cv_client, cv_model = get_client_and_model("cv_tailoring", db)
         letter_client, letter_model = get_client_and_model("cover_letter", db)
 
-        cv_template_html = _resolve_template_html(db, profile.cv_template, "CV")
+        cv_template_html = _resolve_template_html(db, profile.cv_template, "CV", target_user_id)
         cv_notes = getattr(job, "cv_draft", "") or ""
 
-        letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER")
+        letter_template_html = _resolve_template_html(db, profile.cover_letter_template, "COVER_LETTER", target_user_id)
 
         futures = {}
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        # No `with`: its exit waits for the workers and would swallow a soft time limit. A
+        # stuck worker is bounded by the render child's own timeout and the hard time limit.
+        pool = ThreadPoolExecutor(max_workers=2)
+        try:
             if generate_cv:
                 futures["cv"] = pool.submit(
                     _build_cv,
@@ -231,57 +256,51 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
                     job.title or "", job.company or "", job.description or "",
                     language, letter_client, letter_model,
                 )
-            if "cv" in futures:
-                cv_html, cv_pdf, cv_data = futures["cv"].result()
-                job.cv_html = cv_html
-                store_generated_document(
-                    db, job.id, target_user_id, cv_pdf,
-                    original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
-                    mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
-                )
-            if "letter" in futures:
-                letter_text, letter_html, letter_pdf = futures["letter"].result()
-                job.application_draft = letter_text
-                job.cover_letter_html = letter_html
-                store_generated_document(
-                    db, job.id, target_user_id, letter_pdf,
-                    original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
-                    mime_type="application/pdf", kind="GENERATED_LETTER", storage=storage,
-                )
+            cv_result = futures["cv"].result() if "cv" in futures else None
+            letter_result = futures["letter"].result() if "letter" in futures else None
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+        if generation_cancelled(db, job):
+            logger.info(f"Job {job_id} is no longer GENERATING; discarding the generated package.")
+            return
+
+        if cv_result:
+            cv_html, cv_pdf, _ = cv_result
+            job.cv_html = cv_html
+            store_generated_document(
+                db, job.id, target_user_id, cv_pdf,
+                original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
+                mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
+            )
+        if letter_result:
+            letter_text, letter_html, letter_pdf = letter_result
+            job.application_draft = letter_text
+            job.cover_letter_html = letter_html
+            store_generated_document(
+                db, job.id, target_user_id, letter_pdf,
+                original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
+                mime_type="application/pdf", kind="GENERATED_LETTER", storage=storage,
+            )
 
         # --- 3. Profile documents (optional, whole set) ---
         if include_profile_documents:
-            pdocs = db.query(ProfileDocument).filter(
-                ProfileDocument.user_id == target_user_id
-            ).all()
-            for pd in pdocs:
-                if pd.content is None:
-                    continue  # only DB-stored blobs can be copied for MVP
-                store_generated_document(
-                    db, job.id, target_user_id, pd.content,
-                    original_filename=pd.original_filename,
-                    mime_type=pd.mime_type or "application/octet-stream",
-                    kind=_ATTACH_KIND.get(pd.doc_type, "ATTACHED_CERT"),
-                    storage=storage,
-                )
+            _attach_profile_documents(db, job, target_user_id, storage)
 
-        job.status = "DRAFTED"
+        status = finish_generation(job, GenerationOutcome.COMPLETED)
         db.commit()
-        _publish(r, job, "DRAFTED", application_draft=job.application_draft)
+        _publish(r, job, status, application_draft=job.application_draft)
         logger.info(f"Application package for job {job_id} complete.")
 
+    except SoftTimeLimitExceeded:
+        logger.error(f"Package generation for job {job_id} hit the time limit", exc_info=True)
+        record_failure(TaskContext(db, r), job_id, GENERATION_TIMEOUT_ERROR)
+    except TemplateRejected as e:
+        logger.error(f"Package generation failed for job {job_id}: {e}", exc_info=True)
+        record_failure(TaskContext(db, r), job_id, str(e))
     except Exception as e:
         logger.error(f"Package generation failed for job {job_id}: {e}", exc_info=True)
-        db.rollback()
-        try:
-            job = db.query(JobEntry).filter(JobEntry.id == job_id).first()
-            if job:
-                job.status = "FAILED"
-                job.generation_error = str(e)
-                db.commit()
-                _publish(r, job, "FAILED", error=str(e))
-        except Exception as db_e:
-            logger.error(f"Failed to persist FAILED status: {db_e}")
+        record_failure(TaskContext(db, r), job_id, GENERATION_FAILED_ERROR)
     finally:
         db.close()
 
@@ -292,7 +311,11 @@ def _safe(value):
     return cleaned.replace(" ", "_") or "Job"
 
 
-@celery_app.task(name="ai.render_document_pdf")
+@celery_app.task(
+    name="ai.render_document_pdf",
+    soft_time_limit=RENDER_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=RENDER_HARD_TIME_LIMIT_SECONDS,
+)
 def render_document_pdf_task(job_id: str, kind: str, user_id: int):
     """Re-render edited HTML for a job to PDF and replace the JobDocument."""
     logger.info(f"[TASK] render_document_pdf job={job_id} kind={kind} user={user_id}")
@@ -334,6 +357,7 @@ def render_document_pdf_task(job_id: str, kind: str, user_id: int):
         logger.info(f"render_document_pdf complete job={job_id} kind={kind}")
     except Exception as e:
         logger.error(f"render_document_pdf failed job={job_id}: {e}", exc_info=True)
-        _publish(r, job, "FAILED", error=str(e))
+        error = GENERATION_TIMEOUT_ERROR if isinstance(e, SoftTimeLimitExceeded) else GENERATION_FAILED_ERROR
+        _publish(r, job, "FAILED", error=error)
     finally:
         db.close()

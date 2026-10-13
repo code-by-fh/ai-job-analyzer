@@ -77,9 +77,9 @@ def _send_via_resend_batch(jobs, profile, platform=None, userName="Candidate"):
             timeout=15,
         )
         if resp.status_code in (200, 201):
-            logger.info(f" Resend digest sent: {len(jobs)} jobs → {recips} (platform: {platform_name})")
+            logger.info(f"Resend digest sent: {len(jobs)} jobs to {len(to)} recipient(s) (platform: {platform_name})")
             return True
-        logger.error(f"Resend API error {resp.status_code}: {resp.text}")
+        logger.error(f"Resend API error {resp.status_code}")
         return False
 
     return _send_email_batch(
@@ -115,9 +115,9 @@ def _send_via_mailjet_batch(jobs, profile, platform=None, userName="Candidate"):
             timeout=15,
         )
         if resp.status_code in (200, 201):
-            logger.info(f" Mailjet digest sent: {len(jobs)} jobs → {recips} (platform: {platform_name})")
+            logger.info(f"Mailjet digest sent: {len(jobs)} jobs to {len(to_list)} recipient(s) (platform: {platform_name})")
             return True
-        logger.error(f"Mailjet API error {resp.status_code}: {resp.text}")
+        logger.error(f"Mailjet API error {resp.status_code}")
         return False
 
     return _send_email_batch(
@@ -157,10 +157,10 @@ def _send_via_smtp_batch(jobs, profile, platform=None, userName="Candidate"):
                 server.login(profile.smtp_user, profile.smtp_password)
                 server.sendmail(from_email, recipients_list, msg.as_string())
 
-            logger.info(f" SMTP digest sent: {len(jobs)} jobs → {recips} (platform: {platform_name})")
+            logger.info(f"SMTP digest sent: {len(jobs)} jobs to {len(recipients_list)} recipient(s) (platform: {platform_name})")
             return True
         except Exception as e:
-            logger.error(f"SMTP error: {e}")
+            logger.error(f"SMTP error: {type(e).__name__}")
             return False
 
     return _send_email_batch(
@@ -199,7 +199,7 @@ def _flush_digest(crawl_job_id, user_id, db, r, *, key_suffix, has_creds, send_b
     try:
         send_batch(jobs, profile, platform=platform, userName=userName)
     except Exception as e:
-        logger.error(f"{label} digest failed: {e}")
+        logger.error(f"{label} digest failed: {type(e).__name__}")
 
 
 def _flush_resend_digest(crawl_job_id, user_id, db, r):

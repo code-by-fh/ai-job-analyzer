@@ -1,48 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { ReactNode } from "react";
+import { de } from "@/i18n/de";
+import { DEFAULT_LANGUAGE } from "@/i18n/languages";
+import { FONT_VARIABLE_CLASSES } from "@/theme/fonts";
+import { THEME_BOOT_SCRIPT } from "@/theme/themeScript";
+import { Providers } from "./providers";
 import "./globals.css";
 
-import { Suspense } from "react";
-import { AuthProvider } from "./components/AuthProvider";
-import { LanguageProvider } from "./components/LanguageProvider";
-import { NotificationProvider } from "./components/NotificationProvider";
-import DashboardShell from "./components/DashboardShell";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Ai Job Agent",
-  description: "Ai Job Agent",
+  title: de["app.name"],
+  description: de["app.description"],
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" translate="no" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <LanguageProvider>
-          <AuthProvider>
-            <NotificationProvider>
-              <Suspense>
-                <DashboardShell>{children}</DashboardShell>
-              </Suspense>
-            </NotificationProvider>
-          </AuthProvider>
-        </LanguageProvider>
+    // data-mode is set by the boot script before hydration, so the attribute legitimately differs.
+    <html lang={DEFAULT_LANGUAGE} className={FONT_VARIABLE_CLASSES} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
