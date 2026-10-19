@@ -21,3 +21,6 @@ muhfweeceevee/
 notification-service/**/__pycache__/
 notification-service/.ruff_cache/
 notification-service/.pytest_cache/
+
+# Celery beat schedule state (runtime, written by the worker)
+server/database/celerybeat-schedule.db*
