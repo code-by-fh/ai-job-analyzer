@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from database.core import JobEntry
+from database.core import JobDocument, JobEntry
 from tests.factories import (
     OTHER_USER_ID, TEST_USER_ID, events_of_type, fetch, make_job, make_profile, make_template, make_user,
 )
@@ -24,17 +24,14 @@ def _profile_rows(profile) -> list:
 @pytest.fixture()
 def run_letter(session_factory, seed, fake_redis):
     """Run ai.generate_application on the given job with the AI call and the renderers faked."""
-    def _run(job, generate=None, profile=None):
-        seed(make_user(), job, *_profile_rows(profile))
+    def _run(job, generate=None, profile=None, documents=()):
+        seed(make_user(), job, *_profile_rows(profile), *documents)
         ai_fake = {"side_effect": generate} if generate else {"return_value": LETTER_TEXT}
         with patch("workers.tasks.application.SessionLocal", session_factory), \
              patch("workers.tasks.application.redis.from_url", return_value=fake_redis), \
              patch("workers.tasks.application.get_client_and_model", return_value=(None, "test-model")), \
-             patch("workers.tasks.application.get_storage_service", return_value=None), \
              patch("workers.tasks.application.generate_application", **ai_fake), \
-             patch("workers.tasks.application.render_cover_letter_html", return_value="<p>Dear team</p>"), \
-             patch("workers.tasks.application.render_cover_letter_pdf", return_value=b"%PDF-letter"), \
-             patch("workers.tasks.application.html_to_pdf", return_value=b"%PDF-letter"):
+             patch("workers.tasks.application.render_cover_letter_html", return_value="<p>Dear team</p>"):
             generate_application_task("job-1", TEST_USER_ID)
     return _run
 
@@ -119,3 +116,22 @@ def test_letter_failure_after_cancel_keeps_restored_status(run_letter, session_f
     run_letter(make_job(status="GENERATING"), generate=_cancel_then_fail(session_factory))
     assert _job_state(session_factory) == ("DRAFTED", None, None)
     assert events_of_type(fake_redis, "job_update") == []
+
+
+def _stored_pdf(doc_id, kind) -> JobDocument:
+    return JobDocument(
+        id=doc_id, job_id="job-1", user_id=TEST_USER_ID, filename="db://old.pdf",
+        original_filename="old.pdf", mime_type="application/pdf", content=b"%PDF", kind=kind,
+    )
+
+
+def _document_kinds(session_factory) -> list:
+    with session_factory() as db:
+        return sorted(doc.kind for doc in db.query(JobDocument).all())
+
+
+def test_letter_is_stored_as_html_only_and_retires_the_earlier_letter_pdf(run_letter, session_factory):
+    earlier = (_stored_pdf(1, "GENERATED_CV"), _stored_pdf(2, "GENERATED_LETTER"))
+    run_letter(make_job(status="GENERATING"), documents=earlier)
+    assert fetch(session_factory, JobEntry, "job-1").cover_letter_html == "<p>Dear team</p>"
+    assert _document_kinds(session_factory) == ["GENERATED_CV"]

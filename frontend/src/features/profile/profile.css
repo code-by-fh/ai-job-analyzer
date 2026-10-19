@@ -317,6 +317,9 @@
   .tpl-state.is-warn {
     color: var(--warn-text);
   }
+  .tpl-elapsed {
+    margin: 0;
+  }
   .tpl-state svg {
     flex-shrink: 0;
     margin-top: 1px;

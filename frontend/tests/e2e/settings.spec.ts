@@ -48,7 +48,7 @@ async function subNavLinkHeights(page: Page): Promise<number[]> {
 async function expectSectionLoaded(page: Page, slug: SectionSlug): Promise<void> {
   await expectNothingLoading(page);
   if (slug !== "notifications") return;
-  await expect(page.getByRole("button", { name: "SMTP ändern" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Firmen-SMTP bearbeiten" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Pro Quelle" }).getByRole("link")).toBeVisible();
 }
 
@@ -118,8 +118,8 @@ test("a settings dialog's close button is a 44 px target on desktop", async ({ p
   await mockApi(settingsRoutes());
   await page.setViewportSize(VIEWPORTS.desktop);
   await page.goto("/settings?section=account");
-  await page.getByRole("button", { name: "Alle Stellen archivieren" }).click();
-  const dialog = page.getByRole("dialog", { name: "Alle Stellen archivieren" });
+  await page.getByRole("button", { name: "Profil zurücksetzen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Profil zurücksetzen" });
   const close = await dialog.getByRole("button", { name: "Schließen" }).boundingBox();
   expect(close!.width).toBeGreaterThanOrEqual(MIN_HIT_TARGET_PX);
   expect(close!.height).toBeGreaterThanOrEqual(MIN_HIT_TARGET_PX);

@@ -2,21 +2,18 @@
 import type { CrawlStatusBody } from "../../../src/api/crawl";
 import {
   CANCEL_CRAWL_PATH,
-  CHANNEL_RECIPIENTS_FIELD,
-  CHANNEL_STATUS_PATH,
   NOTIFICATION_TEMPLATES_PATH,
-  NOTIFY_CHANNELS,
   PLATFORMS_PATH,
   platformCrawlPath,
   platformNamePath,
   platformPath,
   platformRunsPath,
-  platformTestPath,
   PLATFORM_SETUP_PATH,
   PREVIEW_LINKS_PATH,
   RUN_HISTORY_SIZE,
-  type NotifyChannel,
+  URL_PATTERN_PATH,
 } from "../../../src/api/platformPaths";
+import { CHANNEL_LIMITS } from "../../../src/api/notificationPaths";
 import type {
   PlatformBody,
   PlatformRunBody,
@@ -36,19 +33,15 @@ import {
   type MockRoutes,
   type MutableRoutes,
 } from "./mockApi";
-import {
-  CHANNELS,
-  INDEED,
-  PLATFORMS,
-  RUNNING_CRAWL,
-  STEPSTONE,
-  TEMPLATES,
-} from "./platformFixtures";
+import { NotificationServer, notificationRoutes } from "./notificationServer";
+import { INDEED, PLATFORMS, RUNNING_CRAWL, STEPSTONE, TEMPLATES } from "./platformFixtures";
 
 interface Crawl {
   id: string;
   total: number;
   done: number;
+  /** Epoch ms as a string, like the scraper's hash. */
+  startedAt: string;
 }
 
 type RunningCrawl = typeof RUNNING_CRAWL;
@@ -58,12 +51,11 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
 const CANCELLED_AT = "2026-10-08T08:01:00+00:00";
-// Pushover goes to the user's own device, so it needs no recipients of the source.
-const PUSHOVER_DEVICE = "device";
 
 // core/platform_rules.py and PlatformUpdate (database/core.py).
 const SCHEDULE_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WEEKDAY_COUNT = 7;
+const MAX_SCHEDULE_TIMES = 6;
 const MAX_NAME_LENGTH = 100;
 const MAX_PATTERN_LENGTH = 300;
 const PATCHABLE = new Set([
@@ -71,9 +63,9 @@ const PATCHABLE = new Set([
   "url",
   "url_pattern",
   "is_active",
-  "schedule_time",
+  "schedule_times",
   "schedule_days",
-  "notification_adapters",
+  "notification_channel_ids",
   "pushover_template",
   "resend_template",
   "mailjet_template",
@@ -83,7 +75,7 @@ const PATCHABLE = new Set([
   "smtp_recipients",
 ]);
 // update_platform applies these only when `is not None`: a null leaves the stored value as it is.
-const NULL_IS_UNSET = ["name", "url", "url_pattern", "is_active", "notification_adapters"];
+const NULL_IS_UNSET = ["name", "url", "url_pattern", "is_active"];
 // update_platform stores "" and [] of these as null (`or None`).
 const EMPTY_IS_NULL = [
   "pushover_template",
@@ -100,7 +92,7 @@ const PRIVATE_HOST =
 const WWW = /^www\./;
 // routers/platforms.py _PATTERN_DELIMS.
 const PATTERN_DELIMS = "/-_=?&.";
-const NO_SCHEDULE = { schedule_time: null, schedule_days: null };
+const NO_SCHEDULE = { schedule_times: null, schedule_days: null };
 
 // The prototype's FOUND_LINKS on get-in-it.de (renderAddSource): six postings and one navigation link.
 export const FOUND_LINKS: PreviewLinksBody["links"] = [
@@ -188,18 +180,36 @@ function badText(value: unknown, max: number, onlySlashes = false): boolean {
   return empty || text.length > max;
 }
 
+function badTimes(times: unknown): boolean {
+  if (!Array.isArray(times) || times.length === 0 || times.length > MAX_SCHEDULE_TIMES) return true;
+  const valid = times.every((time) => typeof time === "string" && SCHEDULE_TIME.test(time));
+  return !valid || new Set(times).size !== times.length;
+}
+
 /** The field validators, in the order of the model; the first refused field answers. */
 function fieldError(sent: Sent): string | null {
-  const time = sent.schedule_time;
-  if ("schedule_time" in sent && time !== null && !SCHEDULE_TIME.test(String(time))) {
-    return "schedule_time";
+  const times = sent.schedule_times;
+  if ("schedule_times" in sent && times !== null && badTimes(times)) {
+    return "schedule_times";
   }
   if ("schedule_days" in sent && badDays(sent.schedule_days)) return "schedule_days";
   if ("name" in sent && badText(sent.name, MAX_NAME_LENGTH)) return "name";
   if ("url_pattern" in sent && badText(sent.url_pattern, MAX_PATTERN_LENGTH, true)) {
     return "url_pattern";
   }
+  if ("notification_channel_ids" in sent && badChannelIds(sent.notification_channel_ids)) {
+    return "notification_channel_ids";
+  }
   return "url" in sent && canonicalUrl(sent.url) === null ? "url" : null;
+}
+
+/**
+ * PlatformUpdate: at most 20 ids. Not modelled: the check that each id is one of the user's
+ * channels (the web only offers those) and the de-duplication.
+ */
+function badChannelIds(ids: unknown): boolean {
+  if (!Array.isArray(ids) || ids.length > CHANNEL_LIMITS.channels) return true;
+  return !ids.every((id) => typeof id === "string");
 }
 
 function withoutUnsetNulls(sent: Sent): Sent {
@@ -208,16 +218,16 @@ function withoutUnsetNulls(sent: Sent): Sent {
   );
 }
 
-/** Checked only when the schedule was touched; "days without time" lands on schedule_time. */
+/** Checked only when the schedule was touched; "days without time" lands on schedule_times. */
 function scheduleHalfMissing(
-  stored: Pick<PlatformBody, "schedule_time" | "schedule_days">,
+  stored: Pick<PlatformBody, "schedule_times" | "schedule_days">,
   sent: Sent,
 ): string | null {
-  if (!("schedule_time" in sent || "schedule_days" in sent)) return null;
-  const time = "schedule_time" in sent ? sent.schedule_time : stored.schedule_time;
+  if (!("schedule_times" in sent || "schedule_days" in sent)) return null;
+  const time = "schedule_times" in sent ? sent.schedule_times : stored.schedule_times;
   const days = "schedule_days" in sent ? sent.schedule_days : stored.schedule_days;
   if ((time == null) === (days == null)) return null;
-  return time == null ? "schedule_time" : "schedule_days";
+  return time == null ? "schedule_times" : "schedule_days";
 }
 
 /** The stored values: trimmed, sorted, canonical, "" and [] as null (the fake keeps no favicon). */
@@ -226,6 +236,8 @@ function normalised(sent: Sent): Partial<PlatformBody> {
   if (typeof sent.name === "string") stored.name = sent.name.trim();
   if (typeof sent.url_pattern === "string") stored.url_pattern = sent.url_pattern.trim();
   if ("url" in sent) stored.url = canonicalUrl(sent.url);
+  if (Array.isArray(sent.schedule_times))
+    stored.schedule_times = [...(sent.schedule_times as string[])].sort();
   if (Array.isArray(sent.schedule_days))
     stored.schedule_days = [...(sent.schedule_days as number[])].sort((a, b) => a - b);
   for (const key of EMPTY_IS_NULL) {
@@ -279,6 +291,8 @@ export class SourcesServer {
   readonly keptJobs = new Map<number, number>(KEPT_JOBS);
   private readonly runs = new Map<number, PlatformRunBody[]>();
   private crawlSeq = 1;
+  /** The user's channels the drawer offers (a cross-page spec passes the settings' routes instead). */
+  readonly notifications = new NotificationServer();
 
   constructor(
     platforms: readonly PlatformBody[] = PLATFORMS,
@@ -290,6 +304,7 @@ export class SourcesServer {
         id: crawl.job_id,
         total: crawl.total,
         done: crawl.scraping_completed,
+        startedAt: crawl.started_at,
       });
     }
   }
@@ -317,7 +332,12 @@ export class SourcesServer {
     }
     if (this.running.has(id)) return reply(HTTP_CONFLICT, { detail: "Crawl already running" });
     this.crawlSeq += 1;
-    const crawl = { id: `crawl-${this.crawlSeq}`, total: 0, done: 0 };
+    const crawl = {
+      id: `crawl-${this.crawlSeq}`,
+      total: 0,
+      done: 0,
+      startedAt: String(Date.now()),
+    };
     this.running.set(id, crawl);
     return { status: "Started", job_id: crawl.id };
   }
@@ -381,7 +401,13 @@ export class SourcesServer {
     const platform = this.created(request, normalised(withoutUnsetNulls(body)));
     this.platforms.set(platform.id, platform);
     if (request.initial_run !== "none") {
-      this.running.set(platform.id, { id: `crawl-setup-${platform.id}`, total: 0, done: 0 });
+      const startedAt = String(Date.now());
+      this.running.set(platform.id, {
+        id: `crawl-setup-${platform.id}`,
+        total: 0,
+        done: 0,
+        startedAt,
+      });
     }
     return {
       ...structuredClone(platform),
@@ -412,16 +438,24 @@ export class SourcesServer {
       name: `${new URL(url).host} Jobs`,
       is_active: true,
       last_run: null,
-      notification_adapters: [],
+      notification_channel_ids: [],
     };
     return {
       ...base,
       name: stored.name ?? base.name,
       setup_status: "active",
       url_pattern: stored.url_pattern ?? inferPattern(request.selected_urls),
-      schedule_time: request.schedule_time,
+      schedule_times: stored.schedule_times ?? null,
       schedule_days: stored.schedule_days ?? null,
+      notification_channel_ids: stored.notification_channel_ids ?? base.notification_channel_ids,
     };
+  }
+
+  /** POST /platforms/url-pattern: the setup's own inference, 422 on an empty selection. */
+  urlPattern(sent: unknown): unknown {
+    const selected = (sent as { selected_urls?: unknown } | null)?.selected_urls;
+    if (!Array.isArray(selected) || selected.length === 0) return invalid("selected_urls");
+    return { url_pattern: inferPattern(selected as string[]) };
   }
 
   /** GET /setup-status as routers/settings.py computes it for this state (preflight ruling 19). */
@@ -435,19 +469,6 @@ export class SourcesServer {
     const platform = this.get(id);
     platform.name = `${platform.name} Jobs`;
     return { id, name: platform.name };
-  }
-
-  /**
-   * POST /platforms/{id}/test-<channel>: 400 without credentials, or without stored recipients for
-   * an email channel (routers/platforms.py). Not modelled: the 500 of a failed delivery.
-   */
-  testSend(id: number, channel: NotifyChannel): unknown {
-    const field = CHANNEL_RECIPIENTS_FIELD[channel];
-    const recipients = field ? (this.get(id)[field] ?? []) : [PUSHOVER_DEVICE];
-    if (!CHANNELS[channel] || recipients.length === 0) {
-      return reply(HTTP_BAD_REQUEST, { detail: `${channel} not configured` });
-    }
-    return { ok: true };
   }
 
   /** POST /scraper/cancel-crawl: the scraper answers 200 with a status, also when it refuses. */
@@ -504,6 +525,7 @@ export class SourcesServer {
       status: crawl.done > 0 ? "crawling" : "starting",
       total: crawl.total,
       scraping_completed: crawl.done,
+      started_at: crawl.startedAt,
     }));
     return { jobs };
   }
@@ -522,9 +544,10 @@ export function sourcesRoutes(
     ...base,
     [`GET ${PLATFORMS_PATH}`]: live(() => server.list()),
     "GET /scraper/crawl-status": live(() => server.crawlStatus()),
-    [`GET ${CHANNEL_STATUS_PATH}`]: { body: CHANNELS },
     [`GET ${NOTIFICATION_TEMPLATES_PATH}`]: { body: TEMPLATES },
+    ...notificationRoutes(server.notifications),
     [`POST ${PREVIEW_LINKS_PATH}`]: live((sent) => server.previewLinks(sent)),
+    [`POST ${URL_PATTERN_PATH}`]: live((sent) => server.urlPattern(sent)),
     [`POST ${PLATFORM_SETUP_PATH}`]: live((sent) => setupWithRoutes(server, routes, sent)),
     "GET /setup-status": live(() => server.setupStatus()),
     ...platformRoutes(server),
@@ -547,7 +570,7 @@ function setupWithRoutes(server: SourcesServer, routes: MutableRoutes, sent: unk
   return answer;
 }
 
-/** The calls per platform (Durchsuchen, PATCH, Namen vorschlagen, test sends, history, delete) and Abbrechen, by the server's rules. */
+/** The calls per platform (Durchsuchen, PATCH, Namen vorschlagen, history, delete) and Abbrechen, by the server's rules. */
 export function platformRoutes(server: SourcesServer): MockRoutes {
   const routes: Record<string, MockResponse> = {
     [`POST ${CANCEL_CRAWL_PATH}`]: live((sent) => server.cancel(sent)),
@@ -558,17 +581,13 @@ export function platformRoutes(server: SourcesServer): MockRoutes {
 
 /** The per-id calls of one source. */
 function sourceRoutes(server: SourcesServer, id: number): MockRoutes {
-  const routes: Record<string, MockResponse> = {
+  return {
     [`POST ${platformCrawlPath(id)}`]: live(() => server.crawl(id)),
     [`PATCH ${platformPath(id)}`]: live((sent) => server.patch(id, sent)),
     [`DELETE ${platformPath(id)}`]: live(() => server.delete(id)),
     [`GET ${platformRunsPath(id)}`]: live(() => server.runsRoute(id)),
     [`POST ${platformNamePath(id)}`]: live(() => server.suggestName(id)),
   };
-  for (const channel of NOTIFY_CHANNELS) {
-    routes[`POST ${platformTestPath(id, channel)}`] = live(() => server.testSend(id, channel));
-  }
-  return routes;
 }
 
 interface CrawlEnd {

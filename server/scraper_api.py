@@ -7,16 +7,18 @@ import json
 from celery import chain
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from core.scraper_celery_config import celery_app
 import redis
+from sqlalchemy.orm import Session
 
-from core.auth import get_current_user
+from core.auth import get_current_user, get_db
 from database.core import User
 from core.crawl_errors import CRAWL_INTERNAL_ERROR_MESSAGE
+from core.crawl_progress import crawl_progress, read_crawl_progress
 from core.crawl_registry import (
     ALREADY_RUNNING,
     CRAWL_TTL_SECONDS,
@@ -27,6 +29,7 @@ from core.crawl_registry import (
     release_crawl_lock,
 )
 from core.logger import get_logger
+from core.profile_rules import PROFILE_REQUIRED, user_profile_complete
 from core.url_safety import public_http_url
 from workers.crawl_control import CrawlFailure, cleanup_crawl_job, crawl_failed_event, fail_crawl_job
 from workers.tasks.platform_runs import ERROR_FAILED, record_platform_run
@@ -185,7 +188,14 @@ def _queue_crawl(start: CrawlStart) -> None:
 
 
 @app.post("/search")
-async def search_jobs(search: JobSearch, current_user: User = Depends(get_current_user)):
+async def search_jobs(
+    search: JobSearch,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # The public API gates its own starts; this guards the /scraper/* proxy, which reaches here directly.
+    if not user_profile_complete(db, current_user.id):
+        raise HTTPException(status_code=409, detail=PROFILE_REQUIRED)
     query_url = await run_in_threadpool(_fetchable_url, search.query)
     if query_url is None:
         return {"status": "Error", "message": URL_REFUSED_MESSAGE}
@@ -227,6 +237,7 @@ async def import_job(data: JobImport, current_user: User = Depends(get_current_u
         "user_id": user_id,
         "platform": job_url,
         "started_at": str(int(time.time() * 1000)),
+        "progress": read_crawl_progress(r, job_id),
     }))
 
     celery_app.send_task(
@@ -277,6 +288,7 @@ async def get_crawl_status(current_user: User = Depends(get_current_user)):
                     ),
                     "started_at": job_data.get(b"started_at", b"").decode("utf-8"),
                     "all_job_titles": all_job_titles,
+                    "progress": crawl_progress(job_data),
                 }
             )
 

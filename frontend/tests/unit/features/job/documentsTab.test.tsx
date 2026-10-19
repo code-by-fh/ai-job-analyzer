@@ -96,10 +96,18 @@ describe("DocumentsTab", () => {
 
   it("shows a running generation and cancels it", async () => {
     const calls = show(buildJob({ status: "GENERATING" }));
-    expect(screen.getByText("Wird geschrieben und als PDF gesetzt")).toBeInTheDocument();
+    expect(screen.getByText("Wird geschrieben")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Beide erstellen" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Erstellung abbrechen" }));
     await waitFor(() => expect(posted(calls, "/cancel-generation")).toHaveLength(1));
+  });
+
+  it("shows how long a running generation runs, counted from the worker's start", () => {
+    const startedAt = new Date(Date.now() - (5 * 60_000 + 1_000)).toISOString();
+    show(buildJob({ status: "GENERATING", generation_started_at: startedAt }));
+    const note = screen.getByText("Wird geschrieben").closest(".gen-note") as HTMLElement;
+    expect(within(note).getByText("läuft seit 5 Minuten")).toBeInTheDocument();
+    expect(note.querySelector('[role="status"]')).not.toHaveTextContent("läuft seit");
   });
 
   it("reports a failed generation without the server text", () => {

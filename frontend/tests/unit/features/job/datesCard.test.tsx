@@ -1,7 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { DatesCard } from "@/features/job/dates/DatesCard";
+import type { JobDetail } from "@/api/jobs";
+import { DatesCard as Card } from "@/features/job/dates/DatesCard";
+import { DatesDrawerProvider } from "@/features/job/dates/DatesDrawerProvider";
 import { buildJob } from "../../support/jobFactory";
 import { renderWithProviders } from "../../support/render";
 import { jsonResponse } from "../../support/fakeFetch";
@@ -12,6 +15,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
+
+/** The card as the job page mounts it: inside the provider that owns its drawer. */
+function DatesCard({ job }: { job: JobDetail }) {
+  return (
+    <DatesDrawerProvider job={job}>
+      <Card job={job} />
+    </DatesDrawerProvider>
+  );
+}
 
 const PATCH_ROUTE = { "PATCH /jobs/job-1": { status: "updated" } };
 
@@ -43,6 +55,22 @@ describe("DatesCard", () => {
     stubRoutes({});
     renderWithProviders(<DatesCard job={buildJob({ status: "OFFER" })} />);
     expect(screen.getByText("Antwort bis")).toBeInTheDocument();
+  });
+
+  it("marks only the values that came from the posting", () => {
+    stubRoutes({});
+    renderWithProviders(
+      <DatesCard
+        job={buildJob({
+          salary_benchmark: { min: 60000, max: 75000, note: "" },
+          recruiter_info: { name: "Bob", role: "", email: "", phone: "" },
+          posting_extracted: ["salary_benchmark"],
+        })}
+      />,
+    );
+    expect(screen.getAllByText("aus der Anzeige")).toHaveLength(1);
+    const salary = screen.getByText(/60000/);
+    expect(within(salary).getByText("aus der Anzeige")).toBeInTheDocument();
   });
 
   it("saves only the changed salary, not contacts or recruiter", async () => {
@@ -201,5 +229,84 @@ describe("DatesCard", () => {
     await userEvent.click(within(drawer).getByRole("button", { name: "Speichern" }));
     expect(await screen.findByText(/Der Server hat einen Fehler gemeldet/)).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Termine & Daten" })).toBeInTheDocument();
+  });
+});
+
+const TAKE_FROM_POSTING = "Aus der Anzeige übernehmen";
+const POSTING_ROUTE = "POST /jobs/job-1/posting-details";
+
+describe("DatesCard: Aus der Anzeige übernehmen", () => {
+  it("starts the extraction for a job with posting text and no extracted mark", async () => {
+    const calls = stubRoutes({ [POSTING_ROUTE]: { status: "queued" } });
+    renderWithProviders(<DatesCard job={buildJob()} />);
+    await userEvent.click(screen.getByRole("button", { name: TAKE_FROM_POSTING }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].method).toBe("POST");
+    expect(await screen.findByText(/Die Anzeige wird nach Kontakten/)).toBeVisible();
+  });
+
+  it("is not offered when a field already carries the extracted mark", () => {
+    stubRoutes({});
+    renderWithProviders(<DatesCard job={buildJob({ posting_extracted: ["contact_persons"] })} />);
+    expect(screen.queryByRole("button", { name: TAKE_FROM_POSTING })).toBeNull();
+  });
+
+  it("is not offered for a job without posting text", () => {
+    stubRoutes({});
+    renderWithProviders(<DatesCard job={buildJob({ description: null })} />);
+    expect(screen.queryByRole("button", { name: TAKE_FROM_POSTING })).toBeNull();
+  });
+
+  it("shows a run the server still runs, with its elapsed time, and no start button", () => {
+    stubRoutes({});
+    const startedAt = new Date(Date.now() - 4 * 60_000 - 1_000).toISOString();
+    renderWithProviders(
+      <DatesCard
+        job={buildJob({ posting_details_running: true, posting_details_started_at: startedAt })}
+      />,
+    );
+    expect(screen.getByText(/Die Anzeige wird nach Kontakten/)).toBeVisible();
+    expect(screen.getByText("läuft seit 4 Minuten")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: TAKE_FROM_POSTING })).toBeNull();
+  });
+
+  it("says when the run found nothing new and keeps the action", () => {
+    stubRoutes({});
+    renderWithProviders(<DatesCard job={buildJob({ posting_details_error: "NOTHING_NEW" })} />);
+    expect(screen.getByText(/In der Anzeige wurde nichts Neues gefunden/)).toBeVisible();
+    expect(screen.getByRole("button", { name: TAKE_FROM_POSTING })).toBeVisible();
+  });
+
+  it("confirms with a toast when a run this view saw filled fields", async () => {
+    stubRoutes({});
+    const running = buildJob({ posting_details_running: true });
+    const filled = buildJob({ posting_extracted: ["contact_persons"] });
+    function Harness() {
+      const [job, setJob] = useState(running);
+      return (
+        <>
+          <button onClick={() => setJob(filled)}>Lauf beenden</button>
+          <DatesCard job={job} />
+        </>
+      );
+    }
+    renderWithProviders(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Lauf beenden" }));
+    expect(await screen.findByText("Angaben aus der Anzeige übernommen.")).toBeVisible();
+  });
+
+  it("shows no confirmation for a job that already carries extracted fields", () => {
+    stubRoutes({});
+    renderWithProviders(<DatesCard job={buildJob({ posting_extracted: ["contact_persons"] })} />);
+    expect(screen.queryByText("Angaben aus der Anzeige übernommen.")).toBeNull();
+  });
+
+  it("offers a retry after a failed run", () => {
+    stubRoutes({});
+    renderWithProviders(
+      <DatesCard job={buildJob({ posting_details_error: "EXTRACTION_FAILED" })} />,
+    );
+    expect(screen.getByText(/Das hat nicht geklappt/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Erneut versuchen" })).toBeVisible();
   });
 });

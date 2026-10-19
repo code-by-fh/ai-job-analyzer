@@ -5,6 +5,7 @@ import time
 import pytest
 
 from services import template_filler
+from services.bounded_child import child_environment
 from services.template_filler import TEMPLATE_REJECTED_MESSAGE, TemplateRejected, render_jinja2_template
 
 TEST_MEMORY_BYTES = 200 * 1024 * 1024
@@ -49,7 +50,7 @@ def test_resource_bombs_are_rejected_within_the_timeout(small_limits, template):
 def test_render_runs_in_a_child_process_without_application_secrets(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "must-not-reach-the-child")
     monkeypatch.setenv("DATABASE_URL", "postgres://user:hunter2@db/x")
-    environment = template_filler._child_environment()
+    environment = child_environment()
     assert "must-not-reach-the-child" not in environment.values()
     assert "hunter2" not in " ".join(environment.values())
 

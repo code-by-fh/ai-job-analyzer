@@ -2,13 +2,7 @@ import type { Query, QueryClient, QueryKey } from "@tanstack/react-query";
 import type { JobDetail } from "@/api/jobs";
 import type { SetupStatus } from "@/api/setup";
 import { INBOX_TRIAGE_KEY, queryKeys } from "@/api/queryKeys";
-import {
-  EMPTY_PENDING,
-  failTasks,
-  finishTask,
-  pendingTaskId,
-  type PendingTasks,
-} from "@/domain/pendingTasks";
+import { EMPTY_PENDING, finishTask, pendingTaskId, type PendingTasks } from "@/domain/pendingTasks";
 import { EMPTY_ACTIVITY, reduceActivity, type ActivityState } from "./activity";
 import type {
   ActivityEvent,
@@ -145,18 +139,10 @@ function jobUpdated(event: EventOf<"job_updated">, deps: RealtimeDeps): void {
   patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.analysis(event.job.id)));
 }
 
-/** Ends of generation (no rendered_kind) and of a PDF re-render (rendered_kind); both only invalidate. */
+/** End of a generation; it only invalidates. */
 function jobUpdate(event: EventOf<"job_update">, deps: RealtimeDeps): void {
   invalidateJob(event.job_id, deps);
-  const kind = event.rendered_kind;
-  if (kind) {
-    patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.render(event.job_id, kind)));
-    return;
-  }
   patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.generation(event.job_id)));
-  if (event.error) {
-    patchPending(deps, (tasks) => failTasks(tasks, pendingTaskId.renderPrefix(event.job_id)));
-  }
 }
 
 function prepReady(event: EventOf<"interview_prep_ready">, deps: RealtimeDeps): void {
@@ -164,24 +150,46 @@ function prepReady(event: EventOf<"interview_prep_ready">, deps: RealtimeDeps): 
   patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.prep(event.job_id)));
 }
 
+function postingDetailsEnded(event: EventOf<"posting_details_ended">, deps: RealtimeDeps): void {
+  invalidate(deps, queryKeys.job(event.job_id));
+  patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.postingDetails(event.job_id)));
+}
+
 /**
- * The event names the company, not a job: refresh the profile, every loaded job of that company and
- * the company directory (its research state, D11).
+ * A research started on a job ended (success or failure): reloading the job tells which. Its own
+ * pending entry ends here too.
  */
-function companyReady(event: EventOf<"company_profile_ready">, deps: RealtimeDeps): void {
+function jobResearchEnded(jobId: string, deps: RealtimeDeps): void {
+  invalidate(deps, queryKeys.job(jobId));
+  patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.jobResearch(jobId)));
+}
+
+/**
+ * The event names the company: refresh the profile, every loaded job of that company and the
+ * company directory (its research state, D11).
+ */
+function companyResearched(domain: string, deps: RealtimeDeps): void {
   const jobKeys = deps.queryClient
     .getQueryCache()
-    .findAll({
-      predicate: (query) => isJobOfCompany(query.queryKey, query.state.data, event.domain),
-    })
+    .findAll({ predicate: (query) => isJobOfCompany(query.queryKey, query.state.data, domain) })
     .map((query) => query.queryKey);
-  invalidate(deps, queryKeys.company(event.domain), queryKeys.companiesRoot, ...jobKeys);
-  patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.research(event.domain)));
+  invalidate(deps, queryKeys.company(domain), queryKeys.companiesRoot, ...jobKeys);
+  patchPending(deps, (tasks) => finishTask(tasks, pendingTaskId.research(domain)));
+}
+
+function companyReady(event: EventOf<"company_profile_ready">, deps: RealtimeDeps): void {
+  if (event.domain) companyResearched(event.domain, deps);
+  if (event.job_id) jobResearchEnded(event.job_id, deps);
 }
 
 function isJobOfCompany(queryKey: QueryKey, data: unknown, domain: string): boolean {
   const isJobDetail = queryKey.length === 2 && queryKey[0] === "job";
   return isJobDetail && (data as Partial<JobDetail> | undefined)?.company_domain === domain;
+}
+
+/** Like a profile save (storeSaved): profile_complete and the template previews follow the profile. */
+function cvImportEnded(_event: EventOf<"cv_import_ended">, deps: RealtimeDeps): void {
+  invalidate(deps, queryKeys.profile, queryKeys.setupStatus, queryKeys.templatePreviewRoot);
 }
 
 // One entry per event type: a new event type fails the type check until it is handled here.
@@ -201,7 +209,10 @@ const HANDLERS: { [K in RealtimeEventType]: Handler<EventOf<K>> } = {
   job_updated: jobUpdated,
   job_update: jobUpdate,
   interview_prep_ready: prepReady,
+  posting_details_ended: postingDetailsEnded,
   company_profile_ready: companyReady,
+  cv_import_ended: cvImportEnded,
+  deep_dive_ended: (event, deps) => invalidate(deps, queryKeys.company(event.domain)),
   template_ready: (_event, deps) => invalidate(deps, queryKeys.templates),
   global_error: (_event, deps) => deps.onGlobalError(),
   ai_error: (_event, deps) => invalidate(deps, queryKeys.systemStatus),

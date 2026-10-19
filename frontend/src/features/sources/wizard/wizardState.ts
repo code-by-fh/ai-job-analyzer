@@ -1,16 +1,11 @@
 import type { InitialRun } from "@/api/platformPaths";
 import type { PreviewLink } from "@/api/platforms";
 import { DEFAULT_SCHEDULE } from "@/domain/schedule";
-import {
-  firstErrorStep,
-  suggestJobLinks,
-  type SourceField,
-  type WizardStep,
-} from "@/domain/sources";
+import { firstErrorStep, isPattern, type SourceField, type WizardStep } from "@/domain/sources";
 import type { MessageKey } from "@/i18n/de";
 import type { ScheduleDraft } from "../drawer/ScheduleFields";
 
-export type WizardErrors = Partial<Record<SourceField | "links", MessageKey>>;
+export type WizardErrors = Partial<Record<SourceField | "links" | "patternConfirm", MessageKey>>;
 
 export interface WizardState {
   step: WizardStep;
@@ -18,11 +13,17 @@ export interface WizardState {
   links: PreviewLink[];
   selected: string[];
   filter: string;
+  /** A pattern the user typed; null follows the one derived from the chosen links. */
+  customPattern: string | null;
+  /** The pattern the user confirmed with "Muster passt"; a different shown pattern is unconfirmed. */
+  confirmedPattern: string | null;
+  /** The confirmed pattern, kept when step 2 is left; what the setup sends. */
   pattern: string;
-  advancedOpen: boolean;
   name: string;
   schedule: ScheduleDraft;
   initialRun: InitialRun;
+  /** The notification channels chosen on the last step. */
+  channelIds: string[];
   errors: WizardErrors;
 }
 
@@ -35,12 +36,14 @@ export type WizardAction =
   | { type: "selectNone"; urls: string[] }
   | { type: "filter"; filter: string }
   | { type: "pattern"; pattern: string }
-  | { type: "advanced"; open: boolean }
+  | { type: "confirmPattern"; pattern: string | null }
   | { type: "name"; name: string }
   | { type: "schedule"; schedule: ScheduleDraft }
   | { type: "initialRun"; initialRun: InitialRun }
+  | { type: "channels"; channelIds: string[] }
   | { type: "back" }
-  | { type: "next" }
+  /** On step 2 it carries the shown pattern (typed, or derived by the server); null while deriving. */
+  | { type: "next"; pattern?: string | null }
   | { type: "serverErrors"; fields: SourceField[] };
 
 const FIRST_STEP: WizardStep = 1;
@@ -54,11 +57,13 @@ export const INITIAL_WIZARD: WizardState = {
   links: [],
   selected: [],
   filter: "",
+  customPattern: null,
+  confirmedPattern: null,
   pattern: "",
-  advancedOpen: false,
   name: "",
   schedule: { enabled: true, ...DEFAULT_SCHEDULE },
   initialRun: "seed",
+  channelIds: [],
   errors: {},
 };
 
@@ -68,7 +73,7 @@ const SERVER_ERROR_TEXT: Readonly<Record<SourceField, MessageKey>> = {
   selected_urls: "sources.wizard.pickOne",
   url_pattern: "sources.error.pattern",
   name: "sources.error.name",
-  schedule_time: "sources.error.time",
+  schedule_times: "sources.error.time",
   schedule_days: "sources.error.days",
 };
 
@@ -94,24 +99,47 @@ function withServerErrors(state: WizardState, fields: readonly SourceField[]): W
     fields.map((field) => [field, SERVER_ERROR_TEXT[field]]),
   );
   const step = firstErrorStep(fields) ?? state.step;
-  const advancedOpen = state.advancedOpen || fields.includes("url_pattern");
-  return { ...state, errors, step, advancedOpen };
+  return { ...state, errors, step };
 }
 
-function next(state: WizardState): WizardState {
-  if (state.step === LINKS_STEP && state.selected.length === 0) {
-    return { ...state, errors: { links: "sources.wizard.pickOne" } };
-  }
-  return { ...state, step: Math.min(LAST_STEP, state.step + 1) as WizardStep, errors: {} };
+/**
+ * Step 2 needs a chosen link and a valid pattern the user confirmed as shown. While a new pattern is
+ * derived the shown one is the previous answer, so nothing counts as confirmed until it arrives.
+ */
+function linksStepErrors(state: WizardState, pattern: string | null): WizardErrors | null {
+  if (state.selected.length === 0) return { links: "sources.wizard.pickOne" };
+  if (pattern === null) return { patternConfirm: "sources.wizard.patternWait" };
+  if (!isPattern(pattern)) return { url_pattern: "sources.error.pattern" };
+  if (state.confirmedPattern !== pattern)
+    return { patternConfirm: "sources.wizard.patternConfirm" };
+  return null;
+}
+
+function next(state: WizardState, pattern: string | null = ""): WizardState {
+  const forward = { ...state, step: Math.min(LAST_STEP, state.step + 1) as WizardStep, errors: {} };
+  if (state.step !== LINKS_STEP) return forward;
+  const errors = linksStepErrors(state, pattern);
+  return errors ? { ...state, errors } : { ...forward, pattern: (pattern ?? "").trim() };
 }
 
 function back(state: WizardState): WizardState {
   return { ...state, step: Math.max(FIRST_STEP, state.step - 1) as WizardStep, errors: {} };
 }
 
-/** A new check replaces the links; the filter starts empty and the job links are preselected. */
+/**
+ * A new check replaces the links and starts over: nothing is preselected (feedback 1, T5), the
+ * user picks the examples the pattern is derived from.
+ */
 function linksLoaded(state: WizardState, links: PreviewLink[]): WizardState {
-  return { ...state, links, selected: suggestJobLinks(links), filter: "", step: LINKS_STEP };
+  return {
+    ...state,
+    links,
+    selected: [],
+    filter: "",
+    customPattern: null,
+    confirmedPattern: null,
+    step: LINKS_STEP,
+  };
 }
 
 type Handlers = {
@@ -129,13 +157,14 @@ const HANDLERS: Handlers = {
   selectAll: (state, { urls }) => withSelection(state, urls, true),
   selectNone: (state, { urls }) => withSelection(state, urls, false),
   filter: (state, { filter }) => ({ ...state, filter }),
-  pattern: (state, { pattern }) => ({ ...state, pattern }),
-  advanced: (state, { open }) => ({ ...state, advancedOpen: open }),
+  pattern: (state, { pattern }) => ({ ...state, customPattern: pattern }),
+  confirmPattern: (state, { pattern }) => ({ ...state, confirmedPattern: pattern, errors: {} }),
   name: (state, { name }) => ({ ...state, name }),
   schedule: (state, { schedule }) => ({ ...state, schedule }),
   initialRun: (state, { initialRun }) => ({ ...state, initialRun }),
+  channels: (state, { channelIds }) => ({ ...state, channelIds }),
   back,
-  next,
+  next: (state, { pattern }) => next(state, pattern),
   serverErrors: (state, { fields }) => withServerErrors(state, fields),
 };
 

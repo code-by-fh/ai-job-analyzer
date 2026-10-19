@@ -1,8 +1,9 @@
 import type { Page } from "@playwright/test";
 import type { ProfileBody } from "../../src/api/profile";
 import { COLOR_SCHEMES, SCREENSHOT_SIZES } from "./support/constants";
+import { pushEvent } from "./support/jobFixtures";
 import { horizontalOverflow, saveScreenshot } from "./support/page";
-import { ProfileServer, profileRoutes, SCANNED_MARKER } from "./support/profileServer";
+import { IMPORTED_CV, ProfileServer, profileRoutes, SCANNED_MARKER } from "./support/profileServer";
 import { expect, test } from "./support/test";
 
 const pdf = (content: string) => ({
@@ -103,7 +104,8 @@ test("the confirmation and the reading state: screenshots", async ({ page, mockA
   await expect(confirmDialog(page)).toBeVisible();
   await screenshots(page, "profile-cv-import-confirm");
   await confirmDialog(page).getByRole("button", { name: "Übernehmen" }).click();
-  await expect(page.locator(".cv-import .notice")).toHaveText(READING);
+  await expect(page.locator(".cv-import .notice")).toContainText(READING);
+  await expect(page.locator(".cv-import .notice .elapsed-ticking")).toContainText("seit 00:0");
   await expect(page.locator(".cv-import")).toHaveAttribute("aria-busy", "true");
   await screenshots(page, "profile-cv-import-reading");
   release();
@@ -137,4 +139,34 @@ test("edits typed during the import are kept: screenshots of the choice", async 
   expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(MIN_HIT_TARGET_PX);
   await choice.click();
   await expect(education).toHaveValue("B.Sc. Informatik");
+});
+
+test("a reload during an import shows it running and its result on its end event", async ({
+  page,
+  mockApi,
+}) => {
+  const server = new ProfileServer({
+    ...EMPTY,
+    cv_import_running: true,
+    cv_import_started_at: "2026-10-16T09:30:00+00:00",
+  });
+  const log = await mockApi(profileRoutes(server));
+  await page.goto("/profile?section=lebenslauf");
+  await expect(page.locator(".cv-import .notice")).toContainText(READING);
+  // The server's start stamp survives the reload: the time counts from it, not from the page load.
+  await expect(page.locator(".cv-import .notice .elapsed-ticking")).toBeVisible();
+  await expect(page.locator(".cv-import")).toHaveAttribute("aria-busy", "true");
+  // The server's request thread stores the CV and ends the run; its end event reaches the page.
+  server.profile = {
+    ...server.profile,
+    cv_data: structuredClone(IMPORTED_CV.cv_data),
+    cv_import_running: false,
+    cv_import_started_at: null,
+  };
+  await expect.poll(() => log.sockets.length).toBeGreaterThan(0);
+  pushEvent(log, { type: "cv_import_ended" });
+  await expect(page.getByLabel("Ausbildung", { exact: true })).toHaveValue(
+    IMPORTED_CV.cv_data.education,
+  );
+  await expect(page.locator(".cv-import")).not.toHaveAttribute("aria-busy", "true");
 });

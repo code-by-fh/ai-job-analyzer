@@ -5,6 +5,8 @@ import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
 import { BoundField, BoundTextArea, type FieldsProps } from "./BoundField";
+import type { DatesFocus } from "./DatesDrawer";
+import { InterviewTimeField } from "./InterviewTimeField";
 import { type DatesForm, CONTACT_FIELD_MAX, MAX_SALARY_DIGITS, SALARY_NOTE_MAX } from "./datesForm";
 
 type DateKey = "followUp" | "interviewAt";
@@ -13,6 +15,7 @@ interface DateFieldProps extends FieldsProps {
   id: string;
   name: DateKey;
   label: string;
+  autoFocus?: boolean;
 }
 
 // A time without a date means nothing, so removing the interview date removes its time too.
@@ -21,23 +24,31 @@ function clearedFields(name: DateKey): Partial<DatesForm> {
 }
 
 /** Date input plus an explicit "remove": clearing is a deliberate act that sends null. */
-export function DateField({ id, name, label, form, setForm, error }: DateFieldProps) {
-  const { t } = useI18n();
+export function DateField({ id, name, label, autoFocus, form, setForm, error }: DateFieldProps) {
   const clear = () => setForm((current) => ({ ...current, ...clearedFields(name) }));
   return (
     <div className="dates-date">
-      <BoundField {...{ form, setForm, name, id, label }} type="date" error={error(name)} />
-      {form[name] ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={t("dates.clearDateNamed", { label })}
-          onClick={clear}
-        >
-          {t("dates.clearDate")}
-        </Button>
-      ) : null}
+      <BoundField
+        {...{ form, setForm, name, id, label, autoFocus }}
+        type="date"
+        error={error(name)}
+      />
+      {form[name] ? <ClearDateButton label={label} onClick={clear} /> : null}
     </div>
+  );
+}
+
+function ClearDateButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={t("dates.clearDateNamed", { label })}
+      onClick={onClick}
+    >
+      {t("dates.clearDate")}
+    </Button>
   );
 }
 
@@ -123,23 +134,24 @@ export function SalaryFields(props: FieldsProps) {
 }
 
 function TimeField({ form, setForm, error }: FieldsProps) {
-  const { t } = useI18n();
   return (
-    <BoundField
-      {...{ form, setForm }}
-      name="interviewTime"
+    <InterviewTimeField
       id="dates-interview-time"
-      type="time"
-      label={t("dates.interviewTime")}
+      day={form.interviewAt}
+      value={form.interviewTime}
       error={error("interviewTime")}
-      // A time without a day is never saved (datePatch), so it is offered only with a date.
-      disabled={form.interviewAt === ""}
+      onChange={(interviewTime) => setForm((current) => ({ ...current, interviewTime }))}
     />
   );
 }
 
+interface DateFieldsProps extends FieldsProps {
+  followUpName: string;
+  focus?: DatesFocus;
+}
+
 /** Follow-up (day only) and interview (day plus optional time), the follow-up named after the phase. */
-export function DateFields({ followUpName, ...fields }: FieldsProps & { followUpName: string }) {
+export function DateFields({ followUpName, focus, ...fields }: DateFieldsProps) {
   const { t } = useI18n();
   return (
     <>
@@ -149,6 +161,7 @@ export function DateFields({ followUpName, ...fields }: FieldsProps & { followUp
         id="dates-interview"
         name="interviewAt"
         label={t("dates.interviewAt")}
+        autoFocus={focus === "interviewAt"}
       />
       <TimeField {...fields} />
     </>

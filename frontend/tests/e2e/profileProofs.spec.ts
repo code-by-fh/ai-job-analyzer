@@ -7,11 +7,13 @@ import { expect, test } from "./support/test";
 
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n");
 const MIN_HIT_TARGET_PX = 44;
+// The shared document viewer covers 94% of the screen (feedback 2 T5).
+const VIEWER_SHARE = 0.94;
 // Below the 768 px touch breakpoint, yet the profile column is at least 720 px wide.
 const WIDE_COLUMN_TOUCH = { width: 760, height: 900 };
 const UPLOAD = "Dokument hochladen";
 const FIXTURE_PDF = "Arbeitszeugnis Nordlicht Software AG.pdf";
-const FIXTURE_DRIVE = "AWS Developer.png";
+const FIXTURE_UNSTORED = "AWS Developer.png";
 // The first upload gets the id after the fixture documents (1 and 2).
 const FIRST_UPLOAD_ID = 3;
 
@@ -44,6 +46,11 @@ test("upload, view on the A4 sheet, download with the original name, delete", as
   await row.getByRole("button", { name: "Arbeitszeugnis Łódź.pdf ansehen" }).click();
   const viewer = page.getByRole("dialog", { name: "Arbeitszeugnis Łódź.pdf" });
   await expect(viewer.locator(".paper-pdf, .a4-fallback").first()).toBeVisible();
+  const size = await viewer.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(size!.width).toBeCloseTo(viewport.width * VIEWER_SHARE, 0);
+  expect(size!.height).toBeCloseTo(viewport.height * VIEWER_SHARE, 0);
+  await expect(viewer).toHaveCSS("border-top-width", "0px");
   await page.keyboard.press("Escape");
   await expect(viewer).toHaveCount(0);
   const download = page.waitForEvent("download");
@@ -103,14 +110,17 @@ test("several files upload one after the other with the chosen type", async ({ p
     "Scrum.pdf",
     "AWS.pdf",
     FIXTURE_PDF,
-    FIXTURE_DRIVE,
+    FIXTURE_UNSTORED,
   ]);
 });
 
-test("a Drive document lists with view and download inactive", async ({ page, mockApi }) => {
+test("a document without stored bytes lists with view and download inactive", async ({
+  page,
+  mockApi,
+}) => {
   const log = await mockApi(profileRoutes(new ProfileServer()));
   await page.goto("/profile?section=nachweise");
-  const view = page.getByRole("button", { name: `${FIXTURE_DRIVE} ansehen` });
+  const view = page.getByRole("button", { name: `${FIXTURE_UNSTORED} ansehen` });
   await expect(view).toHaveAttribute("aria-disabled", "true");
   await view.click({ force: true });
   await expect(page.getByRole("dialog")).toHaveCount(0);

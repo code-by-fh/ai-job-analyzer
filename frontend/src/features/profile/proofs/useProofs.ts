@@ -12,7 +12,7 @@ import {
 } from "@/api/profileDocuments";
 import { REFUSAL } from "@/api/profilePaths";
 import { queryKeys } from "@/api/queryKeys";
-import { DRIVE_UNSUPPORTED, saveFile } from "@/features/job/documents/saveFile";
+import { saveFile } from "@/features/job/documents/saveFile";
 import { viewKind } from "@/features/job/documents/uploadRules";
 import { useI18n } from "@/i18n/useI18n";
 import { useToast } from "@/ui/ToastProvider";
@@ -111,8 +111,7 @@ export function useDownloadProof(proof: ProfileDocument) {
   return useMutation({
     mutationFn: () => downloadProfileDocument(proof.id),
     onSuccess: (file) => saveFile(file, proof.original_filename),
-    onError: (error) =>
-      toast.show({ message: describeError(error, t, DRIVE_UNSUPPORTED), tone: "error" }),
+    onError: (error) => toast.show({ message: describeError(error, t), tone: "error" }),
   });
 }
 

@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import type { SetupStatusBody } from "../../src/api/setup";
-import { COLOR_SCHEMES, SCREENSHOT_SIZES, VIEWPORTS } from "./support/constants";
+import { COLOR_SCHEMES, SCREENSHOT_SIZES } from "./support/constants";
 import { SETUP_DONE } from "./support/fixtures";
 import { inboxRoutes } from "./support/inboxFixtures";
 import { live } from "./support/mockApi";
@@ -13,7 +13,7 @@ const NEW_PASSWORD = "neues-passwort-2";
 const WRONG_PASSWORD = "falsches-passwort";
 const WRONG_CURRENT = "Das aktuelle Passwort stimmt nicht.";
 const FACTORY_TEXT =
-  "Löscht deine Stellen, Bewerbungen, Quellen, dein Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, die Google-Drive-Verbindung, Sprache und Zeitzone. Dateien in Google Drive bleiben dort. Das Konto selbst bleibt. Das lässt sich nicht rückgängig machen.";
+  "Löscht deine Stellen, Bewerbungen, Quellen, dein Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, Sprache und Zeitzone. Das Konto selbst bleibt. Das lässt sich nicht rückgängig machen.";
 const PASSWORD_LABELS = ["Aktuelles Passwort", "Neues Passwort", "Neues Passwort wiederholen"];
 // After the reset the account owns nothing: the inbox shows the onboarding (decision in the report).
 // The AI provider is the server's (admin) configuration, which the reset does not touch (review M4).
@@ -98,34 +98,10 @@ test("leaving Konto with a typed password asks first and then drops it", async (
   await expect(field(passwordForm(page), "Aktuelles Passwort")).toHaveValue("");
 });
 
-test("archive all with the defaults archives the open matches only", async ({ page, mockApi }) => {
-  const server = new SettingsServer();
-  await mockApi(settingsRoutes(server));
-  await openAccount(page);
-  const opener = page.getByRole("button", { name: "Alle Stellen archivieren" });
-  await opener.click();
-  const dialog = page.getByRole("dialog", { name: "Alle Stellen archivieren" });
-  await expect(dialog).toContainText("Verschiebt alle Treffer im Eingang");
-  expect(server.archiveQueries).toEqual([]);
-  await dialog.getByRole("button", { name: "Archivieren" }).click();
-  await expect(page.getByText("2 Stellen archiviert.")).toBeVisible();
-  await expect(dialog).toHaveCount(0);
-  await expect(opener).toBeFocused();
-  expect(server.archiveQueries).toEqual([{ keep_favorites: "true", keep_applications: "true" }]);
-  const archived = server.jobs.filter((entry) => entry.is_archived).map((entry) => entry.id);
-  expect(archived).toEqual(["job-1", "job-2"]);
-});
-
-// Phase 8 Q1: checkbox rows are 44 px touch targets at every width, desktop included.
-test("archive all: each keep checkbox row is 44 px high at 1440 px", async ({ page, mockApi }) => {
-  await page.setViewportSize(VIEWPORTS.desktop);
+test("Konto no longer offers archive all", async ({ page, mockApi }) => {
   await mockApi(settingsRoutes());
   await openAccount(page);
-  const checks = page.locator("section[aria-labelledby='settings-archive-h'] .check");
-  await expect(checks).toHaveCount(2);
-  for (const check of await checks.all()) {
-    expect((await check.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  }
+  await expect(page.getByRole("button", { name: "Alle Stellen archivieren" })).toHaveCount(0);
 });
 
 test.describe("factory reset refusals", () => {

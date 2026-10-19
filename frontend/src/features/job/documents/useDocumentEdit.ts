@@ -3,12 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { describeError } from "@/api/describeError";
-import { renderDocument, saveDocumentHtml, type DocumentKind } from "@/api/jobDocuments";
+import { saveDocumentHtml, type DocumentKind } from "@/api/jobDocuments";
 import type { JobDetail } from "@/api/jobs";
 import { queryKeys } from "@/api/queryKeys";
-import { pendingTaskId } from "@/domain/pendingTasks";
 import { useI18n } from "@/i18n/useI18n";
-import { markTaskStarted } from "@/realtime/usePendingTasks";
 import { useToast } from "@/ui/ToastProvider";
 import { useUnsavedChanges } from "@/ui/UnsavedChanges";
 import { MAX_HTML_LENGTH, serializeDocument } from "./editDocument";
@@ -18,19 +16,13 @@ interface EditSave {
   html: string;
 }
 
-async function saveAndRender(jobId: string, edit: EditSave): Promise<void> {
-  await saveDocumentHtml(jobId, edit.kind, edit.html);
-  await renderDocument(jobId, edit.kind);
-}
-
 function useSaveEdit(job: JobDetail, onSaved: () => void) {
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const toast = useToast();
   return useMutation({
-    mutationFn: (edit: EditSave) => saveAndRender(job.id, edit),
+    mutationFn: (edit: EditSave) => saveDocumentHtml(job.id, edit.kind, edit.html),
     onSuccess: (_result, edit) => {
-      markTaskStarted(queryClient, pendingTaskId.render(job.id, edit.kind), Date.now());
       void queryClient.invalidateQueries({
         queryKey: queryKeys.jobDocumentHtml(job.id, edit.kind),
       });
@@ -90,7 +82,7 @@ function useEditSession() {
   return { editing, stop, leaveEdit, markDirty: guard.markDirty };
 }
 
-/** Edit -> PUT html -> POST render -> wait for job_update {rendered_kind} (inventory A.2). */
+/** Edit -> PUT html; the PDF is rendered from the saved HTML on download (Task 12). */
 export function useDocumentEdit(job: JobDetail) {
   const session = useEditSession();
   const frameRef = useRef<HTMLIFrameElement>(null);

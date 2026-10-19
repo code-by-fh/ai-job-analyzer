@@ -1,7 +1,7 @@
 "use client";
 
 import { matchMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { CvData, Profile } from "@/api/profile";
 import type { SectionForm } from "@/features/sources/drawer/useSectionForm";
 import { useI18n } from "@/i18n/useI18n";
@@ -9,7 +9,7 @@ import { Button } from "@/ui/Button";
 import { Notice } from "@/ui/Notice";
 import { useProfileAnnounce } from "../announcer";
 import type { ListsReset } from "./CvForm";
-import { CV_IMPORT_KEY } from "./useCvImport";
+import { CV_IMPORT_KEY, useImportSentHere } from "./useCvImport";
 
 interface ImportOverDraft {
   /** The import landed while the form held edits typed during it; the edits are still shown. */
@@ -38,7 +38,7 @@ export function useImportOverDraft({
   const { t } = useI18n();
   const announce = useProfileAnnounce();
   const [overDraft, setOverDraft] = useState(false);
-  useImportLanded(() => {
+  useImportLanded(profile, () => {
     if (!form.dirty) return lists.reset();
     setOverDraft(true);
     // Said once on the page region: the toast only says the import is done (constraint D13).
@@ -56,10 +56,14 @@ export function useImportOverDraft({
  * Calls `onLanded` (with this render's values) when an import succeeds, also one started before
  * this section was mounted again: the mutation cache outlives the observer that started it. The
  * answer is already in the profile cache then (useCvImport's onSuccess runs before the event).
+ * An import the server ran for a reloaded page lands when its run state ends without an error
+ * (the end event refetches the profile).
  */
-function useImportLanded(onLanded: () => void): void {
+function useImportLanded(profile: Profile, onLanded: () => void): void {
   const queryClient = useQueryClient();
   const landed = useEffectEvent(onLanded);
+  const sentHere = useImportSentHere();
+  const wasRunning = useRef(profile.cv_import_running);
   useEffect(
     () =>
       queryClient.getMutationCache().subscribe((event) => {
@@ -68,6 +72,11 @@ function useImportLanded(onLanded: () => void): void {
       }),
     [queryClient],
   );
+  useEffect(() => {
+    const ended = wasRunning.current && !profile.cv_import_running;
+    wasRunning.current = profile.cv_import_running;
+    if (ended && !profile.cv_import_error && !sentHere) landed();
+  }, [profile.cv_import_running, profile.cv_import_error, sentHere]);
 }
 
 /** Amber, not crimson: nothing failed, two versions wait for the user's choice. */

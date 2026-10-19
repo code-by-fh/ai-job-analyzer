@@ -2,6 +2,8 @@ export const E2E_PORT = 3101;
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
 // Must match NEXT_PUBLIC_API_URL in the "test:e2e" script of package.json.
 export const MOCK_API_PREFIX = "/mock-api";
+// The favicon service the server names in favicon_url (routers/platforms.py); answered locally.
+export const FAVICON_SERVICE = "https://www.google.com/s2/favicons**";
 
 export const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },

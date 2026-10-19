@@ -8,7 +8,7 @@ import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
 import { installFakeMatchMedia } from "../../support/fakeMatchMedia";
 import { liveNavigation } from "../../support/liveNavigation";
 import { renderWithProviders } from "../../support/render";
-import { settingsStubs, STORED_NOTIFICATION_SETTINGS } from "../../support/settingsRoutes";
+import { settingsStubs, STORED_SETTINGS } from "../../support/settingsRoutes";
 import { stubRoutes } from "../../support/stubRoutes";
 
 vi.mock("next/navigation", async () =>
@@ -83,7 +83,7 @@ describe("Allgemein: time zone", () => {
   it("shows the stored zone with its hint", async () => {
     stubRoutes(
       settingsStubs({
-        "GET /settings": { ...STORED_NOTIFICATION_SETTINGS, timezone: "Asia/Tokyo" },
+        "GET /settings": { ...STORED_SETTINGS, timezone: "Asia/Tokyo" },
       }),
     );
     renderWithProviders(<SettingsPage />);
@@ -92,9 +92,7 @@ describe("Allgemein: time zone", () => {
   });
 
   it("shows the server's default when no zone is stored", async () => {
-    stubRoutes(
-      settingsStubs({ "GET /settings": { ...STORED_NOTIFICATION_SETTINGS, timezone: null } }),
-    );
+    stubRoutes(settingsStubs({ "GET /settings": { ...STORED_SETTINGS, timezone: null } }));
     renderWithProviders(<SettingsPage />);
     expect(await zoneSelect()).toHaveValue(STORED_ZONE);
   });

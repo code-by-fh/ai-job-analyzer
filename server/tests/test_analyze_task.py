@@ -3,7 +3,10 @@ from unittest.mock import call, patch
 import pytest
 
 from database.core import JobEntry
-from tests.factories import OTHER_USER_ID, TEST_USER_ID, events_of_type, fetch, make_job, make_profile, make_user
+from services.notifications_client import owner_for
+from tests.factories import (
+    OTHER_USER_ID, TEST_PLATFORM_ID, TEST_USER_ID, events_of_type, fetch, make_job, make_platform, make_profile, make_user,
+)
 from workers.tasks.analyze import analyze_job_task
 
 THRESHOLD = 60
@@ -99,3 +102,23 @@ def test_skipped_job_event_hides_a_foreign_job_id(run_analysis, seed, fake_redis
     seed(make_user(OTHER_USER_ID), make_job(user_id=OTHER_USER_ID))
     run_analysis(HIGH_SCORE, crawl_job_id=CRAWL_ID)
     assert events_of_type(fake_redis, "job_skipped")[0]["existing_job_id"] is None
+
+
+def _notifying_source(seed, notify) -> str:
+    channel_id = notify.add(owner_for(TEST_USER_ID), "pushover", {"user_key": "u", "api_token": "t"})
+    seed(make_platform(notification_channels=[{"id": channel_id, "type": "pushover"}], is_notification_enabled=True))
+    return channel_id
+
+
+def test_a_match_of_a_notifying_source_is_pushed_and_marked(run_analysis, seed, notify, session_factory):
+    channel_id = _notifying_source(seed, notify)
+    run_analysis(HIGH_SCORE, platform_id=TEST_PLATFORM_ID)
+    assert notify.sent[0]["channel_ids"] == [channel_id]
+    assert fetch(session_factory, JobEntry, "job-1").notification_sent is True
+
+
+def test_an_auto_archived_match_notifies_nobody(run_analysis, seed, notify, session_factory):
+    _notifying_source(seed, notify)
+    run_analysis(LOW_SCORE, platform_id=TEST_PLATFORM_ID)
+    assert notify.sent == []
+    assert not fetch(session_factory, JobEntry, "job-1").notification_sent

@@ -77,13 +77,6 @@ def test_foreign_document_is_not_found_for_view_download_and_delete(api_client, 
     assert fetch(session_factory, ProfileDocument, DOC_ID) is not None
 
 
-def test_drive_document_is_listed_as_not_downloadable(api_client, seed):
-    seed(make_profile_document(filename="gdrive://Zeugnis.pdf", content=None))
-    [item] = api_client.get("/profile/documents").json()
-    assert item["downloadable"] is False
-    assert api_client.get(f"/profile/documents/{DOC_ID}/view").status_code == 400
-
-
 def test_database_document_without_content_is_listed_as_not_downloadable(api_client, seed):
     seed(make_profile_document(content=None))
     [item] = api_client.get("/profile/documents").json()

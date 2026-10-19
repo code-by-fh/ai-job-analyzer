@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostOf, isHttpUrl, resourceLinks, safeHref } from "@/domain/links";
+import { hostOf, isHttpUrl, mailtoHref, resourceLinks, safeHref } from "@/domain/links";
 import { monogramOf } from "@/domain/monogram";
 
 describe("resourceLinks", () => {
@@ -100,4 +100,17 @@ describe("monogramOf", () => {
   ])("%s -> %s", (name, initials) => {
     expect(monogramOf(name)).toBe(initials);
   });
+});
+
+describe("mailtoHref", () => {
+  it("links a plain address", () => {
+    expect(mailtoHref("anna@acme.example")).toBe("mailto:anna@acme.example");
+  });
+
+  it.each(["", null, "anna", "a@b", "a@b.de?cc=x@y.de", "a b@c.de", "a@b.de&body=x"])(
+    "does not link %j",
+    (value) => {
+      expect(mailtoHref(value)).toBeNull();
+    },
+  );
 });

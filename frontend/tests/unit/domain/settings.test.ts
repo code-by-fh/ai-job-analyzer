@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  driveCallbackOf,
   passwordProblem,
   settingsHref,
   settingsSectionFromParam,
@@ -73,15 +72,5 @@ describe("passwordProblem", () => {
     // Four emoji are 8 UTF-16 units but 4 characters: the server refuses them as too short.
     const emoji = "\u{1F600}".repeat(4);
     expect(passwordProblem({ next: emoji, repeat: emoji })).toBe("tooShort");
-  });
-});
-
-describe("driveCallbackOf", () => {
-  it("reads the OAuth callback parameters of routers/storage.py", () => {
-    expect(driveCallbackOf(new URLSearchParams("tab=storage&success=google_connected"))).toBe(
-      "connected",
-    );
-    expect(driveCallbackOf(new URLSearchParams("error=google_auth_failed"))).toBe("failed");
-    expect(driveCallbackOf(new URLSearchParams("section=account"))).toBeNull();
   });
 });

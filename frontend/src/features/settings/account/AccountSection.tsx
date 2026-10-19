@@ -2,7 +2,6 @@
 
 import type { SettingsSectionProps } from "../SettingsPage";
 import { SettingsSectionFrame } from "../SettingsSectionFrame";
-import { ArchiveAll } from "./ArchiveAll";
 import { FactoryReset } from "./FactoryReset";
 import { PasswordForm } from "./PasswordForm";
 import { ResetProfile } from "./ResetProfile";
@@ -13,7 +12,6 @@ export function AccountSection({ report }: SettingsSectionProps) {
     <SettingsSectionFrame section="account">
       <div className="form-max">
         <PasswordForm report={report} />
-        <ArchiveAll />
         <ResetProfile />
         <FactoryReset />
       </div>

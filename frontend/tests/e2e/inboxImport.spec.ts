@@ -86,23 +86,19 @@ test.describe("with the clock fixed", () => {
     }
   }
 
-  test("the masthead names the import in words between 768 and 1199 px, as an icon elsewhere", async ({
-    page,
-    mockApi,
-  }) => {
+  test("the masthead names both actions in words at every width", async ({ page, mockApi }) => {
     await mockApi(inboxRoutes());
-    await page.setViewportSize(VIEWPORTS.medium);
     await page.goto("/inbox");
     const trigger = page.getByRole("button", { name: OPEN_IMPORT });
-    const label = trigger.getByText("Per URL importieren");
-    await expect(label).toBeVisible();
+    const archive = page.getByRole("button", { name: "Alle Stellen archivieren" });
+    for (const viewport of [VIEWPORTS.mobile, VIEWPORTS.medium, VIEWPORTS.desktop]) {
+      await page.setViewportSize(viewport);
+      await expect(trigger.getByText("Per URL importieren")).toBeVisible();
+      await expect(archive.getByText("Alle Stellen archivieren")).toBeVisible();
+      expect(await horizontalOverflow(page)).toBe(0);
+    }
+    await page.setViewportSize(VIEWPORTS.medium);
     await saveScreenshot(page, "inbox-import-trigger-1100");
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await expect(trigger).toBeVisible();
-    await expect(label).toBeHidden();
-    await page.setViewportSize(VIEWPORTS.mobile);
-    await expect(trigger).toBeVisible();
-    await expect(label).toBeHidden();
   });
 
   test("imports a posting, follows it live and opens it", async ({ page, mockApi }) => {

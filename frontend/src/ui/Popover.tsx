@@ -4,7 +4,8 @@ import { useEffect, useEffectEvent, useRef, type ReactNode, type RefObject } fro
 import { cx } from "./cx";
 import { isTopLayer, pushLayer } from "./layerStack";
 
-export type PopoverPlacement = "up" | "down-right";
+/** "dock": fixed to the viewport (shell.css places it), for a panel too big for its anchor. */
+export type PopoverPlacement = "up" | "down-right" | "dock";
 
 export interface PopoverProps {
   open: boolean;

@@ -15,7 +15,7 @@ import { expect, test } from "./support/test";
 const GOAL_KEYS = ["location", "min_salary", "preferences", "role", "skills", "spoken_languages"];
 const STORED_CREDENTIALS = { ...E2E_SECRETS, ...E2E_NOTIFICATION_FIELDS };
 const CREDENTIAL_KEYS = Object.keys(STORED_CREDENTIALS);
-// What no Profil save may touch: every credential, notification and storage setting, and the
+// What no Profil save may touch: every credential and notification setting, and the
 // row's other columns (threshold, job URLs).
 const UNTOUCHED = { ...STORED_CREDENTIALS, ...E2E_OTHER_COLUMNS };
 const SECRET_VALUES = [...Object.values(E2E_SECRETS), SECRET_MASK];

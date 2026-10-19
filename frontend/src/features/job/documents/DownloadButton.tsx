@@ -2,42 +2,35 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
-import { describeError } from "@/api/describeError";
-import {
-  downloadJobDocument,
-  generatedDocument,
-  jobDocumentsQueryOptions,
-  type DocumentKind,
-  type JobDocument,
-} from "@/api/jobDocuments";
+import { jobDocumentsQueryOptions, type DocumentKind } from "@/api/jobDocuments";
 import type { JobDetail } from "@/api/jobs";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
 import { useToast } from "@/ui/ToastProvider";
-import { DRIVE_UNSUPPORTED, saveFile } from "./saveFile";
+import { DOCUMENT_LABEL } from "../labels";
+import { describePdfError, hasPdf, savePdf, type PdfTarget } from "./downloadPdf";
 
-function useDownload(jobId: string) {
+function useDownload() {
   const { t } = useI18n();
   const toast = useToast();
   return useMutation({
-    mutationFn: (target: JobDocument) => downloadJobDocument(jobId, target.id),
-    onSuccess: (file, target) => saveFile(file, target.original_filename),
-    onError: (error) =>
-      toast.show({ tone: "error", message: describeError(error, t, DRIVE_UNSUPPORTED) }),
+    mutationFn: (target: PdfTarget) => savePdf(target),
+    onError: (error) => toast.show({ tone: "error", message: describePdfError(error, t) }),
   });
 }
 
 export function DownloadButton({ job, kind }: { job: JobDetail; kind: DocumentKind }) {
   const { t } = useI18n();
-  const document = generatedDocument(useQuery(jobDocumentsQueryOptions(job.id)).data ?? [], kind);
-  const download = useDownload(job.id);
-  if (!document) return null;
+  const documents = useQuery(jobDocumentsQueryOptions(job.id)).data ?? [];
+  const download = useDownload();
+  const target: PdfTarget = { job, kind, documents, label: t(DOCUMENT_LABEL[kind]) };
+  if (!hasPdf(target)) return null;
   return (
     <Button
       size="sm"
       icon={Download}
       busy={download.isPending}
-      onClick={() => download.mutate(document)}
+      onClick={() => download.mutate(target)}
     >
       {t("preview.downloadPdf")}
     </Button>

@@ -11,7 +11,10 @@ from alembic.operations import Operations
 from fastapi.testclient import TestClient
 
 from core.auth import get_current_admin_user, get_current_user, get_password_hash
-from database.core import CompanyProfile, JobEntry, JobPlatform, PlatformRun, User
+from database.core import (
+    CompanyProfile, DocumentTemplate, JobEntry, JobPlatform, NotificationTemplate, PlatformRun, ProfileDocument,
+    User, UserProfile,
+)
 from tests.factories import OTHER_USER_ID, TEST_PLATFORM_ID, TEST_USER_ID, make_job, make_platform
 
 # The wipe and the reset are rate limited per process.
@@ -116,3 +119,64 @@ def test_the_own_wipe_deletes_unreferenced_profiles_next_to_a_job_without_domain
     with strict_session_factory() as db:
         domains = {domain for (domain,) in db.query(CompanyProfile.domain)}
     assert (response.status_code, domains) == (200, {REFERENCED_DOMAIN})
+
+
+def _seed_profile_data(session_factory) -> None:
+    with session_factory() as db:
+        db.add_all([
+            ProfileDocument(user_id=user_id, doc_type="REFERENCE", filename="db://p", original_filename="p.pdf")
+            for user_id in (TEST_USER_ID, OTHER_USER_ID)
+        ] + [
+            DocumentTemplate(user_id=user_id, doc_type="CV", name="cv", html="<p>cv</p>")
+            for user_id in (TEST_USER_ID, OTHER_USER_ID)
+        ] + [
+            NotificationTemplate(user_id=user_id, name="n", type="PUSHOVER", content="c")
+            for user_id in (TEST_USER_ID, OTHER_USER_ID)
+        ] + [
+            NotificationTemplate(user_id=None, is_admin=True, name="system", type="PUSHOVER", content="c"),
+            UserProfile(user_id=TEST_USER_ID),
+            UserProfile(user_id=OTHER_USER_ID),
+        ])
+        db.commit()
+
+
+def _profile_rows(session_factory) -> dict:
+    with session_factory() as db:
+        return {
+            "proofs": sorted(user_id for (user_id,) in db.query(ProfileDocument.user_id)),
+            "cv_templates": sorted(user_id for (user_id,) in db.query(DocumentTemplate.user_id)),
+            "notification_templates": sorted(
+                -1 if user_id is None else user_id for (user_id,) in db.query(NotificationTemplate.user_id)
+            ),
+            "profiles": sorted(user_id for (user_id,) in db.query(UserProfile.user_id)),
+            "users": db.query(User).count(),
+        }
+
+
+def test_the_own_wipe_deletes_the_admins_profile_data_and_keeps_the_others(strict_client, strict_session_factory):
+    _seed_platform_with_run(strict_session_factory, TEST_USER_ID)
+    _seed_profile_data(strict_session_factory)
+    response = _own_wipe(strict_client)
+    assert (response.status_code, _profile_rows(strict_session_factory)) == (200, {
+        "proofs": [OTHER_USER_ID],
+        "cv_templates": [OTHER_USER_ID],
+        "notification_templates": [-1, OTHER_USER_ID],
+        "profiles": [OTHER_USER_ID],
+        "users": 2,
+    })
+
+
+def test_the_all_wipe_deletes_every_users_profile_data_and_keeps_accounts_and_admin_templates(
+    strict_client, strict_session_factory
+):
+    _seed_platform_with_run(strict_session_factory, OTHER_USER_ID)
+    _seed_profile_data(strict_session_factory)
+    with strict_session_factory() as db:
+        db.add(CompanyProfile(domain=REFERENCED_DOMAIN, name="Referenced"))
+        db.commit()
+    response = strict_client.post("/admin/database/wipe", json={"password": PASSWORD, "wipe_all_users": True})
+    with strict_session_factory() as db:
+        profiles = db.query(CompanyProfile).count()
+    assert (response.status_code, profiles, _profile_rows(strict_session_factory)) == (200, 0, {
+        "proofs": [], "cv_templates": [], "notification_templates": [-1], "profiles": [], "users": 2,
+    })

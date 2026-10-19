@@ -22,7 +22,7 @@ import { PanelHeader } from "@/ui/PanelHeader";
 import { useToast } from "@/ui/ToastProvider";
 import { useJobFormat } from "../format/useJobFormat";
 import { FileViewer } from "./FileViewer";
-import { DRIVE_UNSUPPORTED, saveFile } from "./saveFile";
+import { saveFile } from "./saveFile";
 import {
   fileKindLabel,
   formatFileSize,
@@ -46,6 +46,7 @@ export function FilesSection({ job }: { job: JobDetail }) {
       <h3 className="sec-title-sm" id="files-title">
         {t("files.title")}
       </h3>
+      <p className="meta">{t("files.intro")}</p>
       <UploadControl job={job} />
       <FileList job={job} />
     </section>
@@ -258,8 +259,7 @@ function useDownload(jobId: string, document: JobDocument) {
   return useMutation({
     mutationFn: () => downloadJobDocument(jobId, document.id),
     onSuccess: (file) => saveFile(file, document.original_filename),
-    onError: (error) =>
-      toast.show({ tone: "error", message: describeError(error, t, DRIVE_UNSUPPORTED) }),
+    onError: (error) => toast.show({ tone: "error", message: describeError(error, t) }),
   });
 }
 

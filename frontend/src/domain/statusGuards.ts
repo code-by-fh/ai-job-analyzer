@@ -26,6 +26,7 @@ export type StatusGuard =
       missing: readonly DocumentKind[];
       skipped: readonly Phase[];
     }
+  | { kind: "askInterviewDate"; to: UserStatus }
   | { kind: "askOutcome" }
   | { kind: "blocked"; reason: "locked" | "unavailable" | "current" };
 
@@ -73,5 +74,7 @@ function forwardOrBackward(input: GuardInput, to: UserStatus, target: Phase): St
     return { kind: "applyWithoutDocuments", to, missing, skipped };
   }
   if (goal - from > NEXT_PHASE) return { kind: "confirmSkip", to, skipped };
+  // Feedback 1 T13: the next step into Interview offers the (optional) interview date.
+  if (target === "INTERVIEW") return { kind: "askInterviewDate", to };
   return { kind: "direct", to };
 }

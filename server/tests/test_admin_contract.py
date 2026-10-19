@@ -1,6 +1,6 @@
 """Admin AI contract: validated settings, one answer shape, tests as data, rate limits, error codes."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import openai
@@ -14,7 +14,8 @@ from database.core import JobPlatform, SystemSettings, User
 from main import app
 from routers.admin import MAX_AVAILABLE_MODELS
 from routers.deps import CRAWL_RUNNING
-from tests.factories import OTHER_USER_ID, TEST_USER_ID, make_platform
+from services.notifications_client import UNAVAILABLE, NotifyError, owner_for
+from tests.factories import OTHER_USER_ID, TEST_USER_ID, make_platform, make_user
 from tests.test_connection_errors import CASES, REASON_OF_MESSAGE
 
 pytestmark = pytest.mark.usefixtures("fresh_rate_limits")
@@ -351,3 +352,44 @@ def test_wipe_is_refused_while_a_source_owners_crawl_runs(
     with session_factory() as db:
         remaining = db.query(JobPlatform).count()
     assert (response.status_code, response.json(), remaining) == (409, {"detail": CRAWL_RUNNING}, 1)
+
+
+def _admin_password(session_factory):
+    with session_factory() as db:
+        db.get(User, TEST_USER_ID).hashed_password = get_password_hash(ADMIN_PASSWORD)
+        db.commit()
+
+
+def test_the_wipe_of_all_accounts_deletes_their_channels_after_the_commit(admin, seed, session_factory, notify):
+    _admin_password(session_factory)
+    seed(make_user(OTHER_USER_ID), make_platform(user_id=OTHER_USER_ID))
+    notify.add(owner_for(OTHER_USER_ID), "pushover", {"user_key": "u", "api_token": "t"})
+    response = admin.post("/admin/database/wipe", json={"password": ADMIN_PASSWORD, "wipe_all_users": True})
+    assert response.status_code == 200
+    assert notify.channels == {}
+
+
+def test_the_wipe_of_all_accounts_survives_a_down_service_and_logs_user_ids_only(admin, seed, session_factory, notify):
+    _admin_password(session_factory)
+    seed(make_platform(user_id=TEST_USER_ID))
+    notify.add(owner_for(TEST_USER_ID), "pushover", {"user_key": "u", "api_token": "t"})
+    notify.fail_with(NotifyError(UNAVAILABLE))
+    # core.logger loggers do not propagate, so caplog cannot see them.
+    with patch("services.user_data.logger") as logger:
+        response = admin.post("/admin/database/wipe", json={"password": ADMIN_PASSWORD, "wipe_all_users": True})
+    assert response.status_code == 200
+    with session_factory() as db:
+        assert db.query(JobPlatform).count() == 0
+    logger.error.assert_called_once_with(
+        "Notification channels of user %s not deleted after the wipe (%s)", TEST_USER_ID, UNAVAILABLE
+    )
+
+
+def test_the_own_wipe_while_the_service_is_down_is_a_502_and_deletes_nothing(admin, seed, session_factory, notify):
+    _admin_password(session_factory)
+    seed(make_platform(user_id=TEST_USER_ID))
+    notify.fail_with(NotifyError(UNAVAILABLE))
+    response = admin.post("/admin/database/wipe", json={"password": ADMIN_PASSWORD, "wipe_all_users": False})
+    assert (response.status_code, response.json()) == (502, {"detail": "notification_service_unavailable"})
+    with session_factory() as db:
+        assert db.query(JobPlatform).count() == 1

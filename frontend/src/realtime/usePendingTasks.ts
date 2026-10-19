@@ -36,6 +36,12 @@ export function useTaskPhase(id: string): TaskPhase {
   return taskPhase(tasks, id, useNow());
 }
 
+/** When this tab started the pending task; null when none is pending or it failed. */
+export function usePendingStart(id: string): number | null {
+  const task = usePendingTasks()[id];
+  return task && !task.failed ? task.startedAt : null;
+}
+
 export function markTaskStarted(queryClient: QueryClient, id: string, now: number): void {
   queryClient.setQueryData(queryKeys.pendingTasks, startTask(readPending(queryClient), id, now));
 }

@@ -444,7 +444,7 @@ export function profileRoutes(server = new ProfileServer(), extra: MockRoutes = 
   return Object.assign(routes, extra);
 }
 
-/** The per-document calls; a Drive document answers 400 on view and download (Task 1). */
+/** The per-document calls; a document without stored bytes answers 400 on view and download (Task 1). */
 export function documentRoutes(server: ProfileServer, id: number): MockRoutes {
   const document = server.documents.find((entry) => entry.id === id);
   const file: MockResponse =

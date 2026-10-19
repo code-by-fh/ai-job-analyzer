@@ -18,15 +18,35 @@ export const AUTOSAVE_DELAY_MS = 800;
 export const MAX_NOTES_LENGTH = 20_000;
 const NOTES_ROWS = 9;
 
-function cacheNotes(queryClient: QueryClient, jobId: string, notes: string): void {
-  queryClient.setQueryData<JobDetail>(queryKeys.job(jobId), (old) =>
-    old ? { ...old, notes } : old,
+/** Which notes column an editor writes: the Verlauf notes or the offer outcome notes (T14). */
+export interface NotesSpec {
+  field: "notes" | "outcome_notes";
+  id: string;
+  label: MessageKey;
+  placeholder: MessageKey;
+}
+
+export const JOB_NOTES: NotesSpec = {
+  field: "notes",
+  id: "job-notes",
+  label: "notes.label",
+  placeholder: "notes.placeholder",
+};
+
+interface NotesTarget {
+  job: JobDetail;
+  field: NotesSpec["field"];
+}
+
+function cacheNotes(queryClient: QueryClient, { job, field }: NotesTarget, notes: string): void {
+  queryClient.setQueryData<JobDetail>(queryKeys.job(job.id), (old) =>
+    old ? { ...old, [field]: notes } : old,
   );
 }
 
 /** Only the answer to the newest request settles the state and the cached job. */
 function useOnNotesSaved(
-  job: JobDetail,
+  target: NotesTarget,
   onSaved: (notes: string) => void,
   newest: RefObject<string>,
 ) {
@@ -34,7 +54,7 @@ function useOnNotesSaved(
   return (notes: string) => {
     if (notes !== newest.current) return;
     onSaved(notes);
-    cacheNotes(queryClient, job.id, notes);
+    cacheNotes(queryClient, target, notes);
   };
 }
 
@@ -59,22 +79,22 @@ function useToastAfterLeaving() {
  * Saves run strictly one after the other (scope), so an older answer cannot overwrite newer state.
  */
 /** What was sent last; notes adopted from the cache count as sent, the server holds them. */
-function useSentNotes(job: JobDetail) {
-  const sent = useRef(job.notes ?? "");
+function useSentNotes({ job, field }: NotesTarget) {
+  const sent = useRef(job[field] ?? "");
   const markSent = useCallback((notes: string) => {
     sent.current = notes;
   }, []);
   return { sent, markSent };
 }
 
-function useSaveNotes(job: JobDetail, onSaved: (notes: string) => void) {
-  const { sent, markSent } = useSentNotes(job);
-  const onSuccess = useOnNotesSaved(job, onSaved, sent);
+function useSaveNotes(target: NotesTarget, onSaved: (notes: string) => void) {
+  const { sent, markSent } = useSentNotes(target);
+  const onSuccess = useOnNotesSaved(target, onSaved, sent);
   const onError = useToastAfterLeaving();
   const { mutate, isPending, error } = useMutation({
-    mutationKey: jobWriteKey(job.id, "notes"),
-    scope: jobWriteScope(job.id),
-    mutationFn: (notes: string) => patchJob(job.id, { notes }),
+    mutationKey: jobWriteKey(target.job.id, target.field),
+    scope: jobWriteScope(target.job.id),
+    mutationFn: (notes: string) => patchJob(target.job.id, { [target.field]: notes }),
     onSuccess: (_result, notes) => onSuccess(notes),
     onError,
   });
@@ -122,11 +142,11 @@ function useUnloadGuard(unsaved: boolean) {
  * unless the user has typed since.
  */
 function useAdoptCachedNotes(
-  job: JobDetail,
+  { job, field }: NotesTarget,
   state: { draft: string; saved: string },
   adopt: (notes: string) => void,
 ) {
-  const cached = useQuery({ ...jobQueryOptions(job.id), enabled: false }).data?.notes ?? null;
+  const cached = useQuery({ ...jobQueryOptions(job.id), enabled: false }).data?.[field] ?? null;
   const { draft, saved } = state;
   useEffect(() => {
     if (cached !== null && cached !== saved && draft === saved) adopt(cached);
@@ -159,16 +179,17 @@ function useAdopt(markSent: SetText, setDraft: SetText, setSaved: SetText): SetT
   );
 }
 
-function useNotesAutosave(job: JobDetail) {
-  const [draft, setDraft] = useState(job.notes ?? "");
-  const [saved, setSaved] = useState(job.notes ?? "");
-  const save = useSaveNotes(job, setSaved);
+function useNotesAutosave(target: NotesTarget) {
+  const initial = target.job[target.field] ?? "";
+  const [draft, setDraft] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const save = useSaveNotes(target, setSaved);
   const tooLong = draft.length > MAX_NOTES_LENGTH;
   useDebouncedSend({ draft, saved, tooLong }, save.send);
   useFlushOnLeave(draft, save);
   useUnloadGuard(draft !== saved || save.isPending);
   const adopt = useAdopt(save.markSent, setDraft, setSaved);
-  useAdoptCachedNotes(job, { draft, saved }, adopt);
+  useAdoptCachedNotes(target, { draft, saved }, adopt);
   const status = notesStatus({ tooLong, dirty: draft !== saved, hasNotes: saved !== "", ...save });
   return { draft, setDraft, status, error: save.error };
 }
@@ -210,17 +231,18 @@ function NotesStatusLine({ status, error }: { status: NotesStatus; error: unknow
   );
 }
 
-export function NotesEditor({ job }: { job: JobDetail }) {
+/** Autosaving notes; `spec` picks the column (the Verlauf notes by default). */
+export function NotesEditor({ job, spec = JOB_NOTES }: { job: JobDetail; spec?: NotesSpec }) {
   const { t } = useI18n();
-  const notes = useNotesAutosave(job);
+  const notes = useNotesAutosave({ job, field: spec.field });
   return (
     <section>
       <TextAreaField
-        id="job-notes"
-        label={t("notes.label")}
+        id={spec.id}
+        label={t(spec.label)}
         rows={NOTES_ROWS}
         maxLength={MAX_NOTES_LENGTH}
-        placeholder={t("notes.placeholder")}
+        placeholder={t(spec.placeholder)}
         value={notes.draft}
         onChange={(event) => notes.setDraft(event.target.value)}
       />

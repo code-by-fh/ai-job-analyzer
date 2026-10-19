@@ -10,7 +10,6 @@ export const E2E_SECRETS = {
   mailjet_api_key: "MAILJET_KEY_E2E_4711",
   mailjet_secret_key: "MAILJET_SECRET_E2E_4711",
   smtp_password: "SMTP_PW_E2E_4711",
-  google_drive_refresh_token: "DRIVE_TOKEN_E2E_4711",
 } as const;
 export const E2E_NOTIFICATION_FIELDS = {
   pushover_user_key: "push-user",
@@ -22,8 +21,6 @@ export const E2E_NOTIFICATION_FIELDS = {
   smtp_from_email: "smtp@example.com",
   email_global_recipient: "me@example.com",
   active_notification_service: "PUSHOVER",
-  active_storage_service: "GOOGLE_DRIVE",
-  google_drive_email: "drive@example.com",
 } as const;
 // Columns of the same row that no Profil section owns (core.py UserProfile); a save keeps them.
 export const E2E_OTHER_COLUMNS = {

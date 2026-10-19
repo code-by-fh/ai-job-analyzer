@@ -50,6 +50,8 @@ describe("profile api", () => {
       cv_data: { experience: [], projects: [], education: "" },
       cv_template: "7",
       cover_letter_template: null,
+      // A server without the run state reads as no import running.
+      cv_import_running: false,
     });
     expect(profileQueryOptions().queryKey).toEqual(queryKeys.profile);
   });
@@ -200,8 +202,8 @@ describe("profile documents api", () => {
         { id: 2, doc_type: "REFERENCE", label: "Ref", original_filename: "b.pdf" },
       ],
     });
-    const [drive, db] = await fetchProfileDocuments();
-    expect([drive!.downloadable, db!.downloadable]).toEqual([false, true]);
+    const [unstored, older] = await fetchProfileDocuments();
+    expect([unstored!.downloadable, older!.downloadable]).toEqual([false, true]);
   });
 
   it("uploads with the type and deletes by id", async () => {

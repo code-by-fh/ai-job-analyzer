@@ -62,6 +62,7 @@ export const REFUSAL = {
   invalidDocType: "invalid_doc_type",
   cvNoText: "cv_no_text",
   cvParseFailed: "cv_parse_failed",
+  cvImportRunning: "cv_import_running",
   templateProcessing: "template_processing",
   templateRejected: "template_rejected",
   // routers/templates.py TEMPLATE_NOT_FOUND: the preview's fixed 404 body.

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobDetail } from "@/api/jobs";
 import { queryKeys } from "@/api/queryKeys";
+import { DatesDrawerProvider } from "@/features/job/dates/DatesDrawerProvider";
 import { NextStepCard } from "@/features/job/next/NextStepCard";
 import { applyEvent } from "@/realtime/applyEvent";
 import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
@@ -40,7 +41,11 @@ function show(job: JobDetail) {
     "POST /jobs/job-1/interview-prep": { status: "queued", message: "", job_id: "job-1" },
     "GET /jobs/job-1": job,
   });
-  const { queryClient } = renderWithProviders(<NextStepCard job={job} />);
+  const { queryClient } = renderWithProviders(
+    <DatesDrawerProvider job={job}>
+      <NextStepCard job={job} />
+    </DatesDrawerProvider>,
+  );
   return Object.assign(calls, { queryClient });
 }
 
@@ -201,6 +206,14 @@ describe("NextStepCard", () => {
     const deps = { queryClient: calls.queryClient, now: () => Date.now(), onGlobalError: vi.fn() };
     act(() => applyEvent({ type: "interview_prep_ready", user_id: 1, job_id: "job-1" }, deps));
     expect(await screen.findByRole("button", { name: "Vorbereitung erstellen" })).toBeEnabled();
+  });
+
+  it("shows a prep the server reports as running instead of the start button", () => {
+    show(buildJob({ status: "INTERVIEW", ...READY, interview_prep_running: true }));
+    expect(screen.getByText("Vorbereitung wird erstellt …")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Vorbereitung erstellen" }),
+    ).not.toBeInTheDocument();
   });
 
   it("loads an existing prep instead of showing nothing when the server reports it exists", async () => {

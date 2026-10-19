@@ -5,6 +5,7 @@ import type { PlatformBody, PlatformSetupBody } from "@/api/platforms";
 import { SourcesPage } from "@/features/sources/SourcesPage";
 import { setupRequestOf } from "@/features/sources/wizard/useCreateSource";
 import { INITIAL_WIZARD } from "@/features/sources/wizard/wizardState";
+import { SMTP_CHANNEL } from "../../../e2e/support/notificationFixtures";
 import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
 import { liveNavigation } from "../../support/liveNavigation";
 import { renderWithProviders } from "../../support/render";
@@ -20,6 +21,7 @@ const BAD_REQUEST = 400;
 const UNPROCESSABLE = 422;
 const PREVIEW = "POST /platforms/preview-links";
 const SETUP = "POST /platforms/setup";
+const PATTERN = "POST /platforms/url-pattern";
 const URL_ = "https://www.get-in-it.de/jobsuche?q=java";
 const LINKS = {
   links: [
@@ -39,7 +41,7 @@ const CREATED: PlatformSetupBody = {
   id: 9,
   name: "get-in-it Java",
   url: URL_,
-  schedule_time: "08:00",
+  schedule_times: ["08:00"],
   schedule_days: [0, 1, 2, 3, 4],
   initial_crawl_started: false,
 };
@@ -62,14 +64,25 @@ function setupStubs(setup: unknown = CREATED, extra: RouteTable = {}): RecordedC
     server.created = true;
     return typeof setup === "function" ? setup(call) : jsonResponse(OK, setup);
   };
-  return sourcesStubs(list, { [PREVIEW]: LINKS, [SETUP]: create, ...extra });
+  return sourcesStubs(list, {
+    [PREVIEW]: LINKS,
+    [PATTERN]: { url_pattern: "/jobsuche/" },
+    [SETUP]: create,
+    ...extra,
+  });
 }
 
+/** Step 2 as the user does it: one example link, the derived pattern confirmed. */
 async function toStep3() {
   const dialog = await screen.findByRole("dialog", { name: "Quelle hinzufügen" });
   await userEvent.type(within(dialog).getByLabelText("Adresse einer Suchergebnisseite"), URL_);
   await userEvent.click(within(dialog).getByRole("button", { name: "Seite prüfen" }));
-  await userEvent.click(await within(dialog).findByRole("button", { name: "Weiter" }));
+  await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+  await waitFor(() =>
+    expect(within(dialog).getByLabelText("URL-Muster")).toHaveValue("/jobsuche/"),
+  );
+  await userEvent.click(within(dialog).getByRole("checkbox", { name: "Muster passt" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
   return dialog;
 }
 
@@ -87,40 +100,113 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("setup request", () => {
-  it("leaves out an empty name and pattern and sends the schedule pair", () => {
+  it("leaves out an empty name and sends the schedule pair and the confirmed pattern", () => {
     const state = {
       ...INITIAL_WIZARD,
       url: URL_,
       selected: ["a"],
-      schedule: { enabled: false, time: "08:00", days: [0] },
+      pattern: "/p/",
+      schedule: { enabled: false, times: ["08:00"], days: [0] },
     };
     expect(setupRequestOf(state)).toEqual({
       url: URL_,
       selected_urls: ["a"],
       initial_run: "seed",
-      schedule_time: null,
+      schedule_times: null,
       schedule_days: null,
+      url_pattern: "/p/",
     });
   });
 
-  it("trims name and pattern and sorts the days", () => {
+  it("trims the name and sorts the times and days", () => {
     const state = {
       ...INITIAL_WIZARD,
       url: ` ${URL_} `,
       selected: ["a"],
       name: "  Java  ",
-      pattern: " /p/ ",
-      schedule: { enabled: true, time: "07:30", days: [2, 0] },
+      pattern: "/p/",
+      schedule: { enabled: true, times: ["18:00", "07:30"], days: [2, 0] },
     };
     expect(setupRequestOf(state)).toEqual({
       url: URL_,
       selected_urls: ["a"],
       initial_run: "seed",
       name: "Java",
-      schedule_time: "07:30",
+      schedule_times: ["07:30", "18:00"],
       schedule_days: [0, 2],
       url_pattern: "/p/",
     });
+  });
+});
+
+describe("setup request, channels", () => {
+  const base = { ...INITIAL_WIZARD, url: URL_, selected: ["a"], pattern: "/p/" };
+
+  it("sends the chosen channels and leaves the field out when none is chosen", () => {
+    expect(setupRequestOf({ ...base, channelIds: ["c1", "c2"] })).toMatchObject({
+      notification_channel_ids: ["c1", "c2"],
+    });
+    expect(setupRequestOf(base)).not.toHaveProperty("notification_channel_ids");
+  });
+});
+
+describe("add wizard, step 3 channels", () => {
+  it("offers the user's channels and sends the chosen one with the setup", async () => {
+    const calls = setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    const group = await within(dialog).findByRole("region", { name: "Benachrichtigungen" });
+    await userEvent.click(within(group).getByRole("checkbox", { name: /Firmen-SMTP/ }));
+    expect(within(group).getByRole("button", { name: "Neuen Kanal anlegen" })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Quelle anlegen" }));
+    await waitFor(() => expect(setupSent(calls)).toBe(true));
+    expect(setupBody(calls).notification_channel_ids).toEqual([SMTP_CHANNEL.id]);
+  });
+
+  it("shows no drawer-only test hint for a chosen channel", async () => {
+    setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    const group = await within(dialog).findByRole("region", { name: "Benachrichtigungen" });
+    await userEvent.click(within(group).getByRole("checkbox", { name: /Firmen-SMTP/ }));
+    expect(within(group).getByRole("button", { name: /^Test über/ })).toBeInTheDocument();
+    expect(within(group).queryByText(/nicht an die Empfänger dieser Quelle/)).toBeNull();
+  });
+
+  it("closing the new channel dialog with typed input asks first", async () => {
+    setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "Neuen Kanal anlegen" }),
+    );
+    const form = await screen.findByRole("dialog", { name: "Neuer Kanal" });
+    await userEvent.click(within(form).getByRole("button", { name: "Abbrechen" }));
+    expect(screen.queryByRole("dialog", { name: "Neuer Kanal" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Neuen Kanal anlegen" }));
+    const again = await screen.findByRole("dialog", { name: "Neuer Kanal" });
+    await userEvent.clear(within(again).getByLabelText("Name"));
+    await userEvent.type(within(again).getByLabelText("Name"), "Mein Kanal");
+    await userEvent.click(within(again).getByRole("button", { name: "Abbrechen" }));
+    const ask = await screen.findByRole("dialog", { name: "Änderungen verwerfen?" });
+    await userEvent.click(within(ask).getByRole("button", { name: "Abbrechen" }));
+    expect(screen.getByRole("dialog", { name: "Neuer Kanal" })).toBeInTheDocument();
+    await userEvent.click(within(again).getByRole("button", { name: "Abbrechen" }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog", { name: "Änderungen verwerfen?" })).getByRole(
+        "button",
+        { name: "Änderungen verwerfen" },
+      ),
+    );
+    expect(screen.queryByRole("dialog", { name: "Neuer Kanal" })).toBeNull();
+  });
+
+  it("shows no group when the service offers no channel types", async () => {
+    setupStubs(CREATED, { "GET /notifications/channel-types": { items: [] } });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    expect(within(dialog).getByRole("button", { name: "Quelle anlegen" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("region", { name: "Benachrichtigungen" })).toBeNull();
   });
 });
 
@@ -143,11 +229,12 @@ describe("add wizard, step 3", () => {
     await waitFor(() =>
       expect(setupBody(calls)).toEqual({
         url: URL_,
-        selected_urls: LINKS.links.map((link) => link.url),
+        selected_urls: [LINKS.links[0]!.url],
         initial_run: "none",
         name: "get-in-it Java",
-        schedule_time: "08:00",
+        schedule_times: ["08:00"],
         schedule_days: [0, 1, 2, 3, 4],
+        url_pattern: "/jobsuche/",
       }),
     );
     expect(await screen.findByText("Quelle „get-in-it Java“ angelegt.")).toBeInTheDocument();
@@ -190,20 +277,20 @@ describe("add wizard, step 3", () => {
     const calls = setupStubs();
     renderWithProviders(<SourcesPage />);
     const dialog = await toStep3();
-    await userEvent.clear(within(dialog).getByLabelText("Uhrzeit"));
+    await userEvent.clear(within(dialog).getByLabelText("Uhrzeit 1"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Quelle anlegen" }));
     expect(within(dialog).getByRole("alert")).toHaveTextContent("Gib eine Uhrzeit wie 08:00 ein.");
     expect(setupSent(calls)).toBe(false);
-    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit")).toHaveFocus());
+    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit 1")).toHaveFocus());
   });
 
   it("a 422 on the time stays on step 3 with focus on the time", async () => {
-    setupStubs(refused("schedule_time"));
+    setupStubs(refused("schedule_times"));
     renderWithProviders(<SourcesPage />);
     const dialog = await toStep3();
     await userEvent.click(within(dialog).getByRole("button", { name: "Quelle anlegen" }));
     expect(await within(dialog).findByText("Gib eine Uhrzeit wie 08:00 ein.")).toBeInTheDocument();
-    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit")).toHaveFocus());
+    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit 1")).toHaveFocus());
   });
 
   it("a 422 on the days stays on step 3 with focus on the first day", async () => {
@@ -214,6 +301,60 @@ describe("add wizard, step 3", () => {
     expect(await within(dialog).findByText("Wähle mindestens einen Tag.")).toBeInTheDocument();
     const days = within(dialog).getByRole("group", { name: "Wochentage" });
     await waitFor(() => expect(within(days).getByRole("button", { name: "Mo" })).toHaveFocus());
+  });
+
+  it("sends several times of a day, added and removed in the list", async () => {
+    const calls = setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Uhrzeit hinzufügen" }));
+    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit 2")).toHaveFocus());
+    await userEvent.type(within(dialog).getByLabelText("Uhrzeit 2"), "18:00");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Uhrzeit hinzufügen" }));
+    await userEvent.type(within(dialog).getByLabelText("Uhrzeit 3"), "06:30");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Uhrzeit 1 entfernen" }));
+    await waitFor(() => expect(within(dialog).getByLabelText("Uhrzeit 1")).toHaveFocus());
+    await userEvent.click(within(dialog).getByRole("button", { name: "Quelle anlegen" }));
+    await waitFor(() => expect(setupBody(calls).schedule_times).toEqual(["06:30", "18:00"]));
+  });
+
+  it("a time entered twice is caught before the request", async () => {
+    const calls = setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Uhrzeit hinzufügen" }));
+    await userEvent.type(within(dialog).getByLabelText("Uhrzeit 2"), "08:00");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Quelle anlegen" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Trage jede Uhrzeit nur einmal ein.",
+    );
+    expect(setupSent(calls)).toBe(false);
+  });
+
+  it("allows at most six times and needs at least one", async () => {
+    setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    expect(within(dialog).queryByRole("button", { name: "Uhrzeit 1 entfernen" })).toBeNull();
+    const add = () =>
+      userEvent.click(within(dialog).getByRole("button", { name: "Uhrzeit hinzufügen" }));
+    await add();
+    await add();
+    await add();
+    await add();
+    await add();
+    expect(within(dialog).getByLabelText("Uhrzeit 6")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Uhrzeit hinzufügen" })).toBeNull();
+    expect(within(dialog).getByText("Höchstens 6 Uhrzeiten pro Tag.")).toBeInTheDocument();
+  });
+
+  it("shows name, schedule and first run as three named groups", async () => {
+    setupStubs();
+    renderWithProviders(<SourcesPage />);
+    const dialog = await toStep3();
+    const named = (name: string) => within(dialog).queryByRole("region", { name }) !== null;
+    expect(["Quelle benennen", "Zeitplan", "Erster Lauf"].map(named)).toEqual([true, true, true]);
+    expect(within(dialog).getByRole("group", { name: "Erster Lauf" })).toBeInTheDocument();
   });
 
   it("a second click before the wizard has closed sends one request", async () => {
@@ -238,6 +379,7 @@ describe("add wizard, step 3", () => {
       () => (server.created ? NEVER() : jsonResponse(OK, [SOURCE_A, SOURCE_B, PENDING])),
       {
         [PREVIEW]: LINKS,
+        [PATTERN]: { url_pattern: "/jobsuche/" },
         [SETUP]: () => {
           server.created = true;
           return jsonResponse(OK, CREATED);
@@ -306,12 +448,13 @@ describe("add wizard, step 3", () => {
     renderWithProviders(<SourcesPage />);
     const dialog = await toStep3();
     await userEvent.click(within(dialog).getByRole("button", { name: "Zurück" }));
-    expect(within(dialog).getByText("2 ausgewählt")).toBeInTheDocument();
+    expect(within(dialog).getByText("1 ausgewählt")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Muster passt" })).toBeChecked();
   });
 });
 
 describe("a setup 422 jumps back to the field with the error (ruling 16, R12)", () => {
-  it("a 422 on the pattern goes back to step 2 with Erweitert open and focus on the pattern", async () => {
+  it("a 422 on the pattern goes back to step 2 with focus on the pattern", async () => {
     setupStubs(refused("url_pattern"));
     renderWithProviders(<SourcesPage />);
     const dialog = await toStep3();
@@ -319,10 +462,6 @@ describe("a setup 422 jumps back to the field with the error (ruling 16, R12)", 
     expect(
       await within(dialog).findByText("Gib ein Muster mit 1 bis 300 Zeichen ein, nicht nur „/“."),
     ).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Erweitert" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
     await waitFor(() => expect(within(dialog).getByLabelText("URL-Muster")).toHaveFocus());
   });
 

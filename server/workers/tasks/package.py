@@ -18,9 +18,8 @@ from intelligence.service import (
     generate_tailored_cv,
     generate_application,
 )
-from services.document_renderer import render_cv_pdf, render_cv_html, render_cover_letter_pdf, render_cover_letter_html, html_to_pdf
-from services.job_documents import add_job_document, delete_attached_documents, store_generated_document
-from services.storage import get_storage_service
+from services.document_renderer import render_cv_html, render_cover_letter_html
+from services.job_documents import add_job_document, delete_attached_documents, delete_generated_pdf
 from services.template_access import TemplateRef, find_usable_template
 from services.template_filler import TemplateRejected, fill_template, render_jinja2_template
 from workers.tasks.time_limits import (
@@ -28,8 +27,6 @@ from workers.tasks.time_limits import (
     GENERATION_HARD_TIME_LIMIT_SECONDS,
     GENERATION_SOFT_TIME_LIMIT_SECONDS,
     GENERATION_TIMEOUT_ERROR,
-    RENDER_HARD_TIME_LIMIT_SECONDS,
-    RENDER_SOFT_TIME_LIMIT_SECONDS,
 )
 from workers.tasks.generation_failure import TaskContext, fail_generation, record_failure
 
@@ -53,8 +50,8 @@ def _build_cv(
     cv_client,
     cv_model: str,
     cv_notes: str = "",
-) -> tuple[str, bytes, dict]:
-    """Return (cv_html, cv_pdf_bytes, cv_data). Pure computation — no DB writes.
+) -> tuple[str, dict]:
+    """Return (cv_html, cv_data). Pure computation — no DB writes; the PDF is rendered on download.
 
     Always calls generate_tailored_cv so data is tailored to the job regardless
     of which template is used. If a user template (Jinja2 HTML) is selected it
@@ -79,13 +76,7 @@ def _build_cv(
         cv_html = render_jinja2_template(cv_template_html, cv_data)
     else:
         cv_html = render_cv_html(cv_data, template_key=cv_template_key or "classic")
-
-    try:
-        cv_pdf = html_to_pdf(cv_html)
-    except OSError as e:
-        logger.warning(f"html_to_pdf failed for CV, falling back to classic renderer: {e}")
-        cv_pdf = render_cv_pdf(cv_data, template_key="classic")
-    return cv_html, cv_pdf, cv_data
+    return cv_html, cv_data
 
 
 def _build_letter(
@@ -104,8 +95,8 @@ def _build_letter(
     language: str,
     letter_client,
     letter_model: str,
-) -> tuple[str, str, bytes]:
-    """Return (letter_text, letter_html, letter_pdf_bytes). Runs AI + render, no DB writes."""
+) -> tuple[str, str]:
+    """Return (letter_text, letter_html). Runs AI + HTML render, no DB writes."""
     letter_text = generate_application(
         job_title=job_title,
         job_company=job_company,
@@ -132,14 +123,6 @@ def _build_letter(
             "skills": skills,
         }
         letter_html = fill_template(letter_template_html, letter_data)
-        try:
-            letter_pdf = html_to_pdf(letter_html)
-        except OSError as e:
-            logger.warning(f"html_to_pdf failed for cover letter, falling back: {e}")
-            letter_pdf = render_cover_letter_pdf(
-                letter_markdown=letter_text, template_key="classic",
-                sender_name=candidate_name, company=job_company or "",
-            )
     else:
         letter_html = render_cover_letter_html(
             letter_markdown=letter_text,
@@ -147,13 +130,7 @@ def _build_letter(
             sender_name=candidate_name,
             company=job_company or "",
         )
-        letter_pdf = render_cover_letter_pdf(
-            letter_markdown=letter_text,
-            template_key=letter_template_key or "classic",
-            sender_name=candidate_name,
-            company=job_company or "",
-        )
-    return letter_text, letter_html, letter_pdf
+    return letter_text, letter_html
 
 
 def _publish(r, job, status, **extra):
@@ -171,12 +148,12 @@ def _resolve_template_html(db, template_ref: str | None, doc_type: str, user_id:
     return template.html if template else None
 
 
-def _attach_profile_documents(db, job, user_id, storage) -> None:
+def _attach_profile_documents(db, job, user_id) -> None:
     """Replace the job's attached documents with the user's profile documents.
     Only a non-empty attach set replaces the old one, so a profile without
     copyable files never wipes earlier attachments. No commit: the caller's
     final commit makes delete and inserts atomic."""
-    # Only DB-stored blobs can be copied for MVP.
+    # A row without stored bytes has nothing to copy.
     copyable = [pd for pd in db.query(ProfileDocument).filter(
         ProfileDocument.user_id == user_id).all() if pd.content is not None]
     if not copyable:
@@ -186,7 +163,7 @@ def _attach_profile_documents(db, job, user_id, storage) -> None:
         add_job_document(
             db, job.id, user_id, pd.content, pd.original_filename,
             pd.mime_type or "application/octet-stream",
-            _ATTACH_KIND.get(pd.doc_type, "ATTACHED_CERT"), storage,
+            _ATTACH_KIND.get(pd.doc_type, "ATTACHED_CERT"),
         )
 
 
@@ -220,7 +197,6 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
         user = db.query(User).filter(User.id == target_user_id).first()
         candidate_name = user.username if user else ""
         language = getattr(profile, "language", "de") or "de"
-        storage = get_storage_service(profile) if profile.active_storage_service != "NONE" else None
 
         # --- 1+2. CV and cover letter — generated in parallel ---
         cv_client, cv_model = get_client_and_model("cv_tailoring", db)
@@ -266,26 +242,15 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
             return
 
         if cv_result:
-            cv_html, cv_pdf, _ = cv_result
-            job.cv_html = cv_html
-            store_generated_document(
-                db, job.id, target_user_id, cv_pdf,
-                original_filename=f"Lebenslauf_{_safe(job.company)}.pdf",
-                mime_type="application/pdf", kind="GENERATED_CV", storage=storage,
-            )
+            job.cv_html, _ = cv_result
+            delete_generated_pdf(db, job.id, "cv")
         if letter_result:
-            letter_text, letter_html, letter_pdf = letter_result
-            job.application_draft = letter_text
-            job.cover_letter_html = letter_html
-            store_generated_document(
-                db, job.id, target_user_id, letter_pdf,
-                original_filename=f"Anschreiben_{_safe(job.company)}.pdf",
-                mime_type="application/pdf", kind="GENERATED_LETTER", storage=storage,
-            )
+            job.application_draft, job.cover_letter_html = letter_result
+            delete_generated_pdf(db, job.id, "cover_letter")
 
         # --- 3. Profile documents (optional, whole set) ---
         if include_profile_documents:
-            _attach_profile_documents(db, job, target_user_id, storage)
+            _attach_profile_documents(db, job, target_user_id)
 
         status = finish_generation(job, GenerationOutcome.COMPLETED)
         db.commit()
@@ -301,63 +266,5 @@ def generate_application_package_task(job_id, user_id=None, include_profile_docu
     except Exception as e:
         logger.error(f"Package generation failed for job {job_id}: {e}", exc_info=True)
         record_failure(TaskContext(db, r), job_id, GENERATION_FAILED_ERROR)
-    finally:
-        db.close()
-
-
-
-def _safe(value):
-    cleaned = "".join(c for c in (value or "Job") if c.isalnum() or c in " -_")
-    return cleaned.replace(" ", "_") or "Job"
-
-
-@celery_app.task(
-    name="ai.render_document_pdf",
-    soft_time_limit=RENDER_SOFT_TIME_LIMIT_SECONDS,
-    time_limit=RENDER_HARD_TIME_LIMIT_SECONDS,
-)
-def render_document_pdf_task(job_id: str, kind: str, user_id: int):
-    """Re-render edited HTML for a job to PDF and replace the JobDocument."""
-    logger.info(f"[TASK] render_document_pdf job={job_id} kind={kind} user={user_id}")
-    db = SessionLocal()
-    r = redis.from_url(os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0"))
-    try:
-        job = db.query(JobEntry).filter(
-            JobEntry.id == job_id,
-            JobEntry.user_id == user_id,
-        ).first()
-        if not job:
-            logger.error(f"Job {job_id} not found for user {user_id}")
-            return
-
-        html = job.cv_html if kind == "cv" else job.cover_letter_html
-        if not html:
-            logger.error(f"No HTML stored for job {job_id} kind={kind}")
-            return
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        storage = (
-            get_storage_service(profile)
-            if profile and profile.active_storage_service != "NONE"
-            else None
-        )
-
-        pdf = html_to_pdf(html)
-        doc_kind = "GENERATED_CV" if kind == "cv" else "GENERATED_LETTER"
-        prefix = "Lebenslauf" if kind == "cv" else "Anschreiben"
-        store_generated_document(
-            db, job_id, user_id, pdf,
-            original_filename=f"{prefix}_{_safe(job.company)}.pdf",
-            mime_type="application/pdf",
-            kind=doc_kind,
-            storage=storage,
-        )
-        db.commit()
-        _publish(r, job, "DRAFTED", rendered_kind=kind)
-        logger.info(f"render_document_pdf complete job={job_id} kind={kind}")
-    except Exception as e:
-        logger.error(f"render_document_pdf failed job={job_id}: {e}", exc_info=True)
-        error = GENERATION_TIMEOUT_ERROR if isinstance(e, SoftTimeLimitExceeded) else GENERATION_FAILED_ERROR
-        _publish(r, job, "FAILED", error=error)
     finally:
         db.close()

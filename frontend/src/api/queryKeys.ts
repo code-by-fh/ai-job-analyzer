@@ -47,10 +47,11 @@ export const queryKeys = {
   platforms: ["platforms"],
   // Under the platforms root: the invalidation after every crawl end refreshes the history too.
   platformRuns: (id: number) => ["platforms", "runs", id] as const,
-  channelStatus: ["settings", "channels"],
-  // GET /settings read with the notification-only schema; secrets arrive as booleans.
-  notificationSettings: ["settings", "notifications"],
-  storageStatus: ["storage-status"],
+  // A pure derivation from the chosen links; outside the platforms root, nothing invalidates it.
+  urlPattern: (selected: readonly string[]) => ["url-pattern", ...selected] as const,
+  // The service's channel types (static per deployment) and the user's channels (secrets as booleans).
+  channelTypes: ["notification-channel-types"],
+  channels: ["notification-channels"],
   notificationTemplates: ["notification-templates"],
   // A server render of a draft; outside every invalidated prefix, nothing refreshes it (ruling 43).
   notificationPreview: (type: string, content: string) =>

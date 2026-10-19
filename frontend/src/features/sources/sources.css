@@ -43,7 +43,7 @@
     display: grid;
     grid-template-columns:
       minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 2.4fr) minmax(0, 1fr)
-      48px;
+      72px;
     gap: var(--s4);
     align-items: start;
   }
@@ -68,10 +68,35 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  /* The favicon spans name and host, so both lines keep one left edge beside it. */
   .src-name-cell {
     display: grid;
-    gap: 3px;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 3px var(--s3);
     justify-items: start;
+  }
+  .src-name-cell > :not(.src-icon) {
+    grid-column: 2;
+  }
+  .src-icon {
+    grid-row: 1 / span 2;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-top: 1px;
+  }
+  .src-icon img {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--r-ctl);
+  }
+  /* The company monogram at row size: initials when the site has no icon or it fails to load. */
+  .src-icon .monogram {
+    width: 28px;
+    height: 28px;
+    border-width: 1.5px;
+    font-size: var(--fs-13);
   }
   .src-name {
     font-family: var(--font-display);
@@ -135,6 +160,7 @@
   .src-action {
     display: flex;
     justify-content: flex-end;
+    gap: var(--s1);
   }
   .crawl-start {
     display: inline-flex;
@@ -148,27 +174,6 @@
   }
   .crawl-step {
     grid-column: 1 / -1;
-  }
-  .crawl-bar {
-    width: 100%;
-    height: 6px;
-    appearance: none;
-    border: 0;
-    border-radius: 3px;
-    background: var(--sunken);
-  }
-  .crawl-bar::-webkit-progress-bar {
-    background: var(--sunken);
-    border-radius: 3px;
-  }
-  /* Ink, not vermilion: progress is not "your next move" (usability #16). */
-  .crawl-bar::-webkit-progress-value {
-    background: var(--text);
-    border-radius: 3px;
-  }
-  .crawl-bar::-moz-progress-bar {
-    background: var(--text);
-    border-radius: 3px;
   }
 
   /* D5: the drawer, a portal outside .sources, so it is its own container for the narrow layout. */
@@ -229,16 +234,43 @@
     display: grid;
     gap: 12px;
   }
-  .schedule-days {
+  .schedule-days,
+  .schedule-times {
     margin: 0;
     padding: 0;
     border: 0;
     min-width: 0;
   }
+  /* 1 to 6 times, one per line with its remove button; Uhrzeit hinzufügen sits under the last. */
+  .time-list {
+    display: grid;
+    gap: var(--s2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .time-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .time-add {
+    justify-self: start;
+    margin: var(--s1) 0 0 -10px;
+  }
+  .schedule-times > .hint {
+    margin-top: var(--s1);
+  }
   .chip-row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  /* Feedback 2, T6: the one weekday chip looks the same in the drawer and the wizard, at any width. */
+  .chip-row .chip {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
   }
   /* D7: one row per channel, separated by a hairline; the legend only names the group. */
   .notify-intro {
@@ -275,10 +307,24 @@
     margin: 0;
   }
   /* Under the check's label text: the 15 px box plus the 10 px gap of ui .check. */
-  .channel-options {
-    display: grid;
-    gap: 12px;
+  .channel-row > .channel-type {
     padding-left: 25px;
+  }
+  /* One group per channel type in use: its template and recipients, shared by its channels. */
+  .type-options {
+    gap: 12px;
+  }
+  /* Floated, the legend is a normal grid item in the content flow, not drawn on the border. */
+  .type-options-name {
+    padding: 0;
+    float: left;
+    width: 100%;
+    font-weight: 600;
+  }
+  .notify-link {
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
   }
   .notify-failed,
   .runs-failed {
@@ -333,14 +379,43 @@
   .source-wizard .notice {
     margin-top: var(--s4);
   }
-  /* Carried 44 px rule: the narrow wizard renders ScheduleFields too (Task 13), at any viewport. */
-  .source-wizard .chip {
-    min-height: 44px;
-    min-width: 44px;
-    justify-content: center;
-  }
   .wizard-existing {
     min-height: 44px;
+  }
+  .source-wizard .time-row .btn,
+  .source-wizard .time-add {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /*
+   * Feedback 1, T5: each decision of a step in its own frame under a heading, so name, schedule
+   * and first run (and step 2's pattern) read as separate questions.
+   */
+  .wizard-group {
+    display: grid;
+    gap: var(--s3);
+    margin: 0;
+    padding: var(--s4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-panel);
+    min-width: 0;
+  }
+  .wizard-group > .sec-title-sm {
+    margin: 0;
+  }
+  .wizard-group .field + .field,
+  .wizard-group .hint,
+  .wizard-group .notice {
+    margin-top: 0;
+  }
+  .wizard-why {
+    margin: var(--s2) 0 0;
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .pattern-confirm {
+    display: grid;
+    gap: var(--s1);
   }
   .link-tools {
     display: grid;
@@ -429,16 +504,13 @@
       margin-left: 0;
       flex-basis: 100%;
     }
-    .source-drawer .chip {
-      min-height: 44px;
-      min-width: 44px;
-      justify-content: center;
-    }
     .drawer-subline .link {
       min-height: 44px;
     }
+    .time-row .btn,
+    .time-add,
     .channel-row .check,
-    .channel-row .link,
+    .notify-link .link,
     .channel-test .btn,
     .drawer-section-foot .btn,
     .notify-failed .btn,
@@ -448,7 +520,7 @@
       display: inline-flex;
       align-items: center;
     }
-    .channel-options {
+    .channel-row > .channel-type {
       padding-left: 0;
     }
   }
@@ -498,6 +570,11 @@
     .src-name {
       padding-block: 13px;
       margin-block: -13px;
+    }
+    /* The icon-only pencil and Durchsuchen are square 44 px targets. */
+    .src-action .btn {
+      min-width: 44px;
+      justify-content: center;
     }
     .src-banner-list .link,
     .src-action .btn,

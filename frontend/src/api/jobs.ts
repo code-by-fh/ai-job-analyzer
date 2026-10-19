@@ -27,6 +27,16 @@ export const EMPTY_CHECKLIST: JobChecklist = {
   sent: false,
 };
 
+// Backend FirstDayChecklist (feedback 1 T14): fixed keys, defaults false, replaced as a whole on PATCH.
+export const firstDayChecklistSchema = z.object({
+  contract_signed: z.boolean().default(false),
+  papers_ready: z.boolean().default(false),
+  others_declined: z.boolean().default(false),
+  route_planned: z.boolean().default(false),
+  first_day_contact: z.boolean().default(false),
+});
+export type FirstDayChecklist = z.infer<typeof firstDayChecklistSchema>;
+
 const todoSchema = z.object({ id: z.string(), text: z.string(), done: z.boolean() });
 export type JobTodo = z.infer<typeof todoSchema>;
 
@@ -71,19 +81,40 @@ export const jobDetailSchema = z.object({
   application_draft: z.string().nullish(),
   cv_draft: z.string().nullish(),
   interview_prep_material: z.string().nullish(),
+  // Durable server run state: a running prep survives a reload; the error is a fixed text never shown.
+  interview_prep_running: z.boolean().default(false),
+  interview_prep_error: z.string().nullish(),
+  // Start stamps of the running work (ISO UTC); the elapsed time counts from them across a reload.
+  interview_prep_started_at: z.string().nullish(),
+  // Durable company research run state of this job; the error is a fixed code (companyResearch.ts).
+  company_research_running: z.boolean().default(false),
+  company_research_error: z.string().nullish(),
+  company_research_started_at: z.string().nullish(),
+  // Durable run state of "Aus der Anzeige übernehmen"; the error is a fixed code (domain/postingDetails.ts).
+  posting_details_running: z.boolean().default(false),
+  posting_details_error: z.string().nullish(),
+  posting_details_started_at: z.string().nullish(),
   status: z.string(),
   url: z.string().nullish(),
   is_favorite: z.boolean().nullish(),
   contact_persons: z.array(contactSchema).nullish().catch(null),
   recruiter_info: recruiterSchema.nullish().catch(null),
   salary_benchmark: salarySchema.nullish().catch(null),
+  // Names of the fields above that the job analysis filled from the posting.
+  posting_extracted: z.array(z.string()).nullish().catch(null),
   notes: z.string().nullish(),
   is_archived: z.boolean().nullish(),
   archive_reason: z.string().nullish(),
   platform_id: z.number().int().nullish(),
   generation_error: z.string().nullish(),
+  // Set when a worker really starts the generation; null while it waits in the queue.
+  generation_started_at: z.string().nullish(),
   checklist: checklistSchema.nullish().catch(EMPTY_CHECKLIST),
   todos: z.array(todoSchema).nullish().catch(null),
+  // Offer outcome tabs (feedback 1 T14); start_date is a calendar day "YYYY-MM-DD", no instant.
+  outcome_notes: z.string().nullish(),
+  first_day_checklist: firstDayChecklistSchema.nullish().catch(null),
+  start_date: z.string().nullish(),
   created_at: z.string().nullish(),
   next_follow_up_at: z.string().nullish(),
   interview_at: z.string().nullish(),
@@ -112,7 +143,11 @@ export interface StatusChange {
 export interface JobPatch {
   is_archived?: boolean;
   notes?: string;
+  outcome_notes?: string;
   checklist?: JobChecklist;
+  first_day_checklist?: FirstDayChecklist;
+  // "YYYY-MM-DD" sets the day, null clears it, omitted keeps it.
+  start_date?: string | null;
   todos?: readonly JobTodo[];
   // ISO string sets the date, null clears it, omitted keeps it.
   next_follow_up_at?: string | null;
@@ -121,7 +156,6 @@ export interface JobPatch {
   recruiter_info?: JobRecruiter;
   salary_benchmark?: JobSalary;
   cv_draft?: string;
-  company_domain?: string;
 }
 
 const PREP_START_STATUSES = ["exists", "queued"] as const;
@@ -180,6 +214,18 @@ export async function reanalyzeJob(id: string): Promise<void> {
 export async function startInterviewPrep(id: string, regenerate: boolean): Promise<PrepStart> {
   const suffix = regenerate ? "/interview-prep/regenerate" : "/interview-prep";
   const started = await api.request(`${jobPath(id)}${suffix}`, prepStartSchema, {
+    method: "POST",
+  });
+  return started.status;
+}
+
+const POSTING_DETAILS_START_STATUSES = ["queued", "running"] as const;
+export type PostingDetailsStart = (typeof POSTING_DETAILS_START_STATUSES)[number];
+const postingDetailsStartSchema = z.object({ status: z.enum(POSTING_DETAILS_START_STATUSES) });
+
+/** Ends with posting_details_ended; "running" means one is already running. */
+export async function startPostingDetails(id: string): Promise<PostingDetailsStart> {
+  const started = await api.request(`${jobPath(id)}/posting-details`, postingDetailsStartSchema, {
     method: "POST",
   });
   return started.status;

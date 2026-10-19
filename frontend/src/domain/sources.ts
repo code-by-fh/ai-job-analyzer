@@ -97,57 +97,21 @@ export interface LinkLike {
   text: string;
 }
 
-const MIN_GROUP = 2;
-const DEEP_PATH = 3;
-const GROUP_DEPTH = 2;
-const SLUG_DELIMITER = /[-_.]/;
-const ROOT = "/";
-
 function parsed(url: string): URL | null {
   return URL.canParse(url) ? new URL(url) : null;
 }
 
-function segmentsOf(url: URL): string[] {
-  return url.pathname.split("/").filter(Boolean);
-}
-
-/** Links of one kind share their first path segments ("/jobsuche/p") or, for slugs, the first word. */
-function groupKey(url: URL): string {
-  if (url.search) return url.pathname;
-  const segments = segmentsOf(url);
-  if (segments.length <= 1) return `/${(segments[0] ?? "").split(SLUG_DELIMITER)[0]}`;
-  return `/${segments.slice(0, Math.min(GROUP_DEPTH, segments.length - 1)).join("/")}`;
-}
-
-function groupLinks(links: readonly LinkLike[]): string[][] {
-  const groups = new Map<string, string[]>();
-  for (const link of links) {
-    const url = parsed(link.url);
-    const key = url ? groupKey(url) : ROOT;
-    if (key !== ROOT) groups.set(key, [...(groups.get(key) ?? []), link.url]);
-  }
-  return [...groups.values()];
-}
-
-function pathDepth(url: string): number {
-  const link = parsed(url);
-  return link ? segmentsOf(link).length : 0;
-}
-
-/** D10 step 2 preselection (the old wizard's heuristic, inventory C.2). */
-export function suggestJobLinks(links: readonly LinkLike[]): string[] {
-  const largest = groupLinks(links).reduce<string[]>(
-    (best, group) => (group.length > best.length ? group : best),
-    [],
-  );
-  if (largest.length >= MIN_GROUP) return largest;
-  return links.filter((link) => pathDepth(link.url) >= DEEP_PATH).map((link) => link.url);
-}
-
-/** The crawl filter's own test (`pattern in url`); an empty pattern matches nothing here. */
+/**
+ * The crawl filter's own test (core/platform_rules.py `url_matches_pattern`): a pattern starting
+ * with "/" must begin the link's path plus query, any other (older) one is a substring of the URL.
+ * An empty pattern matches nothing here.
+ */
 export function matchingCount(links: readonly LinkLike[], pattern: string): number {
   const text = pattern.trim();
-  return text ? links.filter((link) => link.url.includes(text)).length : 0;
+  if (!text) return 0;
+  const matches = (url: string) =>
+    text.startsWith("/") ? linkPath(url).startsWith(text) : url.includes(text);
+  return links.filter((link) => matches(link.url)).length;
 }
 
 export function linkPath(url: string): string {
@@ -156,6 +120,13 @@ export function linkPath(url: string): string {
 }
 
 export const MAX_NAME_LENGTH = 100;
+const MAX_PATTERN_LENGTH = 300;
+
+/** The server's pattern rule (core/platform_rules.py): "/" alone would match every link of the site. */
+export function isPattern(text: string): boolean {
+  const pattern = text.trim();
+  return pattern.replaceAll("/", "") !== "" && pattern.length <= MAX_PATTERN_LENGTH;
+}
 
 /** The server's name rule (core/platform_rules.py): 1 to 100 characters after trimming. */
 export function isName(text: string): boolean {
@@ -168,7 +139,7 @@ const SOURCE_FIELDS = [
   "selected_urls",
   "url_pattern",
   "name",
-  "schedule_time",
+  "schedule_times",
   "schedule_days",
 ] as const;
 export type SourceField = (typeof SOURCE_FIELDS)[number];
@@ -186,7 +157,7 @@ const WIZARD_STEP_OF: Readonly<Record<SourceField, WizardStep>> = {
   selected_urls: 2,
   url_pattern: 2,
   name: 3,
-  schedule_time: 3,
+  schedule_times: 3,
   schedule_days: 3,
 };
 

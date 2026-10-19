@@ -1,12 +1,13 @@
 import os
 from functools import lru_cache
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 from urllib.parse import urlparse
+from uuid import UUID
 
 import redis
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 from sqlalchemy import and_, func, or_
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from core.auth import create_access_token, get_current_user, get_db, token_claims
 from database.core import (
     iso_utc,
+    MAX_SOURCE_CHANNELS,
     JobDocument,
     JobEntry,
     JobPlatform,
@@ -28,9 +30,7 @@ from database.core import (
     PlatformUpdate,
     RecipientList,
     User,
-    UserProfile,
 )
-from core.connection_errors import connection_test_error
 from core.crawl_registry import (
     ALREADY_RUNNING,
     SCRAPER_START_TIMEOUT_SECONDS,
@@ -41,11 +41,12 @@ from core.crawl_registry import (
 )
 from core.job_status import STATUS_SEEN
 from core.logger import get_logger
+from core.profile_rules import PROFILE_REQUIRED, user_profile_complete
 from core.platform_rules import (
     SCHEDULE_INCOMPLETE,
     check_name,
     check_schedule_days,
-    check_schedule_time,
+    check_schedule_times,
     check_url_pattern,
     incomplete_schedule_field,
 )
@@ -58,14 +59,11 @@ from core.url_safety import (
     is_public_http_url,
 )
 from intelligence.service import generate_platform_name, get_client_and_model
-from routers.deps import APPLICATION_STATUSES, CRAWL_RUNNING, NOTIFICATION_TEST_RATE, limiter, user_or_ip_key
-from services import render_client
-from workers.worker import (
-    _send_via_mailjet_batch,
-    _send_via_pushover,
-    _send_via_resend_batch,
-    _send_via_smtp_batch,
-)
+from routers.deps import APPLICATION_STATUSES, CRAWL_RUNNING
+from services import page_rendering
+from routers.notifications import http_error
+from services import notifications_client
+from services.notifications_client import NotifyError, owner_for
 
 logger = get_logger(__name__)
 
@@ -86,14 +84,9 @@ def _require_public_url(url: str) -> None:
         raise HTTPException(status_code=422, detail=_URL_NOT_PUBLIC_DETAIL)
 
 
-class _FakeJob:
-    id = 0
-    title = "Senior Software Engineer"
-    company = "Acme Corp"
-    match_score = 87.0
-    reasoning = "Strong match based on your Python and FastAPI experience."
-    url = "https://example.com/job/123"
-    platform_id = None
+def _selected_types(platform: JobPlatform) -> List[str]:
+    """The old switch names of the selected channels, for the old drawer (one per type, in order)."""
+    return list(dict.fromkeys(entry["type"].upper() for entry in platform.notification_channels or []))
 
 
 def _serialize_platform(platform: JobPlatform, job_count: int = 0, seen_count: int = 0) -> dict:
@@ -104,12 +97,13 @@ def _serialize_platform(platform: JobPlatform, job_count: int = 0, seen_count: i
         "name": platform.name,
         "favicon_url": platform.favicon_url,
         "crawl_interval_minutes": platform.crawl_interval_minutes,
-        "schedule_time": platform.schedule_time,
+        "schedule_times": platform.schedule_times,
         "schedule_days": platform.schedule_days,
         "last_crawl_at": iso_utc(platform.last_crawl_at),
         "is_active": platform.is_active,
         "is_notification_enabled": platform.is_notification_enabled,
-        "notification_adapters": platform.notification_adapters or [],
+        "notification_adapters": _selected_types(platform),
+        "notification_channel_ids": [entry["id"] for entry in platform.notification_channels or []],
         "pushover_template": platform.pushover_template,
         "resend_template": platform.resend_template,
         "resend_recipients": platform.resend_recipients,
@@ -128,7 +122,7 @@ def _serialize_platform(platform: JobPlatform, job_count: int = 0, seen_count: i
 # The scraper's preview runs up to two DNS checks and one render call, then parses the page; waiting less
 # answers "Failed to fetch links" while the scraper still finishes.
 PREVIEW_PARSE_MARGIN_SECONDS = 5
-PREVIEW_TIMEOUT_SECONDS = render_client.HTTP_TIMEOUT_SECONDS + 2 * DNS_TIMEOUT_SECONDS + PREVIEW_PARSE_MARGIN_SECONDS
+PREVIEW_TIMEOUT_SECONDS = page_rendering.HTTP_TIMEOUT_SECONDS + 2 * DNS_TIMEOUT_SECONDS + PREVIEW_PARSE_MARGIN_SECONDS
 
 
 def _trigger_scraper_search(platform: JobPlatform, current_user: User, is_initial_run: bool) -> dict:
@@ -163,6 +157,12 @@ def _crawl_refusal(result: dict) -> Optional[HTTPException]:
 
 DEFAULT_RUNS_PAGE = 10
 MAX_RUNS_PAGE = 50
+
+
+def _require_profile(db: Session, user_id: int) -> None:
+    """Sources need a maintained profile: without one nothing they find could be matched."""
+    if not user_profile_complete(db, user_id):
+        raise HTTPException(status_code=409, detail=PROFILE_REQUIRED)
 
 
 def _owned_platform(db: Session, platform_id: int, user_id: int) -> JobPlatform:
@@ -315,9 +315,9 @@ def _change_url(db: Session, platform: JobPlatform, new_url: str) -> None:
     platform.url = new_url
 
 
-def _check_schedule_pair(time: Optional[str], days: Optional[List[int]]) -> None:
+def _check_schedule_pair(times: Optional[List[str]], days: Optional[List[int]]) -> None:
     """422 on the missing half of a schedule; PATCH and setup share it so both name the same field."""
-    missing = incomplete_schedule_field(time, days)
+    missing = incomplete_schedule_field(times, days)
     if missing:
         detail = [{"loc": ["body", missing], "msg": SCHEDULE_INCOMPLETE, "type": "value_error"}]
         raise HTTPException(status_code=422, detail=detail)
@@ -353,6 +353,42 @@ def _apply_copies(platform: JobPlatform, platform_update: PlatformUpdate) -> Non
         setattr(platform, field, _checked_copy(platform, field, getattr(platform_update, field)) or None)
 
 
+UNKNOWN_CHANNEL = "unknown channel"
+
+
+def _selection_from_ids(channel_ids, channels) -> List[dict]:
+    """Entries for the given ids in their order (repeats dropped); 422 on an id that is not the user's."""
+    by_id = {channel["id"]: channel for channel in channels}
+    errors = [
+        {"type": "value_error", "loc": ["body", "notification_channel_ids", index], "msg": UNKNOWN_CHANNEL}
+        for index, channel_id in enumerate(channel_ids) if str(channel_id) not in by_id
+    ]
+    if errors:
+        raise RequestValidationError(errors)
+    return [{"id": channel_id, "type": by_id[channel_id]["type"]} for channel_id in dict.fromkeys(map(str, channel_ids))]
+
+
+def _channel_selection(channel_ids, user_id: int) -> List[dict]:
+    """The entries for the given ids, checked against the user's channels in the service."""
+    try:
+        channels = notifications_client.get_client().list_channels(owner_for(user_id))
+    except NotifyError as error:
+        raise http_error(error) from error
+    return _selection_from_ids(channel_ids, channels)
+
+
+def _store_selection(platform: JobPlatform, selection: List[dict]) -> None:
+    platform.notification_channels = selection
+    platform.is_notification_enabled = bool(selection)
+
+
+def _apply_channel_selection(platform: JobPlatform, platform_update: PlatformUpdate, user_id: int) -> None:
+    """``notification_channel_ids`` selects channels, checked against the user's channels in the service."""
+    if "notification_channel_ids" not in platform_update.model_fields_set:
+        return
+    _store_selection(platform, _channel_selection(platform_update.notification_channel_ids or [], user_id))
+
+
 @router.patch("/platforms/{platform_id}", response_model=PlatformResponse)
 def update_platform(
     platform_id: int,
@@ -380,8 +416,8 @@ def update_platform(
     if platform_update.crawl_interval_minutes is not None:
         db_platform.crawl_interval_minutes = platform_update.crawl_interval_minutes
         
-    if "schedule_time" in platform_update.model_fields_set:
-        db_platform.schedule_time = platform_update.schedule_time or None
+    if "schedule_times" in platform_update.model_fields_set:
+        db_platform.schedule_times = platform_update.schedule_times or None
     if "schedule_days" in platform_update.model_fields_set:
         db_platform.schedule_days = platform_update.schedule_days or None
     if platform_update.is_active is not None:
@@ -390,17 +426,15 @@ def update_platform(
     if platform_update.is_notification_enabled is not None:
         db_platform.is_notification_enabled = platform_update.is_notification_enabled
         
-    if platform_update.notification_adapters is not None:
-        db_platform.notification_adapters = platform_update.notification_adapters
-        db_platform.is_notification_enabled = len(platform_update.notification_adapters) > 0
-        
+    _apply_channel_selection(db_platform, platform_update, current_user.id)
+
     _apply_copies(db_platform, platform_update)
     if platform_update.url_pattern is not None:
         db_platform.url_pattern = platform_update.url_pattern
     # Only a schedule edit is checked, so a legacy half-schedule row can still be renamed.
     # Raised before the commit, so the half-applied change is discarded with the session.
-    if {"schedule_time", "schedule_days"} & platform_update.model_fields_set:
-        _check_schedule_pair(db_platform.schedule_time, db_platform.schedule_days)
+    if {"schedule_times", "schedule_days"} & platform_update.model_fields_set:
+        _check_schedule_pair(db_platform.schedule_times, db_platform.schedule_days)
 
     db.commit()
     db.refresh(db_platform)
@@ -440,135 +474,6 @@ def trigger_platform_name_generation(
     db_platform.name = new_name
     db.commit()
     return {"id": platform_id, "name": new_name}
-
-
-@router.post("/platforms/{platform_id}/test-pushover")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_pushover_notification(
-    request: Request,
-    platform_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        platform = (
-            db.query(JobPlatform)
-            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
-            .first()
-        )
-        if not platform:
-            raise HTTPException(status_code=404, detail="Platform not found")
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.pushover_user_key or not profile.pushover_api_token:
-            raise HTTPException(status_code=400, detail="Pushover credentials not configured")
-
-        if not _send_via_pushover(_FakeJob(), profile, platform=platform):
-            raise HTTPException(status_code=500, detail="Pushover delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, f"test-pushover for platform {platform_id}")
-
-
-@router.post("/platforms/{platform_id}/test-resend")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_resend_notification(
-    request: Request,
-    platform_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        platform = (
-            db.query(JobPlatform)
-            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
-            .first()
-        )
-        if not platform:
-            raise HTTPException(status_code=404, detail="Platform not found")
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.resend_api_key or not profile.resend_from_email:
-            raise HTTPException(status_code=400, detail="Resend credentials not configured")
-
-        if not platform.resend_recipients:
-            raise HTTPException(status_code=400, detail="No Resend recipients configured for this platform")
-
-        if not _send_via_resend_batch([_FakeJob()], profile, platform=platform, userName=current_user.username):
-            raise HTTPException(status_code=500, detail="Resend delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, f"test-resend for platform {platform_id}")
-
-
-@router.post("/platforms/{platform_id}/test-mailjet")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_mailjet_notification(
-    request: Request,
-    platform_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        platform = (
-            db.query(JobPlatform)
-            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
-            .first()
-        )
-        if not platform:
-            raise HTTPException(status_code=404, detail="Platform not found")
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.mailjet_api_key or not profile.mailjet_secret_key or not profile.mailjet_from_email:
-            raise HTTPException(status_code=400, detail="Mailjet credentials not configured")
-
-        if not platform.mailjet_recipients:
-            raise HTTPException(status_code=400, detail="No Mailjet recipients configured for this platform")
-
-        if not _send_via_mailjet_batch([_FakeJob()], profile, platform=platform, userName=current_user.username):
-            raise HTTPException(status_code=500, detail="Mailjet delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, f"test-mailjet for platform {platform_id}")
-
-
-@router.post("/platforms/{platform_id}/test-smtp")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_smtp_notification(
-    request: Request,
-    platform_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        platform = (
-            db.query(JobPlatform)
-            .filter(JobPlatform.id == platform_id, JobPlatform.user_id == current_user.id)
-            .first()
-        )
-        if not platform:
-            raise HTTPException(status_code=404, detail="Platform not found")
-
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.smtp_host or not profile.smtp_user or not profile.smtp_password:
-            raise HTTPException(status_code=400, detail="SMTP credentials not configured")
-
-        if not platform.smtp_recipients:
-            raise HTTPException(status_code=400, detail="No SMTP recipients configured for this platform")
-
-        if not _send_via_smtp_batch([_FakeJob()], profile, platform=platform, userName=current_user.username):
-            raise HTTPException(status_code=500, detail="SMTP delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, f"test-smtp for platform {platform_id}")
 
 
 _REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://ai-job-agent-redis:6379/0")
@@ -711,6 +616,7 @@ def trigger_platform_crawl(
     if db_platform.setup_status == 'pending_setup':
         raise HTTPException(status_code=400, detail="Platform setup not completed")
 
+    _require_profile(db, current_user.id)
     is_initial_run = db_platform.last_crawl_at is None
 
     try:
@@ -776,8 +682,9 @@ def complete_platform_setup(
     ).first()
     if not platform:
         raise HTTPException(status_code=404, detail="Platform not found")
+    _require_profile(db, current_user.id)
 
-    url_pattern = _infer_url_pattern(setup.selected_urls, platform.url)
+    url_pattern = _infer_url_pattern(setup.selected_urls)
     platform.url_pattern = url_pattern
     platform.setup_status = 'active'
     db.commit()
@@ -835,6 +742,29 @@ def preview_links_for_url(
         raise HTTPException(status_code=500, detail="Failed to fetch links from platform")
 
 
+# Bounds of the pattern preview: a results page lists far fewer links, and browsers cap URLs near 2 KB.
+MAX_SELECTED_LINKS = 1000
+MAX_LINK_LENGTH = 2048
+
+
+class UrlPatternRequest(BaseModel):
+    selected_urls: List[Annotated[str, Field(max_length=MAX_LINK_LENGTH)]] = Field(
+        min_length=1, max_length=MAX_SELECTED_LINKS,
+    )
+
+
+@router.post("/platforms/url-pattern")
+def derive_url_pattern(
+    request: UrlPatternRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """The pattern the setup would infer from these example links, so the wizard can show it first.
+
+    Nothing is fetched or stored; the links are only parsed.
+    """
+    return {"url_pattern": _infer_url_pattern(request.selected_urls)}
+
+
 class PlatformSetupCreateRequest(BaseModel):
     url: str
     selected_urls: List[str] = Field(min_length=1)
@@ -843,9 +773,10 @@ class PlatformSetupCreateRequest(BaseModel):
     initial_run: Literal["analyze", "seed", "none"] = "seed"
     crawl_interval_minutes: int = 60
     name: Optional[str] = None
-    schedule_time: Optional[str] = None
+    schedule_times: Optional[List[str]] = None
     schedule_days: Optional[List[int]] = None
     url_pattern: Optional[str] = None
+    notification_channel_ids: Optional[List[UUID]] = Field(None, max_length=MAX_SOURCE_CHANNELS)
 
     @field_validator("url")
     @classmethod
@@ -857,16 +788,16 @@ class PlatformSetupCreateRequest(BaseModel):
     def _name_text(cls, value: Optional[str]) -> Optional[str]:
         return check_name(value)
 
-    @field_validator("schedule_time")
+    @field_validator("schedule_times")
     @classmethod
-    def _time_format(cls, value: Optional[str]) -> Optional[str]:
-        return check_schedule_time(value)
+    def _times_format(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        return check_schedule_times(value)
 
     @field_validator("schedule_days")
     @classmethod
     def _days_range(cls, value: Optional[List[int]]) -> Optional[List[int]]:
         # The time/days pair is checked in the endpoint (_check_schedule_pair), like PATCH, so a refused
-        # time is reported once and "days without time" lands on schedule_time in both.
+        # time list is reported once and "days without times" lands on schedule_times in both.
         return check_schedule_days(value)
 
     @field_validator("url_pattern")
@@ -897,9 +828,9 @@ def _ai_name(db: Session, url: str) -> str:
 def _apply_setup_choices(platform: JobPlatform, request: PlatformSetupCreateRequest) -> None:
     if request.name:
         platform.name = request.name
-    platform.schedule_time = request.schedule_time
+    platform.schedule_times = request.schedule_times
     platform.schedule_days = request.schedule_days
-    platform.url_pattern = request.url_pattern or _infer_url_pattern(request.selected_urls, request.url)
+    platform.url_pattern = request.url_pattern or _infer_url_pattern(request.selected_urls)
 
 
 @router.post("/platforms/setup", response_model=PlatformSetupResponse)
@@ -914,9 +845,13 @@ def create_platform_with_setup(
     behind. A legacy row still in 'pending_setup' for the same URL is reused so
     it can be finished cleanly; an already-active duplicate is rejected.
     """
-    _check_schedule_pair(request.schedule_time, request.schedule_days)
+    _require_profile(db, current_user.id)
+    _check_schedule_pair(request.schedule_times, request.schedule_days)
     domain = _validate_http_url(request.url)
     _require_public_url(request.url)
+    # Checked before anything is stored, so a refused channel (422) or a service outage (502) creates no source.
+    chosen = request.notification_channel_ids
+    selection = _channel_selection(chosen, current_user.id) if chosen else None
 
     existing = (
         db.query(JobPlatform)
@@ -944,6 +879,8 @@ def create_platform_with_setup(
         db.add(platform)
 
     _apply_setup_choices(platform, request)
+    if selection is not None:
+        _store_selection(platform, selection)
     platform.setup_status = "active"
     db.commit()
     db.refresh(platform)
@@ -970,12 +907,12 @@ def create_platform_with_setup(
 _PATTERN_DELIMS = "/-_=?&."
 
 
-def _infer_url_pattern(selected_urls: List[str], base_url: str) -> str:
-    """Infer a substring that recognises a platform's job-detail URLs.
+def _infer_url_pattern(selected_urls: List[str]) -> str:
+    """Infer the start (path plus query) that recognises a platform's job-detail URLs.
 
-    The crawl filter applies this as a plain ``pattern in url`` test, so the
-    pattern must be a substring shared by *every* job URL on the platform —
-    including ones the user has not selected yet.
+    The crawl filter (``url_matches_pattern``) requires a link's path plus query
+    to begin with this pattern, so it must be a prefix shared by *every* job URL
+    on the platform, including ones the user has not selected yet.
 
     Many boards encode the job id inside a single path segment, e.g. StepStone's
     ``/stellenangebote--<title>--<id>-inline.html``. A segment-level common

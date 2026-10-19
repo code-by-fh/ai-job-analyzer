@@ -1,13 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { ActivityPanel } from "@/features/shell/ActivityPanel";
 import { activityLabel } from "@/features/shell/ActivityButton";
 import { GlobalSearch, isTypingTarget, requestSearch } from "@/features/shell/GlobalSearch";
 import { initialOf, isActivePath, isMoreActive } from "@/features/shell/navigation";
 import { NavBadge } from "@/features/shell/Sidebar";
 import { translatorFor } from "@/i18n/translate";
-import { EMPTY_ACTIVITY } from "@/realtime/activity";
 import { renderWithProviders } from "../support/render";
 
 const t = translatorFor("de");
@@ -60,29 +58,6 @@ describe("NavBadge", () => {
       <NavBadge itemKey="inbox" counts={{ inbox: 0, sourceErrors: 0, applicationsDue: 0 }} />,
     );
     expect(container).toBeEmptyDOMElement();
-  });
-});
-
-describe("ActivityPanel", () => {
-  it("describes a running crawl step by step", () => {
-    const running = [
-      {
-        id: "c1",
-        source: "www.stepstone.de",
-        step: "collecting" as const,
-        done: 5,
-        total: 12,
-        platformId: null,
-      },
-    ];
-    render(<ActivityPanel activity={{ running, lastFinished: null, endedIds: [] }} />);
-    expect(screen.getByText("www.stepstone.de durchsuchen")).toBeInTheDocument();
-    expect(screen.getByText("Links sammeln: 5 von 12")).toBeInTheDocument();
-  });
-
-  it("says when nothing runs", () => {
-    render(<ActivityPanel activity={EMPTY_ACTIVITY} />);
-    expect(screen.getByText("Keine laufenden Aufgaben.")).toBeInTheDocument();
   });
 });
 

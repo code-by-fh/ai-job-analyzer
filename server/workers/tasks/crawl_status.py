@@ -9,8 +9,9 @@ once now.
 import json
 
 from core.logger import get_logger
+from core.crawl_progress import read_crawl_progress
 from core.crawl_registry import touch_crawl_progress
-from workers.notifications.email import flush_all_digests
+from services.match_notifications import flush_digest
 from workers.tasks.platform_runs import record_platform_run
 
 logger = get_logger(__name__)
@@ -56,10 +57,11 @@ def maybe_complete_crawl(crawl_job_id, user_id, db, r):
                     "user_id": user_id,
                     "total": total,
                     "total_found": total_found,
+                    "progress": read_crawl_progress(r, crawl_job_id),
                 }
             ),
         )
-        flush_all_digests(crawl_job_id, user_id, db, r)
+        flush_digest(crawl_job_id, user_id, db, r)
         r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
         return True
 

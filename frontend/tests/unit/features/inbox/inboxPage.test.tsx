@@ -287,7 +287,7 @@ describe("InboxPage", () => {
 function scheduled(run: PlatformBody["last_run"]): PlatformBody[] {
   return platformsWithRun(run).map((platform) => ({
     ...platform,
-    schedule_time: "14:00",
+    schedule_times: ["14:00"],
     schedule_days: [0, 1, 2, 3, 4],
   }));
 }

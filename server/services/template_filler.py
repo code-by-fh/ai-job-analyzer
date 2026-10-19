@@ -1,17 +1,13 @@
 """Fill annotated HTML templates with profile data."""
 
 import json
-import os
-import subprocess
-import sys
-import threading
-from pathlib import Path
 
 from bs4 import BeautifulSoup, NavigableString
 from jinja2 import TemplateError, TemplateSyntaxError, Undefined, nodes
 from jinja2.sandbox import ImmutableSandboxedEnvironment, SecurityError
 
 from core.logger import get_logger
+from services.bounded_child import ChildLimits, run_child
 
 logger = get_logger(__name__)
 
@@ -27,8 +23,6 @@ TEMPLATE_RENDER_MEMORY_BYTES = 512 * 1024 * 1024
 TEMPLATE_RENDER_CPU_SECONDS = 15
 TEMPLATE_RENDER_TIMEOUT_SECONDS = 20
 _CHILD_MODULE = "services.template_render_child"
-_SERVER_DIR = Path(__file__).resolve().parent.parent
-_CHILD_ENV_KEYS = ("PATH", "LD_LIBRARY_PATH", "LANG", "LC_ALL")
 _MAX_CHILD_OUTPUT_BYTES = MAX_RENDERED_HTML_LENGTH * 4
 _PRIVATE_NAME_PREFIX = "_"
 _ATTR_FILTER = "attr"
@@ -145,17 +139,6 @@ def render_jinja2_template(template_html: str, data: dict) -> str:
         raise TemplateRejected(TEMPLATE_REJECTED_MESSAGE) from error
 
 
-def _child_environment() -> dict:
-    """Minimal environment for the render child, so it is not handed the application secrets.
-
-    The child is a resource boundary only (memory, CPU, wall clock), not a privilege boundary:
-    it runs as the same user. The in-process sandbox is the security layer; the worker also
-    disables its dump flag (core/process_hardening.py) so the child cannot read its environment.
-    """
-    inherited = {key: os.environ[key] for key in _CHILD_ENV_KEYS if key in os.environ}
-    return {**inherited, "PYTHONPATH": str(_SERVER_DIR), "PYTHONDONTWRITEBYTECODE": "1"}
-
-
 def _render_in_child(template_html: str, data: dict) -> str:
     request = json.dumps({
         "template": template_html,
@@ -163,31 +146,8 @@ def _render_in_child(template_html: str, data: dict) -> str:
         "memory_bytes": TEMPLATE_RENDER_MEMORY_BYTES,
         "cpu_seconds": TEMPLATE_RENDER_CPU_SECONDS,
     }).encode("utf-8")
-    child = subprocess.Popen(
-        [sys.executable, "-m", _CHILD_MODULE],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        cwd=_SERVER_DIR, env=_child_environment(),
-    )
-    watchdog = threading.Timer(TEMPLATE_RENDER_TIMEOUT_SECONDS, child.kill)
-    watchdog.start()
-    try:
-        return _collect_child_output(child, request)
-    finally:
-        watchdog.cancel()
-        child.kill()
-        child.wait()
-
-
-def _collect_child_output(child, request: bytes) -> str:
-    child.stdin.write(request)
-    child.stdin.close()
-    # Reading is capped so even a child that ignores its own output cap cannot fill the worker.
-    output = child.stdout.read(_MAX_CHILD_OUTPUT_BYTES + 1)
-    if child.wait() != 0:
-        raise TemplateRejected(f"render child exited with {child.returncode}")
-    if len(output) > _MAX_CHILD_OUTPUT_BYTES:
-        raise TemplateRejected("render child output too large")
-    return output.decode("utf-8")
+    limits = ChildLimits(TEMPLATE_RENDER_TIMEOUT_SECONDS, _MAX_CHILD_OUTPUT_BYTES)
+    return run_child(_CHILD_MODULE, request, limits).decode("utf-8")
 
 
 def _render_bounded(template, data: dict) -> str:

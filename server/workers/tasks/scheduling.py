@@ -12,7 +12,10 @@ import requests
 from core.celery_config import celery_app
 from core.crawl_registry import ALREADY_RUNNING, SCRAPER_START_TIMEOUT_SECONDS, is_started
 from core.logger import get_logger
+from core.profile_rules import user_profile_complete
 from database.core import SessionLocal, JobEntry, JobPlatform, UserProfile, User, as_utc
+from services.match_notifications import send_follow_up_reminder
+from services.notifications_client import NotifyError
 from workers.crawl_control import reap_stalled_crawls
 from workers.tasks.platform_runs import record_failed_run
 
@@ -47,27 +50,15 @@ def check_follow_ups():
 
             message = f"Follow-up due: {job.title} at {job.company}"
 
-            # Use existing notification adapters (same pattern as worker.py)
-            if (
-                user_profile.active_notification_service == "PUSHOVER"
-                and user_profile.pushover_user_key
-            ):
+            # The reminder still follows the old "active service" switch; delivery goes through the service.
+            if user_profile.active_notification_service == "PUSHOVER":
                 try:
-                    resp = requests.post(
-                        "https://api.pushover.net/1/messages.json",
-                        data={
-                            "token": user_profile.pushover_api_token,
-                            "user": user_profile.pushover_user_key,
-                            "message": message,
-                            "title": "Job Follow-up Reminder",
-                        },
-                    )
-                    if resp.status_code == 200:
+                    if send_follow_up_reminder(job.user_id, message):
                         notified_count += 1
-                    else:
-                        logger.error(f"Pushover notification failed: {resp.text}")
-                except Exception as e:
-                    logger.error(f"Pushover notification failed: {e}")
+                except NotifyError as error:
+                    # The date stays, so the next beat tries again.
+                    logger.error("Follow-up reminder not sent (%s)", error.code)
+                    continue
 
             # Clear follow_up after notifying (so it doesn't repeat)
             job.next_follow_up_at = None
@@ -99,39 +90,49 @@ def _user_timezone(db, user_id: int) -> tuple:
 
 
 def _slot_consumed(p, scheduled_local: datetime, user_tz) -> bool:
-    """True when today's slot already has its run: a crawl started after it, or a run finished after it.
+    """True when the slot already has its run: a crawl started after it, or a run finished after it.
 
     A refused start records a failed run, so a refusal consumes the slot instead of being retried every minute.
     """
+    slot = scheduled_local.strftime("%H:%M")
     if p.last_crawl_at:
         last_local = p.last_crawl_at.replace(tzinfo=timezone.utc).astimezone(user_tz)
         if last_local >= scheduled_local:
-            logger.info(f"[SCHEDULE] Skipped: already crawled today at {last_local.strftime('%H:%M')} (after scheduled {p.schedule_time})")
+            logger.info(f"[SCHEDULE] Skipped: already crawled at {last_local.strftime('%H:%M')} (after slot {slot})")
             return True
     finished_at = (p.last_run or {}).get("finished_at")
     if finished_at and as_utc(datetime.fromisoformat(finished_at)) >= scheduled_local:
-        logger.info(f"[SCHEDULE] Skipped '{p.name}': a run already finished after today's slot {p.schedule_time}")
+        logger.info(f"[SCHEDULE] Skipped '{p.name}': a run already finished after the slot {slot}")
         return True
     return False
 
 
+def _latest_slot(times: list, now_local: datetime) -> Optional[datetime]:
+    """The most recent of today's slots that has passed, or None. Earlier passed slots are superseded by it."""
+    slots = []
+    for value in times:
+        hour, minute = map(int, value.split(":"))
+        slots.append(now_local.replace(hour=hour, minute=minute, second=0, microsecond=0))
+    passed = [slot for slot in slots if slot <= now_local]
+    return max(passed) if passed else None
+
+
 def _is_due(p, now_local: datetime, user_tz) -> bool:
-    if not (p.schedule_time and p.schedule_days is not None):
+    if not (p.schedule_times and p.schedule_days is not None):
         logger.info(f"[SCHEDULE] Skipped '{p.name}': no schedule defined")
         return False
     if now_local.weekday() not in p.schedule_days:  # 0=Mon, 6=Sun
         logger.info(f"[SCHEDULE] Skipped: today={now_local.weekday()} not in {p.schedule_days}")
         return False
     try:
-        hour, minute = map(int, p.schedule_time.split(":"))
-        scheduled_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if now_local < scheduled_local:
-            logger.info(f"[SCHEDULE] Skipped: {p.schedule_time} not yet reached (now_local={now_local.strftime('%H:%M')})")
-            return False
-        return not _slot_consumed(p, scheduled_local, user_tz)
+        slot = _latest_slot(p.schedule_times, now_local)
     except (ValueError, AttributeError, TypeError) as e:
         logger.error(f"[SCHEDULE] Error parsing schedule for {p.name}: {e}")
         return False
+    if slot is None:
+        logger.info(f"[SCHEDULE] Skipped: {p.schedule_times} not yet reached (now_local={now_local.strftime('%H:%M')})")
+        return False
+    return not _slot_consumed(p, slot, user_tz)
 
 
 def _is_platform_due(db, p, now_utc: datetime) -> bool:
@@ -140,7 +141,7 @@ def _is_platform_due(db, p, now_utc: datetime) -> bool:
     logger.info(
         f"[SCHEDULE] Checking '{p.name}' (id={p.id}) | tz={tz_name} | "
         f"now_local={now_local.strftime('%H:%M')} | "
-        f"schedule_time={p.schedule_time!r} schedule_days={p.schedule_days!r} | "
+        f"schedule_times={p.schedule_times!r} schedule_days={p.schedule_days!r} | "
         f"last_crawl_at={p.last_crawl_at!r}"
     )
     return _is_due(p, now_local, user_tz)
@@ -196,6 +197,14 @@ def _attempt_crawl(db, p, now_utc: datetime) -> Optional[bool]:
         return False
 
 
+def _has_profile(db, p) -> bool:
+    """A user without a maintained profile gets no scheduled crawl (nothing is stamped, so it runs once the profile is there)."""
+    if user_profile_complete(db, p.user_id):
+        return True
+    logger.debug(f"[SCHEDULE] Skipped platform {p.id}: the owner's profile is not complete")
+    return False
+
+
 @celery_app.task(name="ai.check_platforms_for_crawl")
 def check_platforms_for_crawl():
     logger.info(" Checking platforms for scheduled crawls...")
@@ -207,7 +216,9 @@ def check_platforms_for_crawl():
             JobPlatform.setup_status == 'active',
         ).all()
         outcomes = [
-            _attempt_crawl(db, p, now_utc) for p in platforms if _is_platform_due(db, p, now_utc)
+            _attempt_crawl(db, p, now_utc)
+            for p in platforms
+            if _is_platform_due(db, p, now_utc) and _has_profile(db, p)
         ]
         _finish_check(db, outcomes)
     except Exception as e:

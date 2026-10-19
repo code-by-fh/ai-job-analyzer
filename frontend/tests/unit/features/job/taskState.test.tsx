@@ -63,4 +63,31 @@ describe("TaskState", () => {
     await userEvent.click(retry);
     expect(onRetry).not.toHaveBeenCalled();
   });
+
+  it("shows the elapsed time of a running task beside its status region, not inside it", () => {
+    const startedAt = Date.now() - 84_000;
+    const { container } = render(
+      <TaskState
+        phase="running"
+        runningText={RUNNING_TEXT}
+        onRetry={vi.fn()}
+        startedAt={startedAt}
+      />,
+    );
+    const elapsed = container.querySelector(".elapsed");
+    expect(elapsed).toHaveTextContent("01:24");
+    expect(region(container)?.contains(elapsed ?? null)).toBe(false);
+  });
+
+  it("shows no elapsed time once the task stalled", () => {
+    const { container } = render(
+      <TaskState
+        phase="stalled"
+        runningText={RUNNING_TEXT}
+        onRetry={vi.fn()}
+        startedAt={Date.now()}
+      />,
+    );
+    expect(container.querySelector(".elapsed")).toBeNull();
+  });
 });

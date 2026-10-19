@@ -250,6 +250,15 @@ function dateValue(day: string, time = ""): string | null {
   return date.toISOString();
 }
 
+/**
+ * The optional interview date of the phase dialog, with the drawer's day-plus-time rule: an empty
+ * (or unreadable) day leaves the stored date alone, so it never sends null.
+ */
+export function interviewDatePatch(day: string, time: string): JobPatch {
+  const interview = dateValue(day, time);
+  return interview ? { interview_at: interview } : {};
+}
+
 function datePatch(form: DatesForm, initial: DatesForm): JobPatch {
   const patch: JobPatch = {};
   if (form.followUp !== initial.followUp) patch.next_follow_up_at = dateValue(form.followUp);

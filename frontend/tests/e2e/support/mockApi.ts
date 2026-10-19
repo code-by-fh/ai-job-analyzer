@@ -1,5 +1,5 @@
 import type { Page, Request, Route, WebSocketRoute } from "@playwright/test";
-import { MOCK_API_PREFIX } from "./constants";
+import { FAVICON_SERVICE, MOCK_API_PREFIX } from "./constants";
 
 export interface MockResponse {
   status?: number;
@@ -62,7 +62,13 @@ function isReply(value: unknown): value is Reply {
 }
 
 const HTTP_OK = 200;
+// A 32 px ring, so screenshots show a favicon without reaching the real service (no live network).
+const FAVICON_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAdklEQVR42u2XyQ0AIAgE6cQSrdWKtAITTlkim/h15gULUaWMuTbnpUBDZKxwk4QXXCXhDRdJRMFZEtxPbjFJWMAaEbGANK4C2rAFIuAiCVgBr7RAC9QV+GcOpI9i+GX0ZB2nFxKISgZRSiFqOcRhAnGaQRyn0TlS5nYxXkKn7AAAAABJRU5ErkJggg==",
+  "base64",
+);
 const HTTP_NOT_FOUND = 404;
+const HTTP_NO_CONTENT = 204;
 
 /** Adds `more` to routes already handed to the mock; later requests see them. */
 export function setRoutes(routes: MutableRoutes, more: MockRoutes): void {
@@ -72,6 +78,9 @@ export function setRoutes(routes: MutableRoutes, more: MockRoutes): void {
 export async function mockApi(page: Page, routes: MockRoutes): Promise<ApiLog> {
   const log: ApiLog = { requests: [], unexpected: [], calls: [], sockets: [], closedSockets: [] };
   await page.route(`**${MOCK_API_PREFIX}/**`, (route) => fulfil(route, routes, log));
+  await page.route(FAVICON_SERVICE, (route) =>
+    route.fulfill({ status: HTTP_OK, contentType: "image/png", body: FAVICON_PNG }),
+  );
   // Accept the realtime socket without a server; tests push events through log.sockets.
   await page.routeWebSocket(new RegExp(`${MOCK_API_PREFIX}/ws$`), (socket) => {
     log.sockets.push(socket);
@@ -128,5 +137,8 @@ async function fulfil(route: Route, routes: MockRoutes, log: ApiLog): Promise<vo
     });
     return;
   }
-  await route.fulfill(jsonAnswer(response, sent, route.request()));
+  const answer = jsonAnswer(response, sent, route.request());
+  // A 204 has no body at all (a JSON "null" body would not be a valid no-content answer).
+  if (answer.status === HTTP_NO_CONTENT) await route.fulfill({ status: HTTP_NO_CONTENT });
+  else await route.fulfill(answer);
 }

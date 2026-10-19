@@ -32,6 +32,7 @@ beforeEach(() => navigation.replace.mockReset());
 function setup(job: JobDetail, statusResponse?: Response): RecordedCall[] {
   const calls = stubRoutes({
     "GET /jobs/job-1/history": HISTORY,
+    "PATCH /jobs/job-1": { status: "updated" },
     "POST /jobs/job-1/status":
       statusResponse ??
       ((call: RecordedCall) =>
@@ -43,6 +44,9 @@ function setup(job: JobDetail, statusResponse?: Response): RecordedCall[] {
 
 const statusPosts = (calls: RecordedCall[]) =>
   calls.filter((call) => call.method === "POST").map((call) => JSON.parse(call.body ?? ""));
+
+const patchBodies = (calls: RecordedCall[]) =>
+  calls.filter((call) => call.method === "PATCH").map((call) => JSON.parse(call.body ?? ""));
 
 async function choose(target: string) {
   await userEvent.click(screen.getByRole("button", { name: "Phase ändern" }));
@@ -227,5 +231,101 @@ describe("PhaseTrack", () => {
       await screen.findByText("Diese Phase lässt sich gerade nicht setzen."),
     ).toBeInTheDocument();
     expect(screen.queryByText(/GENERATING/)).not.toBeInTheDocument();
+  });
+
+  it("selects the Firma tab after a change to Beworben", async () => {
+    setup(buildJob({ status: "DRAFTED", ...READY }));
+    await choose("Beworben");
+    await waitFor(() =>
+      expect(navigation.replace).toHaveBeenCalledWith("/jobs/job-1?tab=firma", { scroll: false }),
+    );
+  });
+
+  it("selects the Verlauf tab after a change to Angebot", async () => {
+    setup(buildJob({ status: "INTERVIEW", ...READY }));
+    await choose("Angebot");
+    await waitFor(() =>
+      expect(navigation.replace).toHaveBeenCalledWith("/jobs/job-1?tab=verlauf", {
+        scroll: false,
+      }),
+    );
+  });
+
+  it("keeps the tab when the server refuses the change", async () => {
+    setup(buildJob({ status: "DRAFTED", ...READY }), jsonResponse(409, { detail: "locked" }));
+    await choose("Beworben");
+    await screen.findByText("Diese Phase lässt sich gerade nicht setzen.");
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("asks for the interview date but changes to Interview without one", async () => {
+    const calls = setup(buildJob({ status: "APPLIED", ...READY }));
+    await choose("Interview");
+    const dialog = screen.getByRole("dialog", { name: "Steht der Interviewtermin schon?" });
+    expect(within(dialog).getByLabelText("Interviewtermin (optional)")).toHaveValue("");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Auf Interview setzen" }));
+    await waitFor(() => expect(statusPosts(calls)).toEqual([{ to: "INTERVIEW" }]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(patchBodies(calls)).toEqual([]);
+  });
+
+  it("saves an entered interview date after the change", async () => {
+    const calls = setup(buildJob({ status: "APPLIED", ...READY }));
+    await choose("Interview");
+    const dialog = screen.getByRole("dialog", { name: "Steht der Interviewtermin schon?" });
+    await userEvent.type(within(dialog).getByLabelText("Interviewtermin (optional)"), "2026-10-20");
+    await userEvent.type(within(dialog).getByLabelText("Uhrzeit (optional)"), "14:30");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Auf Interview setzen" }));
+    await waitFor(() =>
+      expect(patchBodies(calls)).toEqual([
+        { interview_at: new Date(2026, 9, 20, 14, 30).toISOString() },
+      ]),
+    );
+    expect(statusPosts(calls)).toEqual([{ to: "INTERVIEW" }]);
+  });
+
+  it("says where to add the date when only its save fails", async () => {
+    const job = buildJob({ status: "APPLIED", ...READY });
+    stubRoutes({
+      "GET /jobs/job-1/history": HISTORY,
+      "PATCH /jobs/job-1": jsonResponse(500, { detail: "boom" }),
+      "POST /jobs/job-1/status": jsonResponse(200, { ...job, status: "INTERVIEW" }),
+    });
+    renderWithProviders(<PhaseTrack job={job} />);
+    await choose("Interview");
+    const dialog = screen.getByRole("dialog", { name: "Steht der Interviewtermin schon?" });
+    await userEvent.type(within(dialog).getByLabelText("Interviewtermin (optional)"), "2026-10-20");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Auf Interview setzen" }));
+    expect(
+      await screen.findByText(/der Interviewtermin aber nicht gespeichert/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("names a stored interview date and keeps it when the field stays empty", async () => {
+    const calls = setup(
+      buildJob({ status: "OFFER", ...READY, interview_at: "2026-10-12T07:00:00Z" }),
+    );
+    await choose("Interview");
+    const dialog = screen.getByRole("dialog", { name: "Zurück auf Interview?" });
+    expect(dialog).toHaveTextContent("Eingetragen: 12.10.2026. Leer lassen, um ihn zu behalten.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Zurücksetzen" }));
+    await waitFor(() => expect(statusPosts(calls)).toEqual([{ to: "INTERVIEW" }]));
+    expect(patchBodies(calls)).toEqual([]);
+  });
+
+  it("offers the interview date also when the change skips phases", async () => {
+    setup(buildJob({ status: "DRAFTED", ...READY }));
+    await choose("Interview");
+    const dialog = screen.getByRole("dialog", { name: "Beworben überspringen?" });
+    expect(within(dialog).getByLabelText("Interviewtermin (optional)")).toBeInTheDocument();
+  });
+
+  it("asks no interview date for other targets", async () => {
+    setup(buildJob({ status: "INTERVIEW", ...READY }));
+    await choose("Vorgemerkt");
+    const dialog = screen.getByRole("dialog", { name: "Zurück auf Vorgemerkt?" });
+    expect(within(dialog).queryByLabelText("Interviewtermin (optional)")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,19 @@
 import type { CvData, Profile } from "@/api/profile";
 
+export type CvImportPhase = "idle" | "running" | "failed";
+
+/**
+ * The server's run state wins, so an import survives a reload (the sweep ends a lost run);
+ * `sending` covers this tab's request. A failed run shows until the next one starts.
+ */
+export function cvImportPhase(
+  profile: Pick<Profile, "cv_import_running" | "cv_import_error">,
+  sending: boolean,
+): CvImportPhase {
+  if (profile.cv_import_running || sending) return "running";
+  return profile.cv_import_error ? "failed" : "idle";
+}
+
 /** The Profil page; the shell navigation links here too (features/shell/navigation.ts). */
 export const PROFILE_HREF = "/profile";
 export const PROFILE_SECTIONS = ["ziel", "lebenslauf", "nachweise", "vorlagen"] as const;

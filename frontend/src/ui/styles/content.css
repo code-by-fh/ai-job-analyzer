@@ -75,11 +75,16 @@
     align-items: center;
     gap: 8px;
   }
+  /* The sheet and its slug line share one width: the slug never widens the frame (contain). */
+  .proof-frame {
+    display: grid;
+    gap: inherit;
+    max-width: 100%;
+  }
   /* Crop marks: eight 1px lines drawn as backgrounds (not a visual gradient). */
   .proof {
     position: relative;
-    width: 100%;
-    max-width: 460px;
+    width: fit-content;
     padding: 18px;
     --m: var(--mark);
     background:
@@ -93,8 +98,7 @@
       linear-gradient(var(--m), var(--m)) right 18px bottom 0 / 1px 12px no-repeat;
   }
   .proof-slug {
-    width: 100%;
-    max-width: 460px;
+    contain: inline-size;
     padding: 0 18px;
     display: flex;
     justify-content: space-between;
@@ -108,8 +112,16 @@
     color: var(--text);
     font-weight: 700;
   }
+  /*
+    The sheet is A4 (ui/useFitZoom.ts A4_PAGE_PX) zoomed by one step class; the step is picked by
+    measuring the free space. HTML is laid out on the full-size page (.paper-page) and zoomed as a
+    whole, so it wraps exactly like the PDF; CSS zoom keeps clicks and the caret in place.
+  */
   .paper {
-    width: 100%;
+    --a4-w: 794px;
+    --a4-h: 1123px;
+    --zoom: 0.55;
+    width: calc(var(--a4-w) * var(--zoom));
     aspect-ratio: 210 / 297;
     background: var(--paper);
     color: var(--paper-ink);
@@ -117,14 +129,65 @@
     --text: var(--paper-ink);
     --text-2: var(--paper-muted);
     --hover: oklch(0.2 0.008 60 / 0.07);
-    box-shadow:
-      0 0 0 1px oklch(0.2 0.008 60 / 0.06),
-      0 2px 3px oklch(0.2 0.008 60 / 0.06),
-      0 22px 40px -22px oklch(0.2 0.008 60 / 0.4);
+    box-shadow: var(--paper-shadow);
     container-type: inline-size;
     overflow: hidden;
     font-family: var(--font-serif);
     position: relative;
+  }
+  .paper.zoom-30 {
+    --zoom: 0.3;
+  }
+  .paper.zoom-35 {
+    --zoom: 0.35;
+  }
+  .paper.zoom-40 {
+    --zoom: 0.4;
+  }
+  .paper.zoom-45 {
+    --zoom: 0.45;
+  }
+  .paper.zoom-50 {
+    --zoom: 0.5;
+  }
+  .paper.zoom-55 {
+    --zoom: 0.55;
+  }
+  .paper.zoom-60 {
+    --zoom: 0.6;
+  }
+  .paper.zoom-65 {
+    --zoom: 0.65;
+  }
+  .paper.zoom-70 {
+    --zoom: 0.7;
+  }
+  .paper.zoom-75 {
+    --zoom: 0.75;
+  }
+  .paper.zoom-80 {
+    --zoom: 0.8;
+  }
+  .paper.zoom-85 {
+    --zoom: 0.85;
+  }
+  .paper.zoom-90 {
+    --zoom: 0.9;
+  }
+  .paper.zoom-95 {
+    --zoom: 0.95;
+  }
+  .paper.zoom-100 {
+    --zoom: 1;
+  }
+  .paper-page {
+    width: var(--a4-w);
+    height: var(--a4-h);
+    zoom: var(--zoom);
+  }
+  /* A note on the page (the editor's loading line) keeps its real size. */
+  .paper-page > .pp-blank {
+    zoom: calc(1 / var(--zoom));
   }
   .paper-pdf,
   .paper iframe {
@@ -210,26 +273,6 @@
     color: var(--paper-ink);
     font: 600 var(--fs-14) / 1.3 var(--font-ui);
   }
-  .a4-expand {
-    display: none;
-  }
-  .a4-full {
-    position: fixed;
-    inset: 0;
-    z-index: 51;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-  }
-  .a4-full .panel-head {
-    padding: 12px 16px;
-  }
-  .a4-full-body {
-    flex: 1;
-    min-height: 0;
-    position: relative;
-  }
-
   @media (max-width: 767px) {
     /* 44px hit targets (spec 4.3); the label stays vertically centred. */
     .disclosure {
@@ -243,10 +286,60 @@
     .proof {
       padding: 14px;
     }
-    /* Usability #22: the sheet text is about 8px at 343px; offer the full-screen view. */
-    .a4-expand {
-      display: inline-flex;
-      min-height: 44px;
+  }
+
+  /*
+    Elapsed time of a running task (ui/Elapsed.tsx): a quiet stopwatch stamp after the task's text,
+    set off by a hairline. Bricolage numerals with tabular figures, so the line does not jitter as
+    the seconds change; the seconds recede one step so the stable minutes carry the reading.
+  */
+  /* A task's live status line plus its elapsed time (features/job/TaskState.tsx). */
+  .task-run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  /* Without a time beside it, a stalled or failed notice keeps the full width. */
+  .task-run:not(:has(> .elapsed)) > :first-child {
+    flex: 1 1 100%;
+  }
+  .elapsed {
+    display: inline-flex;
+    align-items: baseline;
+    padding-left: 8px;
+    border-left: 1px solid var(--line-strong);
+    font-size: var(--fs-13);
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  /* On a line of its own the time needs no hairline to set it off. */
+  .elapsed.is-bare {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .elapsed-calm {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .elapsed-ticking {
+      display: none;
     }
+    .elapsed-calm {
+      display: inline;
+    }
+  }
+  .elapsed-since {
+    color: var(--text-2);
+  }
+  .elapsed-n {
+    font: 650 var(--fs-14) / 1 var(--font-display);
+    font-optical-sizing: auto;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .elapsed-s {
+    color: var(--text-2);
   }
 }

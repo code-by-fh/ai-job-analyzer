@@ -1,147 +1,211 @@
-// Runtime imports stay relative: e2e fixtures load this module outside the app's path aliases.
-import type { NotificationPatch, NotificationSettings } from "@/api/notificationSettings";
-import type { NotifyChannel } from "@/api/platformPaths";
-import {
-  CHANNEL_FIELDS,
-  EMAIL_FIELDS,
-  NOTIFICATION_LIMITS,
-  REQUIRED_FIELDS,
-  SECRET_FIELDS,
-  type ChannelField,
-  type PlainField,
-  type SecretField,
-} from "../api/settingsPaths";
+import type {
+  Channel,
+  ChannelCreate,
+  ChannelType,
+  ChannelUpdate,
+  FieldChanges,
+  FieldSpec,
+  FieldValue,
+  ServiceLabel,
+} from "@/api/notificationChannels";
+import { CHANNEL_LIMITS } from "@/api/notificationPaths";
+import type { Language } from "@/i18n/languages";
+import { parseRecipients } from "./sources";
 
-/** What a channel form edits: every value as text; secrets start empty (write-only). */
-export type ChannelDraft = Partial<Record<ChannelField, string>>;
-export type ChannelProblem = "required" | "email" | "port" | "tooLong";
+/**
+ * How a secret field is edited. Secrets are write-only: a stored one is only known as "set"; it is
+ * kept, replaced by a typed value, or removed (optional secrets only, a required one would be refused).
+ */
+export type SecretMode = "keep" | "replace" | "remove";
 
-// core.py EMAIL_PATTERN, applied to the trimmed text as pydantic does (strip_whitespace).
-const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/** What a channel form edits: every value as text; a secret's text is only what was typed. */
+export interface ChannelDraft {
+  name: string;
+  values: Record<string, string>;
+  secrets: Record<string, SecretMode>;
+}
+
+export type FieldProblem =
+  | "required"
+  | "email"
+  | "emails"
+  | "tooManyItems"
+  | "port"
+  | "tooLong"
+  | "token"
+  | "ascii"
+  | "refused";
+
+export interface ChannelProblems {
+  name?: FieldProblem;
+  fields: Record<string, FieldProblem>;
+}
+
+// notification-service/app/channel_types.py: _EMAIL, _TOKEN and _ASCII_TEXT, applied to whole values.
+const EMAIL_SHAPE =
+  /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+const TOKEN_SHAPE = /^[\x21-\x7e]+$/;
+const ASCII_SHAPE = /^[\x20-\x7e]+$/;
 const DIGITS = /^\d+$/;
-export const PORT_FIELD: ChannelField = "smtp_port";
-const HOST_FIELD: ChannelField = "smtp_host";
+const LIST = ", ";
 
-/** Write-only fields: never read back, sent only when typed. */
-export const isSecretField = (field: ChannelField): field is SecretField =>
-  (SECRET_FIELDS as readonly string[]).includes(field);
-/** Address fields, checked by emailProblem. */
-export const isEmailField = (field: ChannelField): boolean =>
-  (EMAIL_FIELDS as readonly string[]).includes(field);
+/** The service's label in the UI language. */
+export const labelIn = (label: ServiceLabel, language: Language): string => label[language];
 
-function storedText(settings: NotificationSettings, field: PlainField): string {
-  const value = settings[field];
-  return value === null ? "" : String(value);
+/** Python's len() counts code points, as the service's length bounds do. */
+const lengthOf = (text: string): number => Array.from(text).length;
+
+function textOf(value: FieldValue | undefined): string {
+  if (value === null || value === undefined) return "";
+  return Array.isArray(value) ? value.join(LIST) : String(value);
 }
 
-export function channelDraftOf(
-  channel: NotifyChannel,
-  settings: NotificationSettings,
-): ChannelDraft {
-  return Object.fromEntries(
-    CHANNEL_FIELDS[channel].map((field) => [
-      field,
-      isSecretField(field) ? "" : storedText(settings, field as PlainField),
-    ]),
+/** A blank form for a new channel of this type; secrets start as inputs. */
+export function newChannelDraft(type: ChannelType, name: string): ChannelDraft {
+  const values = Object.fromEntries(type.fields.map((spec) => [spec.name, ""]));
+  const secrets = Object.fromEntries(
+    type.fields.filter((spec) => spec.secret).map((spec) => [spec.name, "replace" as const]),
   );
+  return { name, values, secrets };
 }
 
-/** A secret is sent as typed (spaces may belong to it); plain values are trimmed like the server does. */
-function typedValue(field: ChannelField, raw: string): string {
-  return isSecretField(field) ? raw : raw.trim();
-}
-
-// The server refuses "" for every field (core.py): a cleared field is sent as null.
-function sentValue(field: ChannelField, text: string): string | number | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  return field === PORT_FIELD ? Number(trimmed) : trimmed;
-}
-
-/** Changed plain fields (cleared -> null) and typed secrets only (B2, write-only secrets). */
-export function channelPatch(
-  channel: NotifyChannel,
-  draft: ChannelDraft,
-  settings: NotificationSettings,
-): NotificationPatch {
-  const patch: NotificationPatch = {};
-  for (const field of CHANNEL_FIELDS[channel]) {
-    const raw = draft[field] ?? "";
-    if (isSecretField(field)) {
-      if (raw.trim()) patch[field] = raw;
-    } else if (raw.trim() !== storedText(settings, field as PlainField)) {
-      patch[field] = sentValue(field, raw);
-    }
+/** The stored channel as a form: plain values as text, a set secret kept, an unset one as an input. */
+export function channelDraftOf(type: ChannelType, channel: Channel): ChannelDraft {
+  const values: Record<string, string> = {};
+  const secrets: Record<string, SecretMode> = {};
+  for (const spec of type.fields) {
+    values[spec.name] = spec.secret ? "" : textOf(channel.fields[spec.name]);
+    if (spec.secret) secrets[spec.name] = channel.secrets[spec.name] ? "keep" : "replace";
   }
-  return patch;
+  return { name: channel.name, values, secrets };
 }
 
-export function removalPatch(channel: NotifyChannel): NotificationPatch {
-  return Object.fromEntries(CHANNEL_FIELDS[channel].map((field) => [field, null]));
+/** A secret is sent as typed (spaces may belong to it); other text is trimmed. */
+function typedText(spec: FieldSpec, raw: string): string {
+  return spec.secret ? raw : raw.trim();
 }
 
-/** The check of an address field (also the test recipient and the default recipient); empty is no problem. */
-export function emailProblem(text: string): ChannelProblem | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (trimmed.length > NOTIFICATION_LIMITS.email) return "tooLong";
-  return EMAIL_SHAPE.test(trimmed) ? null : "email";
+/** The wire value of a non-blank text: a port as a number, a list as its addresses. */
+function wireValue(spec: FieldSpec, text: string): FieldValue {
+  if (spec.kind === "port") return Number(text);
+  if (spec.kind === "email_list") return parseRecipients(text).list;
+  return text;
 }
 
-function portProblem(text: string): ChannelProblem | null {
-  if (!DIGITS.test(text)) return "port";
-  const port = Number(text);
-  const inRange = port >= NOTIFICATION_LIMITS.portMin && port <= NOTIFICATION_LIMITS.portMax;
-  return inRange ? null : "port";
+/** A secret that is sent: replaced by a typed value, or removed (null). */
+function secretChange(spec: FieldSpec, draft: ChannelDraft): FieldValue | undefined {
+  const mode = draft.secrets[spec.name];
+  if (mode === "remove") return null;
+  const raw = draft.values[spec.name] ?? "";
+  return mode === "replace" && raw.trim() !== "" ? raw : undefined;
 }
 
-function valueProblem(field: ChannelField, value: string): ChannelProblem | null {
-  if (field === PORT_FIELD) return portProblem(value);
-  if (isEmailField(field)) return emailProblem(value);
-  const limit = field === HOST_FIELD ? NOTIFICATION_LIMITS.host : NOTIFICATION_LIMITS.credential;
-  return value.length > limit ? "tooLong" : null;
+/** Every filled field of a new channel; blank optional fields are left out. */
+export function createBody(type: ChannelType, draft: ChannelDraft): ChannelCreate {
+  const fields: FieldChanges = {};
+  for (const spec of type.fields) {
+    const text = typedText(spec, draft.values[spec.name] ?? "");
+    if (text.trim() !== "") fields[spec.name] = wireValue(spec, text);
+  }
+  return { type: type.id, name: draft.name.trim(), fields };
 }
 
-export interface ChannelCheck {
-  channel: NotifyChannel;
-  draft: ChannelDraft;
-  settings: NotificationSettings;
+function plainChange(spec: FieldSpec, draft: ChannelDraft, channel: Channel) {
+  const text = typedText(spec, draft.values[spec.name] ?? "");
+  if (text === textOf(channel.fields[spec.name])) return undefined;
+  return text === "" ? null : wireValue(spec, text);
 }
 
 /**
- * Ruling 14: a field the server predicate needs is required whether or not the channel is
- * configured, so a save never half-deletes a channel; a stored secret counts as present.
+ * Only what changed: the name, edited plain fields (cleared -> null), replaced or removed secrets.
+ * A kept secret is never sent, so its stored value stays (PATCH omits it).
  */
-function fieldProblem(field: ChannelField, check: ChannelCheck): ChannelProblem | null {
-  const raw = check.draft[field] ?? "";
-  const blank = raw.trim() === "";
-  const stored = isSecretField(field) && check.settings[field];
-  if (blank && !stored && REQUIRED_FIELDS[check.channel].includes(field)) return "required";
-  return blank ? null : valueProblem(field, typedValue(field, raw));
-}
-
-/** Client check before a save; the server applies the same limits (422 on the field). */
-export function channelErrors(check: ChannelCheck): Partial<Record<ChannelField, ChannelProblem>> {
-  const errors: Partial<Record<ChannelField, ChannelProblem>> = {};
-  for (const field of CHANNEL_FIELDS[check.channel]) {
-    const problem = fieldProblem(field, check);
-    if (problem) errors[field] = problem;
+export function updateChange(
+  type: ChannelType,
+  draft: ChannelDraft,
+  channel: Channel,
+): ChannelUpdate["change"] {
+  const fields: FieldChanges = {};
+  for (const spec of type.fields) {
+    const value = spec.secret ? secretChange(spec, draft) : plainChange(spec, draft, channel);
+    if (value !== undefined) fields[spec.name] = value;
   }
-  return errors;
+  const name = draft.name.trim();
+  return {
+    ...(name !== channel.name ? { name } : {}),
+    ...(Object.keys(fields).length > 0 ? { fields } : {}),
+  };
 }
 
-const DETAIL_FIELD: Readonly<Record<NotifyChannel, PlainField | null>> = {
-  PUSHOVER: null,
-  RESEND: "resend_from_email",
-  MAILJET: "mailjet_from_email",
-  SMTP: "smtp_host",
-};
+function textProblem(spec: FieldSpec, text: string): FieldProblem | null {
+  if (spec.max_length && lengthOf(text) > spec.max_length) return "tooLong";
+  if (spec.kind === "email" && !EMAIL_SHAPE.test(text)) return "email";
+  if (spec.kind === "token" && !TOKEN_SHAPE.test(text)) return "token";
+  if (spec.kind === "ascii_text" && !ASCII_SHAPE.test(text)) return "ascii";
+  return null;
+}
 
-/** The non-secret detail of the "Eingerichtet · …" line, or null. */
-export function channelDetail(
-  channel: NotifyChannel,
-  settings: NotificationSettings,
-): string | null {
-  const field = DETAIL_FIELD[channel];
-  return field ? storedText(settings, field) || null : null;
+function portProblem(text: string): FieldProblem | null {
+  const port = Number(text);
+  const inRange = port >= CHANNEL_LIMITS.portMin && port <= CHANNEL_LIMITS.portMax;
+  return DIGITS.test(text) && inRange ? null : "port";
+}
+
+function listProblem(spec: FieldSpec, text: string): FieldProblem | null {
+  const { list } = parseRecipients(text);
+  const tooLong = spec.max_length ? list.some((item) => lengthOf(item) > spec.max_length!) : false;
+  if (tooLong || list.some((address) => !EMAIL_SHAPE.test(address))) return "emails";
+  return spec.max_items && list.length > spec.max_items ? "tooManyItems" : null;
+}
+
+function valueProblem(spec: FieldSpec, text: string): FieldProblem | null {
+  if (spec.kind === "port") return portProblem(text);
+  if (spec.kind === "email_list") return listProblem(spec, text);
+  return textProblem(spec, text);
+}
+
+/** A field that the save leaves alone (a kept or removed secret) has nothing to check. */
+function isUntouchedSecret(spec: FieldSpec, draft: ChannelDraft): boolean {
+  return spec.secret && draft.secrets[spec.name] !== "replace";
+}
+
+/**
+ * A required field is blank only when nothing is stored for it either: a stored secret whose
+ * replace input stays empty keeps the stored value.
+ */
+function fieldProblem(spec: FieldSpec, draft: ChannelDraft, channel: Channel | null) {
+  if (isUntouchedSecret(spec, draft)) return null;
+  const text = typedText(spec, draft.values[spec.name] ?? "");
+  const storedSecret = spec.secret && Boolean(channel?.secrets[spec.name]);
+  if (text.trim() === "") return spec.required && !storedSecret ? "required" : null;
+  return valueProblem(spec, text);
+}
+
+function nameProblem(name: string): FieldProblem | undefined {
+  const length = lengthOf(name.trim());
+  if (length === 0) return "required";
+  return length > CHANNEL_LIMITS.name ? "tooLong" : undefined;
+}
+
+/** The client check before a save, from the type's schema; the service checks the same again. */
+export function channelProblems(
+  type: ChannelType,
+  draft: ChannelDraft,
+  channel: Channel | null,
+): ChannelProblems {
+  const fields: Record<string, FieldProblem> = {};
+  for (const spec of type.fields) {
+    const problem = fieldProblem(spec, draft, channel);
+    if (problem) fields[spec.name] = problem;
+  }
+  const name = nameProblem(draft.name);
+  return name ? { name, fields } : { fields };
+}
+
+export const hasProblems = (problems: ChannelProblems): boolean =>
+  problems.name !== undefined || Object.keys(problems.fields).length > 0;
+
+/** The type of a channel, or undefined for a type the service no longer offers. */
+export function typeOf(types: readonly ChannelType[], channel: Channel): ChannelType | undefined {
+  return types.find((type) => type.id === channel.type);
 }

@@ -27,9 +27,9 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
       await page.goto("/sources");
       await page.getByRole("link", { name: "StepStone" }).click();
       await expect(drawer(page)).toBeVisible();
-      await expect(drawer(page).getByLabel("Uhrzeit")).toHaveValue("14:00");
+      await expect(drawer(page).getByLabel("Uhrzeit 1", { exact: true })).toHaveValue("14:00");
       await expect(
-        drawer(page).getByText("Uhrzeit in deiner Zeitzone (Europe/Berlin)."),
+        drawer(page).getByText("Uhrzeiten in deiner Zeitzone (Europe/Berlin)."),
       ).toBeVisible();
       // The crawl of AUTHENTICATED_ROUTES runs for StepStone: the header repeats its progress.
       await expect(
@@ -45,6 +45,14 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
     });
   }
 }
+
+test("the pencil of a row opens that source's drawer", async ({ page, mockApi }) => {
+  await mockApi(sourcesRoutes());
+  await page.goto("/sources");
+  await row(page, "StepStone").getByRole("button", { name: "StepStone bearbeiten" }).click();
+  await expect(drawer(page)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`quelle=${STEPSTONE.id}$`));
+});
 
 test("weekday toggles are 44 px targets on a phone", async ({ page, mockApi }) => {
   await mockApi(sourcesRoutes());
@@ -70,10 +78,9 @@ test("turning the schedule off saves nulls and the row says manual", async ({ pa
   await section(page, "Zeitplan").getByLabel("Automatisch durchsuchen").uncheck();
   await section(page, "Zeitplan").getByRole("button", { name: "Speichern" }).click();
   await expect(page.getByText("Gespeichert.")).toBeVisible();
-  expect([server.get(STEPSTONE.id).schedule_time, server.get(STEPSTONE.id).schedule_days]).toEqual([
-    null,
-    null,
-  ]);
+  expect([server.get(STEPSTONE.id).schedule_times, server.get(STEPSTONE.id).schedule_days]).toEqual(
+    [null, null],
+  );
   await drawer(page).getByRole("button", { name: "Schließen" }).click();
   await expect(row(page, "StepStone")).toContainText("Nur manuell");
   await expect(page.getByRole("link", { name: "StepStone" })).toBeFocused();
@@ -93,10 +100,12 @@ test("a renamed source keeps its new name in the list", async ({ page, mockApi }
 test("closing with an unsaved schedule asks first", async ({ page, mockApi }) => {
   await mockApi(sourcesRoutes());
   await page.goto(`/sources?quelle=${STEPSTONE.id}`);
-  await section(page, "Zeitplan").getByLabel("Uhrzeit").fill("07:30");
+  await section(page, "Zeitplan").getByLabel("Uhrzeit 1", { exact: true }).fill("07:30");
   await drawer(page).getByRole("button", { name: "Schließen" }).click();
   await page.getByRole("button", { name: "Weiter bearbeiten" }).click();
-  await expect(section(page, "Zeitplan").getByLabel("Uhrzeit")).toHaveValue("07:30");
+  await expect(section(page, "Zeitplan").getByLabel("Uhrzeit 1", { exact: true })).toHaveValue(
+    "07:30",
+  );
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Änderungen verwerfen" }).click();
   await expect(drawer(page)).toHaveCount(0);
@@ -115,7 +124,7 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
       await page.setViewportSize(viewport);
       await page.emulateMedia({ colorScheme: scheme });
       await page.goto(`/sources?quelle=${STEPSTONE.id}`);
-      await section(page, "Zeitplan").getByLabel("Uhrzeit").fill("07:30");
+      await section(page, "Zeitplan").getByLabel("Uhrzeit 1", { exact: true }).fill("07:30");
       await page.keyboard.press("Escape");
       const leave = page.getByRole("dialog", { name: "Änderungen verwerfen?" });
       await expect(leave).toBeVisible();

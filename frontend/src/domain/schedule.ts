@@ -15,24 +15,28 @@ export function isScheduleTime(text: string): boolean {
 }
 
 export interface Schedule {
-  time: string;
+  /** Wall times of the profile zone, sorted. */
+  times: string[];
   days: number[];
 }
+
+/** core/platform_rules.py MAX_SCHEDULE_TIMES. */
+export const MAX_SCHEDULE_TIMES = 6;
 
 /** Server weekday indices: 0 = Monday (workers/tasks/scheduling.py). */
 export const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 /** D6: what switching the schedule on starts from (the old UI's default). */
-export const DEFAULT_SCHEDULE: Schedule = { time: "08:00", days: [0, 1, 2, 3, 4] };
+export const DEFAULT_SCHEDULE: Schedule = { times: ["08:00"], days: [0, 1, 2, 3, 4] };
 
 const isWeekday = (day: number) => (WEEKDAYS as readonly number[]).includes(day);
 
 /** A schedule the scheduler would run, or null ("Nur manuell"). Wall time of the profile zone. */
 export function scheduleOf(
-  platform: Pick<Platform, "schedule_time" | "schedule_days">,
+  platform: Pick<Platform, "schedule_times" | "schedule_days">,
 ): Schedule | null {
-  const time = platform.schedule_time ?? "";
+  const times = [...new Set((platform.schedule_times ?? []).filter(isScheduleTime))].sort();
   const days = [...new Set((platform.schedule_days ?? []).filter(isWeekday))].sort((a, b) => a - b);
-  return isScheduleTime(time) && days.length > 0 ? { time, days } : null;
+  return times.length > 0 && days.length > 0 ? { times, days } : null;
 }
 
 /** Next scheduled crawl over all active sources, in the browser's zone (G12). */
@@ -45,10 +49,24 @@ export function nextRunAt(platforms: readonly Platform[], now: Date): Date | nul
 function nextSlot(platform: Platform, now: Date): Date | null {
   const schedule = scheduleOf(platform);
   if (!platform.is_active || !schedule) return null;
-  const [hours, minutes] = schedule.time.split(":").map(Number);
   for (let offset = 0; offset <= DAYS_AHEAD; offset += 1) {
-    const day = now.getDate() + offset;
-    const slot = new Date(now.getFullYear(), now.getMonth(), day, hours, minutes);
+    const slot = firstSlotOfDay(schedule, now, offset);
+    if (slot) return slot;
+  }
+  return null;
+}
+
+/** The earliest of the day's times after now; the times are sorted, so the first match wins. */
+function firstSlotOfDay(schedule: Schedule, now: Date, offset: number): Date | null {
+  for (const time of schedule.times) {
+    const [hours, minutes] = time.split(":").map(Number);
+    const slot = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + offset,
+      hours,
+      minutes,
+    );
     if (slot > now && schedule.days.includes(serverWeekday(slot))) return slot;
   }
   return null;

@@ -1,20 +1,23 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert } from "lucide-react";
-import type { Platform, PlatformPatch } from "@/api/platforms";
+import { CircleAlert, Plus, X } from "lucide-react";
+import type { Platform, PlatformSetupRequest } from "@/api/platforms";
 import { profileTimezoneQueryOptions } from "@/api/settings";
 import {
   DEFAULT_SCHEDULE,
   isScheduleTime,
+  MAX_SCHEDULE_TIMES,
   scheduleOf,
   WEEKDAYS,
   type Schedule,
 } from "@/domain/schedule";
 import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
+import { Button } from "@/ui/Button";
 import { Chip } from "@/ui/Chip";
-import { CheckField, TextField } from "@/ui/Field";
+import { CheckField } from "@/ui/Field";
+import { focusNextFrame } from "@/ui/focus";
 import { Icon } from "@/ui/Icon";
 import { WEEKDAY_LABEL } from "../labels";
 
@@ -27,26 +30,38 @@ export interface ScheduleErrors {
   days?: MessageKey;
 }
 
+/**
+ * "Automatisch durchsuchen" is the one switch (feedback 1, T5): it is on only for an active source
+ * with a schedule, so a paused legacy source reads as off.
+ */
 export function scheduleDraftOf(
-  platform: Pick<Platform, "schedule_time" | "schedule_days">,
+  platform: Pick<Platform, "schedule_times" | "schedule_days" | "is_active">,
 ): ScheduleDraft {
-  const schedule = scheduleOf(platform);
+  const schedule = platform.is_active ? scheduleOf(platform) : null;
   return schedule ? { enabled: true, ...schedule } : { enabled: false, ...DEFAULT_SCHEDULE };
 }
 
 /** D6: off clears both halves in one request; the server refuses one without the other. */
-export function schedulePatch(
+export function scheduleRequest(
   draft: ScheduleDraft,
-): Pick<PlatformPatch, "schedule_time" | "schedule_days"> {
+): Pick<PlatformSetupRequest, "schedule_times" | "schedule_days"> {
   return draft.enabled
-    ? { schedule_time: draft.time, schedule_days: [...draft.days].sort((a, b) => a - b) }
-    : { schedule_time: null, schedule_days: null };
+    ? {
+        schedule_times: [...draft.times].sort(),
+        schedule_days: [...draft.days].sort((a, b) => a - b),
+      }
+    : { schedule_times: null, schedule_days: null };
+}
+
+function timesError(times: readonly string[]): MessageKey | undefined {
+  if (times.length === 0 || !times.every(isScheduleTime)) return "sources.error.time";
+  return new Set(times).size === times.length ? undefined : "sources.error.timeTwice";
 }
 
 export function scheduleErrors(draft: ScheduleDraft): ScheduleErrors {
   if (!draft.enabled) return {};
   return {
-    time: isScheduleTime(draft.time) ? undefined : "sources.error.time",
+    time: timesError(draft.times),
     days: draft.days.length > 0 ? undefined : "sources.error.days",
   };
 }
@@ -55,9 +70,14 @@ export function hasScheduleErrors(errors: ScheduleErrors): boolean {
   return Boolean(errors.time ?? errors.days);
 }
 
-/** The time field's id, for a form that moves focus onto a schedule error (ruling 16). */
+/** The n-th time field's id. */
+export function timeFieldId(idPrefix: string, index: number): string {
+  return `${idPrefix}-time-${index}`;
+}
+
+/** The first time field's id, for a form that moves focus onto a schedule error (ruling 16). */
 export function scheduleTimeId(idPrefix: string): string {
-  return `${idPrefix}-time`;
+  return timeFieldId(idPrefix, 0);
 }
 
 /** The first weekday chip's id: where focus goes for an error on the days. */
@@ -78,7 +98,7 @@ export interface ScheduleFieldsProps {
   errors: ScheduleErrors;
 }
 
-/** D6, shared by the drawer and the wizard (Task 13): a check, then time and weekdays. */
+/** D6, shared by the drawer and the wizard: the one switch, then the times and the weekdays. */
 export function ScheduleFields({ idPrefix, value, onChange, errors }: ScheduleFieldsProps) {
   const { t } = useI18n();
   return (
@@ -91,7 +111,7 @@ export function ScheduleFields({ idPrefix, value, onChange, errors }: ScheduleFi
       />
       {value.enabled ? (
         <>
-          <ScheduleTime idPrefix={idPrefix} value={value} onChange={onChange} errors={errors} />
+          <ScheduleTimes idPrefix={idPrefix} value={value} onChange={onChange} errors={errors} />
           <WeekdayToggles idPrefix={idPrefix} value={value} onChange={onChange} errors={errors} />
         </>
       ) : null}
@@ -99,19 +119,105 @@ export function ScheduleFields({ idPrefix, value, onChange, errors }: ScheduleFi
   );
 }
 
-/** Wall time as stored (no conversion); the hint names the zone the scheduler uses. */
-function ScheduleTime({ idPrefix, value, onChange, errors }: ScheduleFieldsProps) {
+/**
+ * 1 to MAX_SCHEDULE_TIMES wall times as stored (no conversion); the hint names the zone the
+ * scheduler uses. A new time starts empty, so the user picks it instead of accepting a guess.
+ */
+function ScheduleTimes({ idPrefix, value, onChange, errors }: ScheduleFieldsProps) {
+  const { t } = useI18n();
+  const zoneHint = useZoneHint();
+  const hintId = `${idPrefix}-times-hint`;
+  const errorId = `${idPrefix}-times-error`;
+  return (
+    <fieldset
+      className="field schedule-times"
+      aria-describedby={errors.time ? `${hintId} ${errorId}` : hintId}
+    >
+      <legend className="label">{t("sources.schedule.times")}</legend>
+      <TimeRows idPrefix={idPrefix} value={value} onChange={onChange} />
+      <AddTime idPrefix={idPrefix} value={value} onChange={onChange} />
+      <p className="hint" id={hintId}>
+        {zoneHint}
+      </p>
+      {errors.time ? <GroupError id={errorId} message={t(errors.time)} /> : null}
+    </fieldset>
+  );
+}
+
+/** Rows are keyed by position: a time is its value, and an empty new one has none yet. */
+function TimeRows({ idPrefix, value, onChange }: Omit<ScheduleFieldsProps, "errors">) {
+  return (
+    <ul role="list" className="time-list">
+      {value.times.map((_, index) => (
+        <TimeRow key={index} idPrefix={idPrefix} index={index} value={value} onChange={onChange} />
+      ))}
+    </ul>
+  );
+}
+
+interface TimeRowProps extends Omit<ScheduleFieldsProps, "errors"> {
+  index: number;
+}
+
+function replaced(times: readonly string[], index: number, time: string): string[] {
+  return times.map((other, at) => (at === index ? time : other));
+}
+
+function TimeRow({ idPrefix, index, value, onChange }: TimeRowProps) {
   const { t } = useI18n();
   return (
-    <TextField
-      id={scheduleTimeId(idPrefix)}
-      type="time"
-      label={t("sources.schedule.time")}
-      hint={useZoneHint()}
-      value={value.time}
-      onChange={(event) => onChange({ ...value, time: event.target.value })}
-      error={errors.time ? t(errors.time) : undefined}
+    <li className="time-row">
+      <input
+        id={timeFieldId(idPrefix, index)}
+        type="time"
+        className="input"
+        aria-label={t("sources.schedule.timeN", { n: index + 1 })}
+        value={value.times[index]}
+        onChange={(event) =>
+          onChange({ ...value, times: replaced(value.times, index, event.target.value) })
+        }
+      />
+      {value.times.length > 1 ? (
+        <RemoveTime idPrefix={idPrefix} index={index} value={value} onChange={onChange} />
+      ) : null}
+    </li>
+  );
+}
+
+/** Removing a time moves focus to the time that takes its place, else the one before. */
+function RemoveTime({ idPrefix, index, value, onChange }: TimeRowProps) {
+  const { t } = useI18n();
+  const remove = () => {
+    onChange({ ...value, times: value.times.filter((_, other) => other !== index) });
+    const next = Math.min(index, value.times.length - 2);
+    focusNextFrame(() => document.getElementById(timeFieldId(idPrefix, next)));
+  };
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={X}
+      iconOnly
+      aria-label={t("sources.schedule.removeTime", { n: index + 1 })}
+      onClick={remove}
     />
+  );
+}
+
+/** At the limit the button gives way to the rule, so nothing inactive is left to explain. */
+function AddTime({ idPrefix, value, onChange }: Omit<ScheduleFieldsProps, "errors">) {
+  const { t } = useI18n();
+  if (value.times.length >= MAX_SCHEDULE_TIMES) {
+    return <p className="hint">{t("sources.schedule.timesMax", { max: MAX_SCHEDULE_TIMES })}</p>;
+  }
+  const add = () => {
+    onChange({ ...value, times: [...value.times, ""] });
+    focusNextFrame(() => document.getElementById(timeFieldId(idPrefix, value.times.length)));
+  };
+  return (
+    <Button variant="ghost" size="sm" icon={Plus} className="time-add" onClick={add}>
+      {t("sources.schedule.addTime")}
+    </Button>
   );
 }
 

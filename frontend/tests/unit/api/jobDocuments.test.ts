@@ -9,7 +9,7 @@ import {
   generatedDocument,
   generateLetter,
   generatePackage,
-  renderDocument,
+  downloadDocumentPdf,
   saveDocumentHtml,
   uploadJobDocument,
   viewJobDocument,
@@ -91,18 +91,24 @@ describe("stored HTML", () => {
     expect(calls[0].url).toBe("http://api.test/jobs/job-1/documents/html?kind=cover_letter");
   });
 
-  it("saves the HTML and then asks for a render", async () => {
-    const calls = stubRoutes({
-      "PUT /jobs/job-1/documents/html": { ok: true },
-      "POST /jobs/job-1/documents/render": { queued: true },
-    });
+  it("saves the HTML with nothing else", async () => {
+    const calls = stubRoutes({ "PUT /jobs/job-1/documents/html": { ok: true } });
     await saveDocumentHtml("job-1", "cv", "<p>neu</p>");
-    await renderDocument("job-1", "cv");
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       "PUT http://api.test/jobs/job-1/documents/html?kind=cv",
-      "POST http://api.test/jobs/job-1/documents/render?kind=cv",
     ]);
     expect(calls[0].body).toBe('{"html":"<p>neu</p>"}');
+  });
+
+  it("downloads the PDF the server renders from the current HTML", async () => {
+    const pdf = () =>
+      new Response("%PDF-1.4", {
+        headers: { "Content-Disposition": 'attachment; filename="Anschreiben_ACME.pdf"' },
+      });
+    const calls = stubRoutes({ "GET /jobs/job-1/documents/pdf": pdf });
+    const file = await downloadDocumentPdf("job-1", "cover_letter");
+    expect(calls[0].url).toBe("http://api.test/jobs/job-1/documents/pdf?kind=cover_letter");
+    expect(file.filename).toBe("Anschreiben_ACME.pdf");
   });
 });
 

@@ -51,6 +51,111 @@
     border-radius: var(--r-panel);
     box-shadow: var(--shadow-float);
   }
+  /*
+    Document viewer (ui/ViewerDialog, feedback 2 T5): 94% of the screen, no frame, full screen on
+    mobile. A slim toolbar sits over the desk; the document lies centred on the desk below it.
+  */
+  .dialog.viewer {
+    --viewer-size: 94;
+    top: calc((100vh - var(--viewer-size) * 1vh) / 2);
+    width: calc(var(--viewer-size) * 1vw);
+    height: calc(var(--viewer-size) * 1vh);
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: var(--desk);
+  }
+  .viewer-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    min-height: 60px;
+    padding: 8px 8px 8px 20px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .viewer-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+    min-width: 0;
+  }
+  .viewer-title {
+    font: 680 20px / 1.15 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+  }
+  .viewer-subtitle {
+    font-size: var(--fs-13);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .viewer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  /* 44px hit targets at every width: the viewer is a touch surface on tablets too. */
+  .viewer-actions .btn {
+    height: 44px;
+    padding: 0 14px;
+    font-size: var(--fs-13);
+  }
+  .viewer-actions .btn.btn-icon {
+    width: 44px;
+    padding: 0;
+  }
+  .viewer-notice {
+    padding: 8px 20px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .viewer-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    container-type: size;
+  }
+  /* The desk takes the body's height, so useFitZoom fits the whole page into it (fit="page"). */
+  .viewer-body > .desk {
+    height: 100%;
+    justify-content: center;
+    margin: 0;
+    padding: 24px;
+    background: transparent;
+  }
+  .viewer-body .file-image,
+  .viewer-body .file-text {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+    padding: 24px;
+  }
+  /* A plain-text file reads as a sheet: paper behind the browser's text view, in dark mode too. */
+  .viewer-body .file-text {
+    background: var(--paper) content-box;
+  }
+  .viewer-body > .prose,
+  .viewer-body > .notice {
+    margin: 24px;
+  }
+  /* The PDF fallback without a sheet around it sits on the desk, not on paper. */
+  .viewer-body > .a4-fallback p {
+    color: var(--text-2);
+  }
   .panel-in {
     padding: 24px 28px 44px;
   }
@@ -144,38 +249,17 @@
     background: var(--line);
     margin: 6px 4px;
   }
-  .task {
-    padding: 8px 10px;
-  }
-  .task + .task {
-    border-top: 1px solid var(--line);
-  }
-  .task-title {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-weight: 600;
-  }
-  .task-sub {
-    font-size: var(--fs-12);
-    color: var(--text-3);
-    margin: 3px 0 6px 24px;
-  }
-  .task .progress {
-    margin-left: 24px;
-  }
 
   .toasts {
     position: fixed;
-    left: 50%;
-    bottom: 22px;
-    transform: translateX(-50%);
+    right: var(--toast-edge);
+    bottom: var(--toast-edge);
     display: flex;
     flex-direction: column;
     /* The two live regions carry the gap between items; a gap here would also space an empty region. */
     gap: 0;
     z-index: 90;
-    align-items: center;
+    align-items: flex-end;
     pointer-events: none;
   }
   .toast {
@@ -212,7 +296,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    align-items: center;
+    align-items: flex-end;
   }
   .toast .msg {
     flex: 1 1 200px;
@@ -255,19 +339,36 @@
     .dialog {
       top: 16px;
     }
+    .dialog.viewer {
+      --viewer-size: 100;
+      height: 100dvh;
+    }
+    .viewer-bar {
+      padding: 6px 6px 6px 16px;
+    }
+    .viewer-body > .desk {
+      padding: 16px 12px;
+    }
     .panel-in {
       padding: 18px 16px 40px;
     }
     .panel-title {
       font-size: 28px;
     }
-    /* Above the bottom bar; two toasts plus the bar stay under a quarter of the screen (spec 4.3.7). */
+    /* Above the bottom bar (shell.css adds the crawl strip); two toasts plus the bar stay under a
+       quarter of the screen (spec 4.3.7). */
     .toasts {
-      bottom: calc(78px + env(safe-area-inset-bottom));
+      left: var(--toast-gap);
+      right: var(--toast-gap);
+      bottom: calc(var(--bottombar-h) + var(--toast-gap) + env(safe-area-inset-bottom));
+      align-items: stretch;
+    }
+    .toast-region {
+      align-items: stretch;
     }
     .toast {
       min-width: 0;
-      width: calc(100vw - 32px);
+      width: 100%;
     }
     /* 44px hit targets (spec 4.3): .btn-sm is only 36px on mobile. */
     .pop-item {

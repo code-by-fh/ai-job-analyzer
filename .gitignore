@@ -17,3 +17,7 @@ server/.ruff_cache/
 
 # External directories not belonging to this project
 muhfweeceevee/
+# Python caches (notification-service)
+notification-service/**/__pycache__/
+notification-service/.ruff_cache/
+notification-service/.pytest_cache/

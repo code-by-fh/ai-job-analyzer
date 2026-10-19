@@ -26,7 +26,7 @@ const PDF_DOC = {
   created_at: "2026-08-12T09:00:00Z",
   downloadable: true,
 };
-const DRIVE_DOC = {
+const UNSTORED_DOC = {
   ...PDF_DOC,
   id: 2,
   label: "AWS.png",
@@ -43,7 +43,7 @@ const WORD_DOC = {
 };
 const PROOF_UNSUPPORTED =
   "Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF, Word, JPEG, PNG und WebP.";
-// Neutral: the server sends one flag for Drive files and for rows without stored bytes (M2).
+// The server flags rows without stored bytes (M2).
 const NOT_OPENABLE = "Diese Datei lässt sich hier nicht öffnen.";
 const GENERIC_UNSUPPORTED = "bild.png: Dieser Dateityp wird nicht unterstützt.";
 
@@ -66,8 +66,8 @@ describe("Nachweise", () => {
     expect(row).toHaveTextContent("Referenz · 412 KB · 12.08.2026");
   });
 
-  it("a Drive document has no view or download, and says why", async () => {
-    stubRoutes(profileStubs({ "GET /profile/documents": [DRIVE_DOC] }));
+  it("a document without stored bytes has no view or download, and says why", async () => {
+    stubRoutes(profileStubs({ "GET /profile/documents": [UNSTORED_DOC] }));
     renderWithProviders(<ProfilePage />);
     const download = await screen.findByRole("button", { name: "AWS.png herunterladen" });
     expect(download).toHaveAttribute("aria-disabled", "true");

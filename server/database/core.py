@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from uuid import UUID
 from sqlalchemy import (
     create_engine,
     Column,
@@ -8,10 +9,12 @@ from sqlalchemy import (
     Float,
     Integer,
     JSON,
+    Date,
     DateTime,
     Boolean,
     ForeignKey,
     LargeBinary,
+    UniqueConstraint,
     false,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
@@ -20,7 +23,7 @@ from sqlalchemy.sql import func
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
 from typing import Annotated, List, Literal, Optional
 
-from core.platform_rules import check_name, check_schedule_days, check_schedule_time, check_url_pattern
+from core.platform_rules import check_name, check_schedule_days, check_schedule_times, check_url_pattern
 from core.url_safety import ensure_public_http_url
 from services.company_domain import CompanyDomain
 
@@ -68,6 +71,8 @@ class JobEntry(Base):
     interview_prep_material = Column(Text, nullable=True)
     recruiter_info = Column(JSON, nullable=True)
     salary_benchmark = Column(JSON, nullable=True)
+    # Names of the fields above that the analysis filled from the posting; see intelligence/posting_details.py.
+    posting_extracted = Column(JSON, nullable=True)
     next_follow_up_at = Column(DateTime(timezone=True), nullable=True)
     interview_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
@@ -78,6 +83,19 @@ class JobEntry(Base):
     # Status before the running generation started; see core/job_status.py::status_after_generation.
     pre_generation_status = Column(String, nullable=True)
     generation_started_at = Column(DateTime(timezone=True), nullable=True)  # set while GENERATING, see workers/tasks/generation_sweep.py
+    # Durable prep run state, see core/interview_prep_state.py: set while a prep runs, cleared when it ends.
+    interview_prep_started_at = Column(DateTime(timezone=True), nullable=True)
+    interview_prep_error = Column(String, nullable=True)
+    # Durable run state of "Aus der Anzeige übernehmen", see core/posting_details_state.py.
+    posting_details_started_at = Column(DateTime(timezone=True), nullable=True)
+    posting_details_error = Column(String, nullable=True)
+    # Durable company research run state, see core/company_research_state.py.
+    company_research_started_at = Column(DateTime(timezone=True), nullable=True)
+    company_research_error = Column(String, nullable=True)
+    # Offer outcome tabs (feedback 1 T14): one notes column for "1. Arbeitstag" and "Wie geht's weiter".
+    outcome_notes = Column(Text, nullable=True)
+    first_day_checklist = Column(JSON, nullable=True)
+    start_date = Column(Date, nullable=True)  # a calendar day, no instant: the first working day
 
     platform = relationship("JobPlatform", back_populates="jobs")
     status_history = relationship(
@@ -104,7 +122,8 @@ class UserProfile(Base):
     cv_template = Column(String, nullable=True, default="classic")
     cover_letter_template = Column(String, nullable=True, default="classic")
 
-    # Notification Settings
+    # Legacy notification credentials: read-only since the notification service holds the channels; the
+    # start-up migration (services/notification_migration.py) copies them once, then sets the flag below.
     pushover_user_key = Column(String, nullable=True)
     pushover_api_token = Column(String, nullable=True)
     resend_api_key = Column(String, nullable=True)
@@ -118,6 +137,7 @@ class UserProfile(Base):
     smtp_password = Column(String, nullable=True)
     smtp_from_email = Column(String, nullable=True)
     email_global_recipient = Column(String, nullable=True)
+    notification_channels_migrated = Column(Boolean, nullable=False, default=False, server_default=false())
     active_notification_service = Column(
         String, default="NONE"
     )  # NONE, PUSHOVER, RESEND, MAILJET
@@ -125,10 +145,9 @@ class UserProfile(Base):
     timezone = Column(String, default="Europe/Berlin")
     spoken_languages = Column(JSON, default=[], nullable=True)
 
-    # Storage Settings
-    active_storage_service = Column(String, default="NONE")  # NONE, GOOGLE_DRIVE
-    google_drive_refresh_token = Column(String, nullable=True)
-    google_drive_email = Column(String, nullable=True)
+    # Durable CV import run state, see core/cv_import_state.py: set while an import runs, cleared when it ends.
+    cv_import_started_at = Column(DateTime(timezone=True), nullable=True)
+    cv_import_error = Column(String, nullable=True)
 
 
 class SystemSettings(Base):
@@ -149,12 +168,16 @@ class JobPlatform(Base):
     name = Column(String)
     favicon_url = Column(String, nullable=True)
     crawl_interval_minutes = Column(Integer, default=1440)
-    schedule_time = Column(String, nullable=True)
+    schedule_times = Column(JSON, nullable=True)
     schedule_days = Column(JSON, nullable=True)
     last_crawl_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     is_notification_enabled = Column(Boolean, default=False)
+    # Legacy per-type switches, read only by the channel migration; notification_channels replaces them.
     notification_adapters = Column(JSON, default=[])
+    # The notification-service channels this source notifies, as [{"id", "type"}]; the type never changes in
+    # the service and is kept so lists need no service call. Templates and recipients stay per type below.
+    notification_channels = Column(JSON, nullable=True)
     pushover_template = Column(Text, nullable=True)
     resend_template = Column(Text, nullable=True)
     resend_recipients = Column(JSON, nullable=True)
@@ -237,6 +260,26 @@ class CompanyProfile(Base):
     )
 
 
+class CompanyDeepDive(Base):
+    """One user's latest run of one deep dive of a company: its run state and result, see core/deep_dive_state.py.
+
+    Per user, unlike the shared profile: the result is in the requester's language and the error is
+    meant for them. A deep dive is identified by its focus text; focus_hash keys it, since a focus of
+    2000 code points can exceed a PostgreSQL index entry.
+    """
+
+    __tablename__ = "company_deep_dives"
+    __table_args__ = (UniqueConstraint("user_id", "domain", "focus_hash", name="uq_company_deep_dives_run"),)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    domain = Column(String, nullable=False)
+    focus = Column(Text, nullable=False)
+    focus_hash = Column(String(64), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(String, nullable=True)
+    result = Column(Text, nullable=True)
+
+
 class JobDocument(Base):
     __tablename__ = "job_documents"
     id = Column(Integer, primary_key=True, index=True)
@@ -248,6 +291,7 @@ class JobDocument(Base):
     mime_type = Column(String, nullable=True)
     kind = Column(String, default="UPLOADED", nullable=False, server_default="UPLOADED")
     # UPLOADED | GENERATED_CV | GENERATED_LETTER | ATTACHED_CERT | ATTACHED_REFERENCE
+    # GENERATED_* rows are PDFs of jobs generated before CV and letter became HTML-only (rendered on download).
     content = Column(LargeBinary, nullable=True) # For local database storage
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -260,7 +304,7 @@ class ProfileDocument(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     doc_type = Column(String, nullable=False)  # REFERENCE | CERTIFICATE
     label = Column(String, nullable=True)
-    filename = Column(String, nullable=False)  # db://<name> or gdrive://<name>
+    filename = Column(String, nullable=False)  # db://<name>
     original_filename = Column(String, nullable=False)
     file_size = Column(Integer, nullable=True)
     mime_type = Column(String, nullable=True)
@@ -325,23 +369,17 @@ class CVDataModel(BaseModel):
 
 
 MAX_EMAIL_LENGTH = 254
-MAX_CREDENTIAL_LENGTH = 500
-MAX_HOST_LENGTH = 253
-MIN_PORT = 1
-MAX_PORT = 65535
 # Shape only (something@host.tld): delivery is what proves an address, the check keeps junk out.
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 EmailAddress = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_EMAIL_LENGTH, pattern=EMAIL_PATTERN)]
-# Credentials and the host refuse "": only null clears a field, so an empty input never wipes one silently.
-Credential = Annotated[str, StringConstraints(min_length=1, max_length=MAX_CREDENTIAL_LENGTH)]
-HostName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_HOST_LENGTH)]
-Port = Annotated[int, Field(ge=MIN_PORT, le=MAX_PORT)]
 
 MAX_NOTIFICATION_TEMPLATE_NAME_LENGTH = 100
 # A digest template is HTML; 100,000 characters is far above any real one and keeps a row small.
 MAX_NOTIFICATION_TEMPLATE_LENGTH = 100_000
 # Resend accepts at most 50 addresses per message; the other channels get the same bound.
 MAX_NOTIFICATION_RECIPIENTS = 50
+# The notification service sends to at most 20 channels per notification (and an owner has at most 20).
+MAX_SOURCE_CHANNELS = 20
 NotificationTemplateName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTIFICATION_TEMPLATE_NAME_LENGTH)
 ]
@@ -356,8 +394,9 @@ class SettingsData(BaseModel):
     """Partial profile update: only the fields present in the body are written.
 
     Profile fields default to None without being Optional, so omitting one is
-    fine but an explicit null is rejected. Credential fields stay Optional so a
-    client can clear them.
+    fine but an explicit null is rejected. Notification credentials are not
+    profile fields any more (the notification service holds them); like any
+    unknown key they are ignored.
     """
 
     role: str = Field(None, max_length=MAX_ROLE_LENGTH)
@@ -371,32 +410,6 @@ class SettingsData(BaseModel):
     cv_template: str = None
     cover_letter_template: str = None
     active_notification_service: str = None
-
-    pushover_user_key: Optional[Credential] = None
-    pushover_api_token: Optional[Credential] = None
-    resend_api_key: Optional[Credential] = None
-    resend_from_email: Optional[EmailAddress] = None
-    mailjet_api_key: Optional[Credential] = None
-    mailjet_secret_key: Optional[Credential] = None
-    mailjet_from_email: Optional[EmailAddress] = None
-
-
-class NotificationSettingsData(BaseModel):
-    """Partial update of the channel credentials (B2): only the keys sent are written; null clears."""
-
-    pushover_user_key: Optional[Credential] = None
-    pushover_api_token: Optional[Credential] = None
-    resend_api_key: Optional[Credential] = None
-    resend_from_email: Optional[EmailAddress] = None
-    mailjet_api_key: Optional[Credential] = None
-    mailjet_secret_key: Optional[Credential] = None
-    mailjet_from_email: Optional[EmailAddress] = None
-    smtp_host: Optional[HostName] = None
-    smtp_port: Optional[Port] = None
-    smtp_user: Optional[Credential] = None
-    smtp_password: Optional[Credential] = None
-    smtp_from_email: Optional[EmailAddress] = None
-    email_global_recipient: Optional[EmailAddress] = None
 
 
 class PlatformCreate(BaseModel):
@@ -413,11 +426,11 @@ class PlatformUpdate(BaseModel):
     url: Optional[str] = None
     name: Optional[str] = None
     crawl_interval_minutes: Optional[int] = None
-    schedule_time: Optional[str] = None
+    schedule_times: Optional[List[str]] = None
     schedule_days: Optional[List[int]] = None
     is_active: Optional[bool] = None
     is_notification_enabled: Optional[bool] = None
-    notification_adapters: Optional[List[str]] = None
+    notification_channel_ids: Optional[List[UUID]] = Field(None, max_length=MAX_SOURCE_CHANNELS)
     # Bounded in routers/platforms.py, not here: a value equal to the stored one is accepted unchanged,
     # so a legacy copy the drawer sends back verbatim never blocks the save.
     pushover_template: Optional[str] = None
@@ -435,10 +448,10 @@ class PlatformUpdate(BaseModel):
     def _url_is_public(cls, value: Optional[str]) -> Optional[str]:
         return None if value is None else ensure_public_http_url(value)
 
-    @field_validator("schedule_time")
+    @field_validator("schedule_times")
     @classmethod
-    def _time_format(cls, value: Optional[str]) -> Optional[str]:
-        return check_schedule_time(value)
+    def _times_format(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        return check_schedule_times(value)
 
     @field_validator("schedule_days")
     @classmethod
@@ -472,12 +485,13 @@ class PlatformResponse(BaseModel):
     name: str
     favicon_url: Optional[str] = None
     crawl_interval_minutes: int
-    schedule_time: Optional[str] = None
+    schedule_times: Optional[List[str]] = None
     schedule_days: Optional[List[int]] = None
     last_crawl_at: Optional[str] = None
     is_active: bool
     is_notification_enabled: bool = False
     notification_adapters: List[str] = []
+    notification_channel_ids: List[str] = []
     pushover_template: Optional[str] = None
     resend_template: Optional[str] = None
     resend_recipients: Optional[List[str]] = None
@@ -609,6 +623,17 @@ class JobChecklist(BaseModel):
     sent: bool = False
 
 
+class FirstDayChecklist(BaseModel):
+    """First-day checklist of an accepted offer; only these keys exist, replaced as a whole on PATCH."""
+
+    model_config = ConfigDict(extra="forbid")
+    contract_signed: bool = False
+    papers_ready: bool = False
+    others_declined: bool = False
+    route_planned: bool = False
+    first_day_contact: bool = False
+
+
 class JobTodo(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=MAX_TODO_ID_LENGTH)
@@ -685,6 +710,9 @@ class JobPatchRequest(BaseModel):
     next_follow_up_at: Optional[datetime] = None
     interview_at: Optional[datetime] = None
     notes: Optional[str] = Field(None, max_length=MAX_NOTES_LENGTH)
+    outcome_notes: Optional[str] = Field(None, max_length=MAX_NOTES_LENGTH)
+    first_day_checklist: Optional[FirstDayChecklist] = None
+    start_date: Optional[date] = None
     application_draft: Optional[str] = Field(None, max_length=MAX_DRAFT_LENGTH)
     cv_draft: Optional[str] = Field(None, max_length=MAX_DRAFT_LENGTH)
     is_archived: Optional[bool] = None
@@ -706,6 +734,13 @@ class JobPatchRequest(BaseModel):
 
 
 class CompanyAnalyzeRequest(BaseModel):
+    force_refresh: bool = False
+
+
+class JobCompanyResearchRequest(BaseModel):
+    """The company domain to research for a job; null asks the AI to identify it."""
+
+    company_domain: Optional[CompanyDomain] = None
     force_refresh: bool = False
 
 

@@ -5,7 +5,7 @@
 export const PLATFORMS_PATH = "/platforms";
 export const PLATFORM_SETUP_PATH = "/platforms/setup";
 export const PREVIEW_LINKS_PATH = "/platforms/preview-links";
-export const CHANNEL_STATUS_PATH = "/notification-settings/channels";
+export const URL_PATTERN_PATH = "/platforms/url-pattern";
 export const NOTIFICATION_TEMPLATES_PATH = "/notification-templates";
 export const CANCEL_CRAWL_PATH = "/scraper/cancel-crawl";
 /** Runs shown in the drawer (D8); the server keeps 20. */
@@ -56,8 +56,4 @@ export function platformCrawlPath(id: number): string {
 
 export function platformNamePath(id: number): string {
   return platformPath(id, "/generate-name");
-}
-
-export function platformTestPath(id: number, channel: NotifyChannel): string {
-  return platformPath(id, `/test-${channel.toLowerCase()}`);
 }

@@ -17,17 +17,13 @@ from openai import (
 from core.celery_config import celery_app
 from core.job_status import ArchiveReason
 from core.logger import get_logger
+from core.crawl_progress import read_crawl_progress
 from core.crawl_registry import touch_crawl_progress
-from services.company_domain import normalised_host
-from database.core import SessionLocal, JobEntry, UserProfile, JobPlatform, User, iso_utc
+from database.core import SessionLocal, JobEntry, UserProfile, JobPlatform, iso_utc
+from intelligence.posting_details import apply_posting_details
 from intelligence.service import get_client_and_model, format_cv_for_prompt, analyze_job
 
-from workers.notifications.push import send_notification
-from workers.notifications.email import (
-    _send_via_resend_batch,
-    _send_via_mailjet_batch,
-    _send_via_smtp_batch,
-)
+from services.match_notifications import notify_match
 from workers.crawl_control import AI_FAILURE, INTERNAL_FAILURE, fail_crawl_job
 from workers.tasks.crawl_status import maybe_complete_crawl
 
@@ -37,19 +33,6 @@ logger = get_logger(__name__)
 def _own_job_id(job: JobEntry, user_id) -> Optional[str]:
     """The duplicate's id, only when it belongs to the crawl's user (events reach that user only)."""
     return job.id if job.user_id == user_id else None
-
-
-def posting_company_domain(db, job_url, user_id):
-    """The employer domain of a posting, or None when it lives on one of the user's job boards."""
-    host = normalised_host(job_url)
-    if host is None or host in _platform_hosts(db, user_id):
-        return None
-    return host
-
-
-def _platform_hosts(db, user_id) -> set:
-    urls = db.query(JobPlatform.url).filter(JobPlatform.user_id == user_id).all()
-    return {normalised_host(url) for (url,) in urls}
 
 
 def _crawl_stopped(redis_client, crawl_job_id: Optional[str]) -> bool:
@@ -105,6 +88,7 @@ def analyze_job_task(job_data):
                     "user_id": user_id,
                     "job_title": job_title,
                     "analysis_completed": analysis_completed,
+                    "progress": read_crawl_progress(r, crawl_job_id),
                 }
             ),
         )
@@ -145,6 +129,7 @@ def analyze_job_task(job_data):
                             "job_title": job_title,
                             "jobs_skipped": jobs_skipped,
                             "existing_job_id": _own_job_id(existing_job, user_id),
+                            "progress": read_crawl_progress(r, crawl_job_id),
                         }
                     ),
                 )
@@ -202,11 +187,13 @@ def analyze_job_task(job_data):
             )
 
         job_url = job_data.get("url")
-        company_domain = posting_company_domain(db, job_url, user_id)
 
         if existing_job and force_reanalyze:
+            # The LLM call took a while: re-read the row so a user edit committed meanwhile is seen and kept.
+            db.refresh(existing_job, with_for_update=True)
             existing_job.match_score = float(data.get("score", 0))
             existing_job.reasoning = data.get("reasoning", "")
+            apply_posting_details(existing_job, data)
             db.commit()
             db.refresh(existing_job)
             db_job = existing_job
@@ -224,10 +211,10 @@ def analyze_job_task(job_data):
                 status="OPEN",
                 user_id=user_id,
                 platform_id=job_data.get("platform_id"),
-                company_domain=company_domain,
                 is_archived=auto_archive,
                 archive_reason=ArchiveReason.THRESHOLD.value if auto_archive else None,
             )
+            apply_posting_details(db_job, data)
             db.add(db_job)
             db.commit()
             logger.info(f"Job {job_id} saved to database.")
@@ -277,6 +264,7 @@ def analyze_job_task(job_data):
                         "user_id": user_id,
                         "job_title": job_title,
                         "jobs_saved": jobs_saved,
+                        "progress": read_crawl_progress(r, crawl_job_id),
                     }
                 ),
             )
@@ -294,73 +282,12 @@ def analyze_job_task(job_data):
                     platform
                     and platform.is_notification_enabled
                     and not db_job.notification_sent
+                    and notify_match(db, r, db_job, platform, crawl_job_id)
                 ):
-                    settings_profile = (
-                        db.query(UserProfile)
-                        .filter(UserProfile.user_id == user_id)
-                        .first()
-                    )
-
-                    if settings_profile:
-                        platform_adapters = [
-                            a.upper() for a in (platform.notification_adapters or [])
-                        ]
-                        non_batch = [a for a in platform_adapters if a not in ("RESEND", "MAILJET", "SMTP")]
-                        has_resend = "RESEND" in platform_adapters
-                        has_mailjet = "MAILJET" in platform_adapters
-                        has_smtp = "SMTP" in platform_adapters
-
-                        sent = False
-                        if non_batch:
-                            sent = send_notification(
-                                db_job,
-                                settings_profile,
-                                db,
-                                adapters=non_batch,
-                                platform=platform,
-                            )
-
-                        # Resend: queue per-job for batch digest at crawl completion
-                        if has_resend:
-                            if crawl_job_id:
-                                r.rpush(f"crawl:{crawl_job_id}:pending_resend", db_job.id)
-                                r.expire(f"crawl:{crawl_job_id}:pending_resend", 3600)
-                            else:
-                                user_obj = db.query(User).filter(User.id == user_id).first()
-                                uname = user_obj.username if user_obj else "Candidate"
-                                sent = _send_via_resend_batch(
-                                    [db_job], settings_profile, platform=platform, userName=uname
-                                ) or sent
-
-                        # Mailjet: same batch pattern
-                        if has_mailjet:
-                            if crawl_job_id:
-                                r.rpush(f"crawl:{crawl_job_id}:pending_mailjet", db_job.id)
-                                r.expire(f"crawl:{crawl_job_id}:pending_mailjet", 3600)
-                            else:
-                                user_obj = db.query(User).filter(User.id == user_id).first()
-                                uname = user_obj.username if user_obj else "Candidate"
-                                sent = _send_via_mailjet_batch(
-                                    [db_job], settings_profile, platform=platform, userName=uname
-                                ) or sent
-
-                        # SMTP: same batch pattern
-                        if has_smtp:
-                            if crawl_job_id:
-                                r.rpush(f"crawl:{crawl_job_id}:pending_smtp", db_job.id)
-                                r.expire(f"crawl:{crawl_job_id}:pending_smtp", 3600)
-                            else:
-                                user_obj = db.query(User).filter(User.id == user_id).first()
-                                uname = user_obj.username if user_obj else "Candidate"
-                                sent = _send_via_smtp_batch(
-                                    [db_job], settings_profile, platform=platform, userName=uname
-                                ) or sent
-
-                        if sent or has_resend or has_mailjet or has_smtp:
-                            db_job.notification_sent = True
-                            db.commit()
+                    db_job.notification_sent = True
+                    db.commit()
         except Exception as notif_e:
-            logger.error(f"Error in notification logic: {notif_e}")
+            logger.error(f"Error in notification logic: {type(notif_e).__name__}", exc_info=notif_e)
         # --------------------------
 
         # Handle crawl job completion
@@ -418,6 +345,7 @@ def save_job_basic_task(job_data):
                     "user_id": user_id,
                     "job_title": job_title,
                     "analysis_completed": analysis_completed,
+                    "progress": read_crawl_progress(r, crawl_job_id),
                 }),
             )
 
@@ -436,13 +364,13 @@ def save_job_basic_task(job_data):
                         "user_id": user_id,
                         "job_title": job_title,
                         "jobs_skipped": jobs_skipped,
+                        "progress": read_crawl_progress(r, crawl_job_id),
                     }),
                 )
                 maybe_complete_crawl(crawl_job_id, user_id, db, r)
             return
 
         job_url = job_data.get("url")
-        company_domain = posting_company_domain(db, job_url, user_id)
 
         db_job = JobEntry(
             id=job_data["id"],
@@ -456,7 +384,6 @@ def save_job_basic_task(job_data):
             status="OPEN",
             user_id=user_id,
             platform_id=job_data.get("platform_id"),
-            company_domain=company_domain,
         )
         db.add(db_job)
         db.commit()
@@ -498,6 +425,7 @@ def save_job_basic_task(job_data):
                     "user_id": user_id,
                     "job_title": job_title,
                     "jobs_saved": jobs_saved,
+                    "progress": read_crawl_progress(r, crawl_job_id),
                 }),
             )
             maybe_complete_crawl(crawl_job_id, user_id, db, r)

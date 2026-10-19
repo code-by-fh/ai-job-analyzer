@@ -14,13 +14,11 @@ from workers.tasks.fill_cv_template import (
     TEMPLATE_STATUS_ANNOTATION_REJECTED,
     fill_cv_template_task,
 )
-from workers.tasks.package import generate_application_package_task, render_document_pdf_task
+from workers.tasks.package import generate_application_package_task
 from workers.tasks.time_limits import (
     GENERATION_HARD_TIME_LIMIT_SECONDS,
     GENERATION_SOFT_TIME_LIMIT_SECONDS,
     GENERATION_TIMEOUT_ERROR,
-    RENDER_HARD_TIME_LIMIT_SECONDS,
-    RENDER_SOFT_TIME_LIMIT_SECONDS,
 )
 
 TEMPLATE_ID = 77
@@ -64,7 +62,6 @@ def test_valid_annotation_is_stored(run_fill):
 @pytest.mark.parametrize("task,soft,hard", [
     (generate_application_package_task, GENERATION_SOFT_TIME_LIMIT_SECONDS, GENERATION_HARD_TIME_LIMIT_SECONDS),
     (generate_application_task, GENERATION_SOFT_TIME_LIMIT_SECONDS, GENERATION_HARD_TIME_LIMIT_SECONDS),
-    (render_document_pdf_task, RENDER_SOFT_TIME_LIMIT_SECONDS, RENDER_HARD_TIME_LIMIT_SECONDS),
 ])
 def test_template_rendering_tasks_have_time_limits(task, soft, hard):
     assert (task.soft_time_limit, task.time_limit) == (soft, hard)
@@ -83,7 +80,7 @@ def test_soft_time_limit_while_a_build_is_stuck_returns_promptly_with_the_timeou
              patch("workers.tasks.package.redis.from_url", return_value=fake_redis), \
              patch("workers.tasks.package.get_client_and_model", return_value=NO_AI), \
              patch("workers.tasks.package._build_cv", side_effect=lambda *_: release.wait(STUCK_BUILD_SECONDS)), \
-             patch("workers.tasks.package._build_letter", return_value=("t", "<p>t</p>", b"%PDF")):
+             patch("workers.tasks.package._build_letter", return_value=("t", "<p>t</p>")):
             generate_application_package_task("job-1", TEST_USER_ID, False)
     finally:
         elapsed = time.monotonic() - started

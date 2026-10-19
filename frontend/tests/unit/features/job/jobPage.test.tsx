@@ -1,8 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JobPage } from "@/features/job/JobPage";
-import { jsonResponse } from "../../support/fakeFetch";
+import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
 import { buildJob } from "../../support/jobFactory";
 import { renderWithProviders } from "../../support/render";
 import { stubRoutes } from "../../support/stubRoutes";
@@ -34,6 +34,47 @@ describe("JobPage next step column", () => {
     const tabs = screen.getByRole("tablist");
     expect(side.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(side).toHaveTextContent("Passt die Stelle zu dir?");
+  });
+
+  it("lists and adds the to-dos below Termine & Daten, not in Verlauf", async () => {
+    navigation.search = "tab=verlauf";
+    showJob({ status: "APPLIED", todos: [{ id: "a", text: "Gehalt recherchieren", done: false }] });
+    const side = await screen.findByRole("complementary", { name: "Nächster Schritt" });
+    const titles = within(side).getAllByRole("heading", { level: 2 });
+    expect(titles.slice(-2).map((heading) => heading.textContent)).toEqual([
+      "Termine & Daten",
+      "Aufgaben",
+    ]);
+    expect(within(side).getByLabelText("Gehalt recherchieren")).toBeInTheDocument();
+    expect(within(side).getByLabelText("Neue Aufgabe")).toBeInTheDocument();
+    expect(within(screen.getByRole("tabpanel")).queryByLabelText("Neue Aufgabe")).toBeNull();
+  });
+
+  it("records an invitation and opens Termine & Daten on the interview date", async () => {
+    const job = buildJob({
+      status: "APPLIED",
+      cv_html_present: true,
+      cover_letter_html_present: true,
+    });
+    const calls = stubRoutes({
+      ...JOB_ROUTES,
+      "GET /jobs/job-1": job,
+      "POST /jobs/job-1/status": (call: RecordedCall) =>
+        jsonResponse(200, { ...job, status: JSON.parse(call.body ?? "").to }),
+    });
+    renderWithProviders(<JobPage jobId="job-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Einladung eintragen" }));
+    const drawer = await screen.findByRole("dialog", { name: "Termine & Daten" });
+    expect(calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([
+      JSON.stringify({ to: "INTERVIEW" }),
+    ]);
+    await waitFor(() => expect(within(drawer).getByLabelText("Interviewtermin")).toHaveFocus());
+    // The invite button is gone after the change, so focus lands on the card's edit button.
+    await userEvent.keyboard("{Escape}");
+    const side = screen.getByRole("complementary", { name: "Nächster Schritt" });
+    await waitFor(() =>
+      expect(within(side).getByRole("button", { name: "Bearbeiten" })).toHaveFocus(),
+    );
   });
 });
 

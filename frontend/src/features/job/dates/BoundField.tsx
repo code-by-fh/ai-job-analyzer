@@ -21,15 +21,18 @@ interface BoundFieldProps extends Pick<FieldsProps, "form" | "setForm"> {
   error?: string;
   maxLength?: number;
   disabled?: boolean;
+  /** Marks the control the surrounding modal focuses first (ModalLayer's data-autofocus). */
+  autoFocus?: boolean;
   type?: InputHTMLAttributes<HTMLInputElement>["type"];
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
 }
 
 /** A text input bound to one string field of the form. */
-export function BoundField({ form, setForm, name, ...field }: BoundFieldProps) {
+export function BoundField({ form, setForm, name, autoFocus, ...field }: BoundFieldProps) {
   return (
     <TextField
       {...field}
+      data-autofocus={autoFocus || undefined}
       value={form[name]}
       onChange={(event) => setForm((current) => ({ ...current, [name]: event.target.value }))}
     />

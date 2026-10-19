@@ -1,10 +1,16 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Request } from "@playwright/test";
 import type { CompanyProfileBody } from "../../../src/api/companies";
 import type { JobDocumentBody } from "../../../src/api/jobDocuments";
 import type { JobDetailBody, JobHistoryBody } from "../../../src/api/jobs";
 import type { ProfileDocumentBody } from "../../../src/api/profileDocuments";
 import { ADMIN_USER_ID, AUTHENTICATED_ROUTES } from "./fixtures";
-import type { ApiLog, MockResponse, MockRoutes, MutableRoutes } from "./mockApi";
+import {
+  live,
+  type ApiLog,
+  type MockResponse,
+  type MockRoutes,
+  type MutableRoutes,
+} from "./mockApi";
 
 export const JOB_ID = "job-1";
 /** The answer of a successful PATCH /jobs/{id}. */
@@ -64,8 +70,22 @@ export const LETTER_DOCUMENT: JobDocumentBody = {
   original_filename: "Anschreiben_ACME.pdf",
   kind: "GENERATED_LETTER",
 };
+/** The stored PDFs of a job generated before CV and letter became HTML-only (Task 12). */
 export const READY_DOCUMENTS = [CV_DOCUMENT, LETTER_DOCUMENT];
 export const READY = { cv_html_present: true, cover_letter_html_present: true } as const;
+
+const SHEET_STYLE =
+  "<style>body{font-family:Georgia,serif;color:#222;margin:40px;font-size:13px;line-height:1.5}" +
+  "h1{font-size:24px;margin:0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;" +
+  "border-bottom:1px solid #ccc;margin:22px 0 6px}</style>";
+export const CV_HTML =
+  `<html><head>${SHEET_STYLE}</head><body><h1>Jana Beispiel</h1>` +
+  "<p>Senior Backend Engineer · Hamburg</p><h2>Erfahrung</h2>" +
+  "<p><b>Zahlungsplattform GmbH</b> · seit 2021<br>Kotlin, Kafka, transaktionale Outbox</p>" +
+  "<h2>Ausbildung</h2><p>M.Sc. Informatik</p></body></html>";
+export const LETTER_HTML =
+  `<html><head>${SHEET_STYLE}</head><body><p>Sehr geehrte Damen und Herren,</p>` +
+  "<p>mit großem Interesse habe ich Ihre Stelle gelesen.</p></body></html>";
 
 const step = (id: number, from: string, to: string, changedAt: string): JobHistoryBody => ({
   id,
@@ -146,7 +166,8 @@ export const COMPANY_PROFILE: CompanyProfileBody = {
 export const PREP_MATERIAL = JSON.stringify({
   report_output: {
     executive_summary: "Deine Erfahrung mit Zahlungssystemen ist der stärkste Punkt.",
-    deep_dive_analysis: "",
+    deep_dive_analysis:
+      "## Technisches Gespräch\n\nRechne mit Fragen zu Idempotenz und Retries im Zahlungsfluss.",
   },
   structured_prep: {
     elevator_pitch: "Ich baue robuste Backend-Systeme und führe kleine Teams.",
@@ -157,14 +178,31 @@ export const PREP_MATERIAL = JSON.stringify({
         gap_severity: "Medium",
         interview_strategy: "AWS-Erfahrung übertragen",
       },
+      {
+        requirement: "Kafka im Betrieb",
+        cv_status: "Nur als Nutzer, nicht als Betreiber",
+        gap_severity: "High",
+        interview_strategy: "Das Outbox-Projekt erzählen und offen sagen, was du lernen willst.",
+      },
+      {
+        requirement: "Scrum",
+        cv_status: "Drei Jahre im Team",
+        gap_severity: "Low",
+        interview_strategy: "Ein Retro-Beispiel bereithalten.",
+      },
     ],
   },
   deep_dive_buttons: [],
-  confidence_assessment: { overall_confidence: "Moderate", uncertainties: ["Budget des Teams"] },
+  confidence_assessment: {
+    overall_confidence: "Moderate",
+    uncertainties: ["Budget des Teams", "Anteil Bereitschaftsdienst"],
+  },
   online_resources: ["https://acme.de/karriere"],
 });
 
 const path = (suffix = "") => `/jobs/${JOB_ID}${suffix}`;
+const htmlOf = (request: Request) =>
+  new URL(request.url()).searchParams.get("kind") === "cover_letter" ? LETTER_HTML : CV_HTML;
 
 /** Freezes the browser clock at NOW_ISO; call it in every job spec's beforeEach. */
 export async function fixNow(page: Page): Promise<void> {
@@ -177,7 +215,10 @@ export function jobRoutes(job: JobDetailBody, extra: MockRoutes = {}): MutableRo
     ...AUTHENTICATED_ROUTES,
     [`GET ${path()}`]: { body: job },
     [`GET ${path("/history")}`]: { body: historyFor(job.pre_generation_status ?? job.status) },
-    [`GET ${path("/documents")}`]: { body: job.cv_html_present ? READY_DOCUMENTS : [] },
+    [`GET ${path("/documents")}`]: { body: [] },
+    // One plain key, so a spec's own "GET .../documents/html" replaces it for both kinds.
+    [`GET ${path("/documents/html")}`]: live((_sent, request) => ({ html: htmlOf(request) })),
+    [`GET ${path("/documents/pdf")}`]: PDF_RESPONSE,
     [`GET ${path("/documents/4/view")}`]: PDF_RESPONSE,
     [`GET ${path("/documents/5/view")}`]: PDF_RESPONSE,
     "GET /profile/documents": { body: PROFILE_DOCUMENTS },

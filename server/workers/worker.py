@@ -4,31 +4,17 @@ Celery is launched via ``-A workers.worker.celery_app`` (see ``supervisord.conf`
 so importing this module must (a) expose ``celery_app`` and (b) import every task
 module so the ``@celery_app.task`` decorators register their tasks.
 
-The notification helpers and templates were split into ``workers.notifications``
-and the tasks into ``workers.tasks``. They are re-exported here so existing
-imports such as ``from workers.worker import _send_via_resend_batch`` (used by
-``routers/platforms.py`` and ``routers/settings.py``) keep working unchanged.
+The tasks live in ``workers.tasks``; notifications go through the notification service
+(``services/notifications_client.py``), whose settings are checked when a worker starts.
 """
 
+from celery.signals import worker_init
+
 from core.celery_config import celery_app
+from services import notifications_client
 
 # Re-exported helper imported by routers and scripts.
 from intelligence.service import format_cv_for_prompt
-
-from workers.notifications.templates import (
-    _RESEND_DEFAULT_HTML,
-    _RESEND_DEFAULT_JOB_ROW,
-)
-from workers.notifications.email import (
-    _send_via_resend_batch,
-    _send_via_mailjet_batch,
-    _send_via_smtp_batch,
-    _flush_resend_digest,
-    _flush_mailjet_digest,
-    _flush_smtp_digest,
-    flush_all_digests,
-)
-from workers.notifications.push import _send_via_pushover, send_notification
 
 # Importing the task modules registers their @celery_app.task tasks.
 from workers.tasks.urls import filter_urls_task
@@ -37,6 +23,7 @@ from workers.tasks.application import generate_application_task
 from workers.tasks.research import (
     generate_interview_prep_task,
     generate_company_profile,
+    research_job_company_task,
 )
 from workers.tasks.scheduling import (
     check_follow_ups,
@@ -46,22 +33,19 @@ from workers.tasks.scheduling import (
 from workers.tasks.package import generate_application_package_task  # noqa: F401
 from workers.tasks.fill_cv_template import fill_cv_template_task  # noqa: F401
 from workers.tasks.generation_sweep import fail_stuck_generations  # noqa: F401
+from workers.tasks.posting_details import extract_posting_details_task  # noqa: F401
+
+
+@worker_init.connect
+def _require_notification_service(**_kwargs) -> None:
+    """Fail fast: a worker without NOTIFY_API_URL / NOTIFY_API_KEY would drop every match notification."""
+    notifications_client.get_client()
+
 
 __all__ = [
     "celery_app",
-    # helpers / templates
+    # helpers
     "format_cv_for_prompt",
-    "_RESEND_DEFAULT_HTML",
-    "_RESEND_DEFAULT_JOB_ROW",
-    "_send_via_resend_batch",
-    "_send_via_mailjet_batch",
-    "_send_via_smtp_batch",
-    "_send_via_pushover",
-    "send_notification",
-    "_flush_resend_digest",
-    "_flush_mailjet_digest",
-    "_flush_smtp_digest",
-    "flush_all_digests",
     # tasks
     "filter_urls_task",
     "analyze_job_task",
@@ -69,6 +53,7 @@ __all__ = [
     "generate_application_task",
     "generate_interview_prep_task",
     "generate_company_profile",
+    "research_job_company_task",
     "check_follow_ups",
     "check_platforms_for_crawl",
     "cleanup_stale_redis_jobs",

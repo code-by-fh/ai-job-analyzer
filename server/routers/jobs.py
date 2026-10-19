@@ -1,7 +1,8 @@
 import os
+import threading
 from datetime import datetime
 from io import BytesIO
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 
 import markdown
 from fastapi import APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Query, status
@@ -16,9 +17,10 @@ from database.core import (
     JobEntry,
     JobStatusHistory,
     JobDocument,
-    UserProfile,
     JobPatchRequest,
     MAX_DRAFT_LENGTH,
+    CompanyProfile,
+    JobCompanyResearchRequest,
 )
 from core.auth import get_current_user
 from core.celery_config import celery_app
@@ -39,14 +41,20 @@ from core.job_status import (
     restore_job,
     start_generation,
 )
-from routers.deps import limiter, UPLOAD_DIR, APPLICATION_STATUSES
+from routers.companies import COMPANY_RESEARCH_RATE
+from routers.deps import limiter, user_or_ip_key, UPLOAD_DIR, APPLICATION_STATUSES
 from core.like_pattern import LIKE_ESCAPE, contains_pattern
+from core.company_research_state import research_running, start_research
+from core.interview_prep_state import prep_running, start_prep
+from core.posting_details_state import posting_details_running, start_posting_details
 from core.logger import get_logger
 from core.uploads import (
     MAX_UPLOAD_BYTES, UNSUPPORTED_TYPE, content_disposition, read_upload, require_type,
 )
+from intelligence.posting_details import POSTING_FIELDS, forget_posting_origin
 from services.company_domain import CompanyDomain
-from services.document_renderer import render_cover_letter_html
+from services.document_renderer import PdfRenderFailed, render_cover_letter_html, render_pdf_isolated
+from services.job_documents import generated_pdf_name
 from services.user_data import delete_job_rows
 from services.safe_fetch import xhtml2pdf_link_callback
 
@@ -66,6 +74,13 @@ ALLOWED_MIME_TYPES = {
 # Plain text has no magic bytes to check, so it is accepted by its declared type.
 _UNSIGNED_TYPES = {"text/plain"}
 MAX_FILE_SIZE = MAX_UPLOAD_BYTES
+# Each download renders the PDF in a bounded child process (up to 20 s CPU, 512 MB).
+DOCUMENT_PDF_RATE = "10/minute"
+PDF_RENDER_FAILED = "pdf_render_failed"
+PDF_RENDER_BUSY = "pdf_render_busy"
+# Renders running at once in this API process, across all users (each child may take 512 MB).
+MAX_PARALLEL_PDF_RENDERS = 3
+_pdf_render_slots = threading.BoundedSemaphore(MAX_PARALLEL_PDF_RENDERS)
 
 
 class BulkDeleteRequest(BaseModel):
@@ -91,7 +106,7 @@ class SaveHtmlRequest(BaseModel):
 
 
 MAX_STATUS_NOTE_LENGTH = 2000
-CLEARABLE_DATE_FIELDS = frozenset({"next_follow_up_at", "interview_at"})
+CLEARABLE_DATE_FIELDS = frozenset({"next_follow_up_at", "interview_at", "start_date"})
 
 
 class StatusChangeRequest(BaseModel):
@@ -104,7 +119,8 @@ _JOB_DETAIL_COLUMNS = (
     "reasoning", "application_draft", "cv_draft", "interview_prep_material",
     "status", "url", "is_favorite", "contact_persons", "recruiter_info",
     "salary_benchmark", "notes", "is_archived", "archive_reason", "platform_id",
-    "generation_error", "checklist", "todos", "pre_generation_status",
+    "generation_error", "checklist", "todos", "pre_generation_status", "interview_prep_error",
+    "company_research_error", "posting_extracted", "posting_details_error", "outcome_notes", "first_day_checklist",
 )
 
 
@@ -114,6 +130,7 @@ def _derived_job_fields(job: JobEntry) -> dict:
         "created_at": iso_utc(job.created_at),
         "next_follow_up_at": iso_utc(job.next_follow_up_at),
         "interview_at": iso_utc(job.interview_at),
+        "start_date": job.start_date.isoformat() if job.start_date else None,
         "cv_html_present": bool(job.cv_html),
         "cover_letter_html_present": bool(job.cover_letter_html),
     }
@@ -122,6 +139,14 @@ def _derived_job_fields(job: JobEntry) -> dict:
 def _job_detail(job: JobEntry) -> dict:
     detail = {column: getattr(job, column) for column in _JOB_DETAIL_COLUMNS}
     detail.update(_derived_job_fields(job))
+    detail["interview_prep_running"] = prep_running(job)
+    detail["company_research_running"] = research_running(job)
+    detail["posting_details_running"] = posting_details_running(job)
+    # Start stamps of the running AI work, so the web counts the elapsed time across a reload.
+    detail["interview_prep_started_at"] = iso_utc(job.interview_prep_started_at)
+    detail["company_research_started_at"] = iso_utc(job.company_research_started_at)
+    detail["posting_details_started_at"] = iso_utc(job.posting_details_started_at)
+    detail["generation_started_at"] = iso_utc(job.generation_started_at)
     return detail
 
 
@@ -132,6 +157,8 @@ def _get_owned_job(db, job_id: str, user_id: int) -> JobEntry:
     return job
 
 
+# Each start is a paid AI call.
+POSTING_DETAILS_RATE = "10/minute"
 MAX_PAGE_SIZE = 100
 MAX_SEARCH_LENGTH = 200
 MAX_COMPANY_FILTER_LENGTH = 200
@@ -691,11 +718,14 @@ def patch_job(
             job.recruiter_info = request.recruiter_info.model_dump()
         if request.salary_benchmark is not None:
             job.salary_benchmark = request.salary_benchmark.model_dump()
+        forget_posting_origin(job, {field for field in POSTING_FIELDS if getattr(request, field) is not None})
         # Dates are clearable: an explicit null clears, an omitted field keeps the value.
         for date_field in CLEARABLE_DATE_FIELDS & request.model_fields_set:
             setattr(job, date_field, getattr(request, date_field))
         if request.notes is not None:
             job.notes = request.notes
+        if request.outcome_notes is not None:
+            job.outcome_notes = request.outcome_notes
         if request.application_draft is not None:
             job.application_draft = request.application_draft
         if request.cv_draft is not None:
@@ -704,6 +734,8 @@ def patch_job(
             _set_archived(job, request.is_archived)
         if request.checklist is not None:
             job.checklist = request.checklist.model_dump()
+        if request.first_day_checklist is not None:
+            job.first_day_checklist = request.first_day_checklist.model_dump()
         if request.todos is not None:
             job.todos = [todo.model_dump() for todo in request.todos]
 
@@ -851,6 +883,9 @@ async def generate_interview_prep_endpoint(
                 "job_id": job_id,
             }
 
+        # Committed before queueing, so a fast worker's end of the run is never overwritten.
+        start_prep(job)
+        db.commit()
         celery_app.send_task(
             "worker.generate_interview_prep_task",
             args=[job_id, current_user.id],
@@ -879,6 +914,9 @@ async def regenerate_interview_prep_endpoint(
         )
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        # Committed before queueing, so a fast worker's end of the run is never overwritten.
+        start_prep(job)
+        db.commit()
         celery_app.send_task(
             "worker.generate_interview_prep_task",
             args=[job_id, current_user.id],
@@ -889,6 +927,69 @@ async def regenerate_interview_prep_endpoint(
             "message": "Interview prep regeneration started",
             "job_id": job_id,
         }
+    finally:
+        db.close()
+
+
+@router.post("/jobs/{job_id}/company-research")
+@limiter.limit(COMPANY_RESEARCH_RATE, key_func=user_or_ip_key)
+def start_job_company_research(
+    request: Request,
+    job_id: str,
+    body: JobCompanyResearchRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Research the job's company under the domain the user typed, or let the AI identify it (null).
+
+    The typed domain replaces the stored one as is. An existing shared profile is linked without a new
+    research unless force_refresh is set.
+    """
+    db = SessionLocal()
+    try:
+        job = _get_owned_job(db, job_id, current_user.id)
+        job.company_domain = body.company_domain
+        profile_exists = body.company_domain is not None and db.query(CompanyProfile.id).filter(
+            CompanyProfile.domain == body.company_domain
+        ).first() is not None
+        if profile_exists and not body.force_refresh:
+            job.company_research_error = None
+            db.commit()
+            return {"status": "exists", "domain": job.company_domain}
+        # Committed before queueing, so a fast worker's end of the run is never overwritten.
+        start_research(job)
+        db.commit()
+        celery_app.send_task(
+            "worker.research_job_company_task",
+            args=[job_id, current_user.id, body.force_refresh],
+            queue="ai_queue",
+        )
+        return {"status": "queued", "domain": job.company_domain}
+    finally:
+        db.close()
+
+
+@router.post("/jobs/{job_id}/posting-details")
+@limiter.limit(POSTING_DETAILS_RATE, key_func=user_or_ip_key)
+def start_posting_details_extraction(
+    request: Request, job_id: str, current_user: User = Depends(get_current_user)
+):
+    """Read contact, recruiter and salary details out of the stored posting; only empty fields are filled."""
+    db = SessionLocal()
+    try:
+        job = _get_owned_job(db, job_id, current_user.id)
+        if not (job.description or "").strip():
+            raise HTTPException(status_code=409, detail="Job has no posting text")
+        if posting_details_running(job):
+            return {"status": "running"}
+        # Committed before queueing, so a fast worker's end of the run is never overwritten.
+        start_posting_details(job)
+        db.commit()
+        celery_app.send_task(
+            "worker.extract_posting_details_task",
+            args=[job_id, current_user.id],
+            queue="ai_queue",
+        )
+        return {"status": "queued"}
     finally:
         db.close()
 
@@ -922,31 +1023,14 @@ async def upload_job_document(
 
         content, mime = await _checked_job_upload(file)
 
-        from services.storage import get_storage_service
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        storage = get_storage_service(profile) if profile else None
-
-        if storage:
-            # Upload to Google Drive via Storage Service
-            success = await storage.upload_file(content, file.filename or "unnamed_file", mime_type=mime)
-            if not success:
-                raise HTTPException(status_code=500, detail="Upload to Google Drive failed")
-            stored_filename = f"gdrive://{file.filename}"
-            db_content = None
-        else:
-            # Fallback: Save in local database
-            stored_filename = f"db://{file.filename}"
-            db_content = content
-
-        # Save record to DB
         doc = JobDocument(
             job_id=job_id,
             user_id=current_user.id,
-            filename=stored_filename,
+            filename=f"db://{file.filename}",
             original_filename=file.filename or "unnamed_file",
             file_size=len(content),
             mime_type=mime,
-            content=db_content
+            content=content
         )
         db.add(doc)
         db.commit()
@@ -957,7 +1041,6 @@ async def upload_job_document(
             "file_size": doc.file_size,
             "mime_type": doc.mime_type,
             "uploaded_at": iso_utc(doc.uploaded_at),
-            "storage": "google_drive" if storage else "database"
         }
     except HTTPException:
         raise
@@ -1021,9 +1104,6 @@ def download_job_document(
 
         if doc.filename.startswith("db://"):
             data = doc.content
-        elif doc.filename.startswith("gdrive://"):
-            # Requires Google Drive API download logic
-            raise HTTPException(status_code=400, detail="Download for Google Drive files is not yet implemented. Please view in Google Drive directly.")
         else:
             # Fallback for old local filesystem files
             from pathlib import Path as _Path
@@ -1068,9 +1148,6 @@ def view_job_document(
 
         if doc.filename.startswith("db://"):
             data = doc.content
-        elif doc.filename.startswith("gdrive://"):
-            # Requires Google Drive API view logic
-            raise HTTPException(status_code=400, detail="Viewing Google Drive files in app is not yet implemented.")
         else:
             # Fallback for old local filesystem files
             from pathlib import Path as _Path
@@ -1114,7 +1191,7 @@ def delete_job_document(
             raise HTTPException(status_code=404, detail="Document not found")
 
         # Cleanup files on disk if it was a legacy local file
-        if not doc.filename.startswith("db://") and not doc.filename.startswith("gdrive://"):
+        if not doc.filename.startswith("db://"):
             from pathlib import Path as _Path
             base_dir = _Path(UPLOAD_DIR).resolve()
             file_path = (base_dir / str(current_user.id) / job_id / doc.filename).resolve()
@@ -1134,6 +1211,56 @@ def delete_job_document(
         db.close()
 
 
+def _current_html(db, job: JobEntry, kind: str) -> str:
+    """The stored HTML of *kind*; a letter that has only its text yet is rendered and stored once."""
+    if kind == "cv":
+        return job.cv_html or ""
+    if not job.cover_letter_html and job.application_draft:
+        job.cover_letter_html = render_cover_letter_html(letter_markdown=job.application_draft)
+        db.commit()
+    return job.cover_letter_html or ""
+
+
+def _render_in_a_free_slot(html: str) -> bytes:
+    """Render without waiting for a slot: a full house answers 503 instead of queueing requests."""
+    if not _pdf_render_slots.acquire(blocking=False):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=PDF_RENDER_BUSY)
+    try:
+        return render_pdf_isolated(html)
+    except PdfRenderFailed:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=PDF_RENDER_FAILED)
+    finally:
+        _pdf_render_slots.release()
+
+
+@router.get("/jobs/{job_id}/documents/pdf")
+@limiter.limit(DOCUMENT_PDF_RATE, key_func=user_or_ip_key)
+def download_document_pdf(
+    request: Request,
+    job_id: str,
+    kind: Literal["cv", "cover_letter"],
+    current_user: User = Depends(get_current_user),
+):
+    """Render the current HTML of the CV or letter to a PDF download; nothing is stored.
+
+    404 when the document has no HTML (a job generated before HTML storage keeps its stored PDF,
+    served by /documents/{doc_id}/download), 422 `pdf_render_failed` when the bounded render fails,
+    503 `pdf_render_busy` when MAX_PARALLEL_PDF_RENDERS renders are already running.
+    """
+    db = SessionLocal()
+    try:
+        job = _get_owned_job(db, job_id, current_user.id)
+        html = _current_html(db, job, kind)
+        company = job.company
+    finally:
+        db.close()
+    if not html:
+        raise HTTPException(status_code=404, detail="Document not found")
+    pdf = _render_in_a_free_slot(html)
+    disposition = content_disposition("attachment", generated_pdf_name(kind, company))
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": disposition})
+
+
 @router.get("/jobs/{job_id}/documents/html")
 def get_job_html(
     job_id: str,
@@ -1150,15 +1277,7 @@ def get_job_html(
         ).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if kind == "cv":
-            html = job.cv_html or ""
-        else:
-            html = job.cover_letter_html or ""
-            if not html and job.application_draft:
-                html = render_cover_letter_html(letter_markdown=job.application_draft)
-                job.cover_letter_html = html
-                db.commit()
-        return {"html": html}
+        return {"html": _current_html(db, job, kind)}
     finally:
         db.close()
 
@@ -1186,34 +1305,5 @@ def save_job_html(
             job.cover_letter_html = body.html
         db.commit()
         return {"ok": True}
-    finally:
-        db.close()
-
-
-@router.post("/jobs/{job_id}/documents/render")
-def render_job_pdf(
-    job_id: str,
-    kind: str = "cv",
-    current_user: User = Depends(get_current_user),
-):
-    if kind not in ("cv", "cover_letter"):
-        raise HTTPException(status_code=400, detail="kind must be 'cv' or 'cover_letter'")
-    db = SessionLocal()
-    try:
-        job = db.query(JobEntry).filter(
-            JobEntry.id == job_id,
-            JobEntry.user_id == current_user.id,
-        ).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        html = job.cv_html if kind == "cv" else job.cover_letter_html
-        if not html:
-            raise HTTPException(status_code=422, detail=f"No saved HTML for kind={kind}")
-        celery_app.send_task(
-            "ai.render_document_pdf",
-            args=[job_id, kind, current_user.id],
-            queue="ai_queue",
-        )
-        return {"queued": True}
     finally:
         db.close()

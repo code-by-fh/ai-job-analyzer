@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -430,6 +430,7 @@ def test_save_document_html_accepts_html_at_limit(api_client, seed, session_fact
 
 INTERVIEW_AT = "2026-11-02T09:30:00+00:00"
 FOLLOW_UP_AT = "2026-10-20T08:00:00+00:00"
+START_DATE = "2026-12-01"
 NAIVE_INTERVIEW_AT = "2026-11-02T09:30:00"
 OFFSET_INTERVIEW_AT = "2026-11-02T11:30:00+02:00"
 
@@ -477,6 +478,49 @@ def test_patch_omitted_dates_stay_unchanged(api_client, seed):
     api_client.patch("/jobs/job-1", json={"is_favorite": True})
     body = api_client.get("/jobs/job-1").json()
     assert (body["next_follow_up_at"], body["interview_at"]) == (FOLLOW_UP_AT, INTERVIEW_AT)
+
+
+def test_patch_outcome_notes_are_stored_apart_from_the_notes(api_client, seed):
+    seed(make_job(notes="Gehalt verhandeln"))
+    _patch(api_client, {"outcome_notes": "Ersten Tag planen"})
+    body = api_client.get("/jobs/job-1").json()
+    assert (body["notes"], body["outcome_notes"]) == ("Gehalt verhandeln", "Ersten Tag planen")
+
+
+def test_patch_first_day_checklist_is_stored_with_every_key(api_client, seed):
+    seed(make_job())
+    _patch(api_client, {"first_day_checklist": {"contract_signed": True}})
+    expected = {
+        "contract_signed": True, "papers_ready": False, "others_declined": False,
+        "route_planned": False, "first_day_contact": False,
+    }
+    assert api_client.get("/jobs/job-1").json()["first_day_checklist"] == expected
+
+
+def test_patch_sets_start_date_and_get_returns_the_day(api_client, seed):
+    seed(make_job())
+    assert _patch_status(api_client, {"start_date": START_DATE}) == 200
+    assert api_client.get("/jobs/job-1").json()["start_date"] == START_DATE
+
+
+def test_patch_null_clears_start_date(api_client, seed):
+    seed(make_job())
+    _patch(api_client, {"start_date": START_DATE})
+    _patch(api_client, {"start_date": None})
+    assert api_client.get("/jobs/job-1").json()["start_date"] is None
+
+
+def test_patch_omitted_start_date_stays_unchanged(api_client, seed):
+    seed(make_job())
+    _patch(api_client, {"start_date": START_DATE})
+    _patch(api_client, {"is_favorite": True})
+    assert api_client.get("/jobs/job-1").json()["start_date"] == START_DATE
+
+
+def test_get_job_returns_empty_offer_outcome_fields_by_default(api_client, seed):
+    seed(make_job())
+    body = api_client.get("/jobs/job-1").json()
+    assert (body["outcome_notes"], body["first_day_checklist"], body["start_date"]) == (None, None, None)
 
 
 def test_get_job_returns_pre_generation_status(api_client, seed):
@@ -563,6 +607,9 @@ def _patch_status(api_client, payload):
 
 @pytest.mark.parametrize("payload", [
     {"notes": "x" * (MAX_NOTES_LENGTH + 1)},
+    {"outcome_notes": "x" * (MAX_NOTES_LENGTH + 1)},
+    {"first_day_checklist": {"unknown": True}},
+    {"start_date": "not-a-date"},
     {"application_draft": "x" * (MAX_DRAFT_LENGTH + 1)},
     {"cv_draft": "x" * (MAX_DRAFT_LENGTH + 1)},
     {"contact_persons": [{"name": "x" * (MAX_CONTACT_FIELD_LENGTH + 1)}]},
@@ -586,6 +633,7 @@ def test_patch_accepts_payload_at_the_bounds(api_client, seed, session_factory):
     seed(make_job())
     payload = {
         "notes": "x" * MAX_NOTES_LENGTH,
+        "outcome_notes": "x" * MAX_NOTES_LENGTH,
         "cv_draft": "x" * MAX_DRAFT_LENGTH,
         "contact_persons": [{"name": "x" * MAX_CONTACT_FIELD_LENGTH, "role": "", "email": "a@b.de"}] * MAX_CONTACTS,
         "recruiter_info": {"name": "R", "email": "r@b.de", "phone": "123"},
@@ -810,3 +858,118 @@ def test_job_document_upload_failure_logs_no_file_name(api_client, seed, monkeyp
     assert response.status_code == 500
     logger.error.assert_called_once_with("Document upload failed: %s", "StatementError")
     assert SECRET_DOCUMENT_NAME not in str(logger.mock_calls)
+
+
+PREP_FAILED = "Die Erstellung ist fehlgeschlagen. Bitte versuche es erneut."
+PREP_STARTED_AT = datetime(2026, 10, 15, 8, 0)
+
+
+def test_get_job_reports_a_running_prep(api_client, seed):
+    seed(make_job(interview_prep_started_at=PREP_STARTED_AT))
+    body = api_client.get("/jobs/job-1").json()
+    assert (body["interview_prep_running"], body["interview_prep_error"]) == (True, None)
+
+
+def test_get_job_exposes_the_prep_start_stamp_in_utc(api_client, seed):
+    seed(make_job(interview_prep_started_at=PREP_STARTED_AT))
+    body = api_client.get("/jobs/job-1").json()
+    assert body["interview_prep_started_at"] == "2026-10-15T08:00:00+00:00"
+
+
+GENERATION_STARTED_AT = datetime(2026, 10, 15, 9, 30)
+
+
+def test_get_job_exposes_the_generation_start_stamp(api_client, seed):
+    seed(make_job(status="GENERATING", generation_started_at=GENERATION_STARTED_AT))
+    body = api_client.get("/jobs/job-1").json()
+    assert body["generation_started_at"] == "2026-10-15T09:30:00+00:00"
+
+
+def test_get_job_without_runs_has_no_start_stamps(api_client, seed):
+    seed(make_job())
+    body = api_client.get("/jobs/job-1").json()
+    stamps = (body["interview_prep_started_at"], body["company_research_started_at"], body["generation_started_at"])
+    assert stamps == (None, None, None)
+
+
+def test_get_job_reports_a_failed_prep(api_client, seed):
+    seed(make_job(interview_prep_error=PREP_FAILED))
+    body = api_client.get("/jobs/job-1").json()
+    assert (body["interview_prep_running"], body["interview_prep_error"]) == (False, PREP_FAILED)
+
+
+@pytest.mark.parametrize("path", ["/jobs/job-1/interview-prep", "/jobs/job-1/interview-prep/regenerate"])
+def test_starting_a_prep_marks_it_running_and_clears_an_old_error(api_client, seed, session_factory, path):
+    seed(make_job(interview_prep_error=PREP_FAILED))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post(path).json()["status"] == "queued"
+    job = fetch(session_factory, JobEntry, "job-1")
+    assert (job.interview_prep_started_at is not None, job.interview_prep_error) == (True, None)
+    assert send_task.call_args.args[0] == "worker.generate_interview_prep_task"
+
+
+def test_existing_prep_is_not_marked_running(api_client, seed, session_factory):
+    seed(make_job(interview_prep_material='{"report_output": {}}'))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post("/jobs/job-1/interview-prep").json()["status"] == "exists"
+    assert fetch(session_factory, JobEntry, "job-1").interview_prep_started_at is None
+    send_task.assert_not_called()
+
+
+def test_patch_of_an_extracted_field_removes_its_posting_mark(api_client, seed):
+    seed(make_job(posting_extracted=["contact_persons", "salary_benchmark"]))
+    api_client.patch("/jobs/job-1", json={"salary_benchmark": {"min": 1, "max": 2, "note": ""}})
+    assert api_client.get("/jobs/job-1").json()["posting_extracted"] == ["contact_persons"]
+
+
+def test_starting_posting_details_marks_them_running_and_queues_the_task(api_client, seed, session_factory):
+    seed(make_job(posting_details_error="EXTRACTION_FAILED"))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post("/jobs/job-1/posting-details").json() == {"status": "queued"}
+    job = fetch(session_factory, JobEntry, "job-1")
+    assert (job.posting_details_started_at is not None, job.posting_details_error) == (True, None)
+    assert send_task.call_args.args[0] == "worker.extract_posting_details_task"
+
+
+def test_posting_details_already_running_are_not_queued_again(api_client, seed):
+    seed(make_job(posting_details_started_at=datetime.now(timezone.utc)))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post("/jobs/job-1/posting-details").json() == {"status": "running"}
+    send_task.assert_not_called()
+
+
+def test_posting_details_without_posting_text_are_refused(api_client, seed):
+    seed(make_job(description="  "))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post("/jobs/job-1/posting-details").status_code == 409
+    send_task.assert_not_called()
+
+
+def test_posting_details_of_another_users_job_are_not_found(api_client, seed):
+    seed(make_job(user_id=OTHER_USER_ID))
+    with patch("routers.jobs.celery_app.send_task") as send_task:
+        assert api_client.post("/jobs/job-1/posting-details").status_code == 404
+    send_task.assert_not_called()
+
+
+def test_get_job_reports_the_posting_details_run_state(api_client, seed):
+    started = datetime(2026, 10, 16, 8, 0, tzinfo=timezone.utc)
+    seed(make_job(posting_details_started_at=started))
+    body = api_client.get("/jobs/job-1").json()
+    assert body["posting_details_running"] is True
+    assert body["posting_details_started_at"].startswith("2026-10-16T08:00:00")
+
+
+def test_get_job_reports_a_failed_posting_details_run(api_client, seed):
+    seed(make_job(posting_details_error="NOTHING_NEW"))
+    body = api_client.get("/jobs/job-1").json()
+    assert (body["posting_details_running"], body["posting_details_error"]) == (False, "NOTHING_NEW")
+
+
+def test_job_document_upload_stores_the_bytes_in_the_database(api_client, seed, session_factory):
+    seed(make_job())
+    response = _upload_job_document(api_client)
+    with session_factory() as db:
+        stored = db.query(JobDocument).one()
+        assert (response.status_code, stored.filename, stored.content) == (200, "db://cv.pdf", PDF_BYTES)
+    assert "storage" not in response.json()

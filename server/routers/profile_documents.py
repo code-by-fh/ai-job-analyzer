@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, status
 from sqlalchemy.orm import Session
 
-from database.core import ProfileDocument, UserProfile, User, iso_utc
+from database.core import ProfileDocument, User, iso_utc
 from core.auth import get_current_user, get_db
-from services.storage import get_storage_service
 from services.document_renderer import list_templates
 from core.logger import get_logger
 from core.uploads import (
@@ -32,7 +31,6 @@ MAX_LABEL_LENGTH = 200
 MAX_FILENAME_LENGTH = 255
 INVALID_DOC_TYPE = "invalid_doc_type"
 DB_PREFIX = "db://"
-DRIVE_PREFIX = "gdrive://"
 
 
 @dataclass(frozen=True)
@@ -51,13 +49,13 @@ def _serialize(d: ProfileDocument) -> dict:
         "file_size": d.file_size,
         "mime_type": d.mime_type,
         "created_at": iso_utc(d.created_at),
-        # Drive files and rows without content cannot be served (400 on view/download); the web disables their buttons.
+        # Rows without stored bytes cannot be served (400 on view/download); the web disables their buttons.
         "downloadable": _is_downloadable(d),
     }
 
 
 def _is_downloadable(doc: ProfileDocument) -> bool:
-    return doc.filename.startswith(DB_PREFIX) and doc.content is not None
+    return doc.content is not None
 
 
 async def _checked_upload(file: UploadFile, doc_type: str) -> _Upload:
@@ -75,16 +73,6 @@ async def _checked_upload(file: UploadFile, doc_type: str) -> _Upload:
 
 def _stored_name(file: UploadFile) -> str:
     return (file.filename or FALLBACK_FILENAME)[:MAX_FILENAME_LENGTH]
-
-
-async def _stored_location(profile: UserProfile | None, upload: _Upload) -> tuple[str, bytes | None]:
-    """Where the file lives: on the user's Google Drive when connected, otherwise as a DB blob."""
-    storage = get_storage_service(profile) if profile else None
-    if not storage:
-        return f"{DB_PREFIX}{upload.name}", upload.content
-    if not await storage.upload_file(upload.content, upload.name, mime_type=upload.mime):
-        raise HTTPException(status_code=500, detail="Upload to Google Drive failed")
-    return f"{DRIVE_PREFIX}{upload.name}", None
 
 
 @router.get("/profile/templates")
@@ -116,12 +104,10 @@ async def upload_profile_document(
 ):
     upload = await _checked_upload(file, doc_type)
     try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        stored_filename, db_content = await _stored_location(profile, upload)
         doc = ProfileDocument(
             user_id=current_user.id, doc_type=doc_type, label=label or upload.name,
-            filename=stored_filename, original_filename=upload.name, file_size=len(upload.content),
-            mime_type=upload.mime, content=db_content,
+            filename=f"{DB_PREFIX}{upload.name}", original_filename=upload.name, file_size=len(upload.content),
+            mime_type=upload.mime, content=upload.content,
         )
         db.add(doc)
         db.commit()

@@ -23,7 +23,9 @@ from core import process_hardening
 from core.logger import get_logger
 
 from routers import auth as auth_router
-from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, storage, profile_documents, templates, search
+from routers import jobs, platforms, settings, companies, admin, dashboard, websocket, profile_documents, templates, search
+from routers import notifications
+from services import notification_migration, notifications_client
 
 logger = get_logger(__name__)
 
@@ -63,6 +65,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast: without NOTIFY_API_URL / NOTIFY_API_KEY no channel could be managed and no match notified.
+    notifications_client.get_client()
     logger.info("Starting Redis listener task...")
     task = asyncio.create_task(redis_listener())
 
@@ -105,8 +109,12 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # In the background: the service may still be starting, and the API must not wait for it.
+    migration = asyncio.create_task(asyncio.to_thread(notification_migration.run_at_startup, SessionLocal))
+
     yield
     task.cancel()
+    migration.cancel()
 
 
 process_hardening.disable_process_dump()
@@ -176,10 +184,10 @@ app.include_router(companies.router)
 app.include_router(admin.router)
 app.include_router(dashboard.router)
 app.include_router(websocket.router)
-app.include_router(storage.router)
 app.include_router(profile_documents.router)
 app.include_router(templates.router)
 app.include_router(search.router)
+app.include_router(notifications.router)
 
 
 # Scraper runs as a separate internal service (see supervisord.conf). The frontend

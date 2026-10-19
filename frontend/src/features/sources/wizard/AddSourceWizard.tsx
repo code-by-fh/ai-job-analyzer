@@ -13,7 +13,13 @@ import { focusSource, focusSourceOrTitle } from "../useFocusFallback";
 import { CheckStep, WIZARD_URL_ID, type CheckStepProps } from "./CheckStep";
 import { firstDayId, scheduleTimeId } from "../drawer/ScheduleFields";
 import { FinishStep, WIZARD_NAME_ID, WIZARD_SCHEDULE_ID } from "./FinishStep";
-import { LinksStep, linkRowId, WIZARD_FILTER_ID, WIZARD_PATTERN_ID } from "./LinksStep";
+import {
+  LinksStep,
+  linkRowId,
+  WIZARD_FILTER_ID,
+  WIZARD_PATTERN_ID,
+  WIZARD_PATTERN_OK_ID,
+} from "./LinksStep";
 import { useLinkCheck } from "./useLinkCheck";
 import { WizardLiveStatus } from "./WizardLiveStatus";
 import {
@@ -44,8 +50,9 @@ const ERROR_FIELD: ReadonlyArray<[keyof WizardErrors, string]> = [
   // A filter that hides every row leaves no first link; focus then falls back to the step's first field.
   ["links", linkRowId(0)],
   ["url_pattern", WIZARD_PATTERN_ID],
+  ["patternConfirm", WIZARD_PATTERN_OK_ID],
   ["name", WIZARD_NAME_ID],
-  ["schedule_time", scheduleTimeId(WIZARD_SCHEDULE_ID)],
+  ["schedule_times", scheduleTimeId(WIZARD_SCHEDULE_ID)],
   ["schedule_days", firstDayId(WIZARD_SCHEDULE_ID)],
 ];
 

@@ -61,7 +61,8 @@ def test_shared_company_profile_prompt_asks_for_no_personalisation(run_company_p
 
 def test_deep_dive_is_not_stored_in_the_shared_profile(api_client, session_factory):
     body = {"focus": "culture", "how_to_proceed": "read", "company_name": "Acme", "title": "Dev"}
-    with patch("routers.companies.get_client_and_model", return_value=(MagicMock(), "m")), \
+    with patch("routers.companies.SessionLocal", session_factory), \
+         patch("routers.companies.get_client_and_model", return_value=(MagicMock(), "m")), \
          patch("routers.companies.generate_deep_dive", return_value="report"):
         response = api_client.post(f"/companies/{COMPANY_DOMAIN}/deep-dive", json=body)
     assert response.json() == {"result": "report"}

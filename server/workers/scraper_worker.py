@@ -10,9 +10,10 @@ import redis
 from core.scraper_celery_config import celery_app, REDIS_URL
 from intelligence.service import extract_job_details, get_client_and_model
 from database.core import SessionLocal, UserProfile, JobEntry
-from services import render_client
+from services import page_rendering
 
 # Logging Setup
+from core.crawl_progress import LINKS_FOUND_FIELD, PAGES_FAILED_FIELD, read_crawl_progress
 from core.crawl_registry import touch_crawl_progress
 from core.logger import get_logger
 from workers.crawl_control import INTERNAL_FAILURE, UNREACHABLE_FAILURE, fail_crawl_job
@@ -43,7 +44,7 @@ def _is_safe_url(url: str) -> bool:
     """http(s) to public addresses only (core/url_safety.py); the name stays because tests patch it.
 
     Runs right before every render call, so a name re-pointed since the API check is refused; the
-    render service still resolves again itself (DNS rebinding residual, see core/url_safety.py).
+    render service still resolves again itself and must guard that itself (see core/url_safety.py).
     """
     return is_public_http_url(url)
 
@@ -61,7 +62,7 @@ def get_html_with_browser(url: str) -> str | None:
         return None
     # Render the canonical form: it names exactly the host the check above resolved.
     logger.info(f"[RenderClient] Fetching from host: {host}")
-    html = render_client.fetch_html(target)
+    html = page_rendering.fetch_html(target)
     if html:
         logger.info(f"[RenderClient] Fetched {len(html)} bytes from host {host}")
     else:
@@ -143,6 +144,7 @@ def fetch_links_task(start_url, user_id, job_id=None, platform_id=None):
                         "platform": start_url,
                         "platform_id": platform_id,
                         "started_at": str(int(time.time() * 1000)),
+                        "progress": read_crawl_progress(r, job_id),
                     }
                 ),
             )
@@ -181,6 +183,9 @@ def fetch_links_task(start_url, user_id, job_id=None, platform_id=None):
             all_links.add(full_url)
 
         logger.info(f"Found {len(all_links)} internal links on host {host_for_log(start_url)}")
+        # The render can take a minute: a crawl cancelled meanwhile must not get its hash back.
+        if job_id and not _is_cancelled(r, job_id):
+            _report_links_found(r, job_id, user_id, start_url, len(all_links))
         if not all_links:
             logger.warning(f"[fetch_links] No internal <a href> links found — page may be SPA-rendered without href attributes")
         return [start_url, list(all_links), user_id, job_id, platform_id]
@@ -193,6 +198,25 @@ def fetch_links_task(start_url, user_id, job_id=None, platform_id=None):
             r.delete("system:crawling")
             r.publish("job_updates", json.dumps({"type": "crawl_completed", "user_id": user_id}))
         return None
+
+
+def _report_links_found(r, job_id, user_id, start_url, links_found):
+    """Store the start page's link count; the crawl is filtering them now (no new links known yet, total 0)."""
+    touch_crawl_progress(r, job_id)
+    r.hset(f"crawl_job:{job_id}", LINKS_FOUND_FIELD, links_found)
+    r.publish(
+        "job_updates",
+        json.dumps(
+            {
+                "type": "crawl_job_progress",
+                "job_id": job_id,
+                "user_id": user_id,
+                "platform": start_url,
+                "total": 0,
+                "progress": read_crawl_progress(r, job_id),
+            }
+        ),
+    )
 
 
 @celery_app.task(name="scraper.schedule_crawls")
@@ -241,6 +265,7 @@ def schedule_crawls_task(args):
                             "user_id": user_id,
                             "total": 0,
                             "total_found": total_found,
+                            "progress": read_crawl_progress(r, job_id),
                         }
                     ),
                 )
@@ -286,6 +311,7 @@ def schedule_crawls_task(args):
                         "total": len(filtered_links),
                         "total_found": total_found,
                         "completed": 0,
+                        "progress": read_crawl_progress(r, job_id),
                     }
                 ),
             )
@@ -353,6 +379,7 @@ def schedule_crawls_task(args):
                             "user_id": user_id,
                             "total": n,
                             "total_found": total_found,
+                            "progress": read_crawl_progress(r, job_id),
                         }
                     ),
                 )
@@ -395,6 +422,7 @@ def _mark_scrape_failed(r, job_id, user_id):
         return
     # Increment first, then read fresh state to avoid stale reads
     touch_crawl_progress(r, job_id)
+    r.hincrby(f"crawl_job:{job_id}", PAGES_FAILED_FIELD, 1)
     jobs_skipped = int(r.hincrby(f"crawl_job:{job_id}", "jobs_skipped", 1))
     job_hash = r.hgetall(f"crawl_job:{job_id}")
     if not job_hash:
@@ -418,6 +446,7 @@ def _mark_scrape_failed(r, job_id, user_id):
                     "user_id": stored_user_id,
                     "total": total,
                     "total_found": total_found,
+                    "progress": read_crawl_progress(r, job_id),
                 }
             ),
         )
@@ -485,6 +514,7 @@ def scrape_job_detail_task(url, user_id, job_id=None, platform_id=None, force_br
                         "platform": extr_platform,
                         "extracting_count": extracting_count,
                         "total": extr_total,
+                        "progress": read_crawl_progress(r, job_id),
                     }
                 ),
             )
@@ -549,6 +579,7 @@ def scrape_job_detail_task(url, user_id, job_id=None, platform_id=None, force_br
                         "total": total,
                         "total_found": total_found,
                         "scraping_completed": scraping_completed,
+                        "progress": read_crawl_progress(r, job_id),
                     }
                 ),
             )

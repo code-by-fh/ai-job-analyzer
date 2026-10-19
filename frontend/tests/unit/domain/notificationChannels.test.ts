@@ -1,121 +1,169 @@
 import { describe, expect, it } from "vitest";
-import type { NotificationSettings } from "@/api/notificationSettings";
+import type { Channel, ChannelBody, ChannelType } from "@/api/notificationChannels";
 import {
-  channelDetail,
   channelDraftOf,
-  channelErrors,
-  channelPatch,
-  emailProblem,
-  removalPatch,
+  channelProblems,
+  createBody,
+  newChannelDraft,
+  updateChange,
+  type ChannelDraft,
 } from "@/domain/notificationChannels";
+import {
+  CHANNEL_TYPES,
+  PUSHOVER_CHANNEL,
+  SMTP_CHANNEL,
+} from "../../e2e/support/notificationFixtures";
 
-const STORED: NotificationSettings = {
-  pushover_user_key: "push-user",
-  pushover_api_token: true,
-  resend_api_key: true,
-  resend_from_email: "jobs@example.com",
-  mailjet_api_key: false,
-  mailjet_secret_key: false,
-  mailjet_from_email: "",
-  smtp_host: "smtp.example.com",
-  smtp_port: 587,
-  smtp_user: "smtp-user",
-  smtp_password: true,
-  smtp_from_email: "",
-  email_global_recipient: "me@example.com",
-};
+// The fixtures name every field of the schema, so the parsed shape equals the body.
+const TYPES = CHANNEL_TYPES as ChannelType[];
+const typeNamed = (id: string) => TYPES.find((type) => type.id === id)!;
+const SMTP = typeNamed("smtp");
+const PUSHOVER = typeNamed("pushover");
+const RESEND = typeNamed("resend");
 
-describe("channel drafts", () => {
-  it("start with the plain values and empty secrets", () => {
-    expect(channelDraftOf("SMTP", STORED)).toEqual({
-      smtp_host: "smtp.example.com",
-      smtp_port: "587",
-      smtp_user: "smtp-user",
-      smtp_from_email: "",
-      smtp_password: "",
+/** What channelSchema makes of a body: "set" / "not set" become booleans. */
+function channelOf(body: ChannelBody): Channel {
+  const secrets = Object.fromEntries(
+    Object.entries(body.secrets).map(([name, state]) => [name, state === "set"]),
+  );
+  return { ...body, secrets } as Channel;
+}
+
+const SMTP_STORED = channelOf(SMTP_CHANNEL);
+const withValues = (draft: ChannelDraft, values: Record<string, string>): ChannelDraft => ({
+  ...draft,
+  values: { ...draft.values, ...values },
+});
+
+describe("channelDraftOf", () => {
+  it("shows plain values as text and keeps a stored secret without its value", () => {
+    const draft = channelDraftOf(SMTP, SMTP_STORED);
+    expect(draft.values).toMatchObject({
+      host: "smtp.example.com",
+      port: "587",
+      recipients: "me@example.com",
+      password: "",
+    });
+    expect(draft.secrets).toEqual({ password: "keep" });
+  });
+});
+
+describe("updateChange", () => {
+  it("sends nothing for an untouched form", () => {
+    expect(updateChange(SMTP, channelDraftOf(SMTP, SMTP_STORED), SMTP_STORED)).toEqual({});
+  });
+
+  it("sends changed fields, a cleared optional field as null and the list as addresses", () => {
+    const draft = withValues(channelDraftOf(SMTP, SMTP_STORED), {
+      host: " mail.example.org ",
+      port: "",
+      recipients: "a@example.com, b@example.com",
+    });
+    expect(updateChange(SMTP, draft, SMTP_STORED)).toEqual({
+      fields: {
+        host: "mail.example.org",
+        port: null,
+        recipients: ["a@example.com", "b@example.com"],
+      },
     });
   });
 
-  it("send only changed plain fields and typed secrets", () => {
-    const draft = { ...channelDraftOf("SMTP", STORED), smtp_host: " mail.example.org " };
-    expect(channelPatch("SMTP", draft, STORED)).toEqual({ smtp_host: "mail.example.org" });
-    const typed = { ...channelDraftOf("PUSHOVER", STORED), pushover_api_token: "neu" };
-    expect(channelPatch("PUSHOVER", typed, STORED)).toEqual({ pushover_api_token: "neu" });
+  it("sends a replaced secret as typed, and never a kept or an empty replaced one", () => {
+    const draft = channelDraftOf(SMTP, SMTP_STORED);
+    const replacing = { ...draft, secrets: { password: "replace" as const } };
+    expect(updateChange(SMTP, replacing, SMTP_STORED)).toEqual({});
+    const typed = withValues(replacing, { password: " neu " });
+    expect(updateChange(SMTP, typed, SMTP_STORED)).toEqual({ fields: { password: " neu " } });
   });
 
-  it("send a cleared plain field as null and the port as a number", () => {
-    const draft = { ...channelDraftOf("SMTP", STORED), smtp_user: "", smtp_port: "2525" };
-    expect(channelPatch("SMTP", draft, STORED)).toEqual({ smtp_user: null, smtp_port: 2525 });
-  });
-
-  it("never send a secret of only spaces (the server would store it as the credential)", () => {
-    const draft = { ...channelDraftOf("SMTP", STORED), smtp_password: "   " };
-    expect(channelPatch("SMTP", draft, STORED)).toEqual({});
-  });
-
-  it("removal clears every field of the channel and nothing else", () => {
-    expect(removalPatch("MAILJET")).toEqual({
-      mailjet_api_key: null,
-      mailjet_secret_key: null,
-      mailjet_from_email: null,
+  it("sends a removed secret as null and a new name trimmed", () => {
+    const draft = channelDraftOf(SMTP, SMTP_STORED);
+    const removing: ChannelDraft = { ...draft, name: " Neu ", secrets: { password: "remove" } };
+    expect(updateChange(SMTP, removing, SMTP_STORED)).toEqual({
+      name: "Neu",
+      fields: { password: null },
     });
   });
 });
 
-describe("channelErrors", () => {
-  const check = (channel: "SMTP" | "MAILJET", patch: Record<string, string>) =>
-    channelErrors({
-      channel,
-      draft: { ...channelDraftOf(channel, STORED), ...patch },
-      settings: STORED,
+describe("createBody", () => {
+  it("leaves out blank optional fields and sends the port as a number", () => {
+    const draft = withValues(newChannelDraft(SMTP, "SMTP"), {
+      host: "smtp.example.com",
+      port: "2525",
+      username: "relay",
+      password: "pw",
+      from_email: "jobs@example.com",
+      recipients: "me@example.com",
     });
-
-  it("refuses odd ports and addresses before sending", () => {
-    expect(check("SMTP", { smtp_port: "0" })).toEqual({ smtp_port: "port" });
-    expect(check("SMTP", { smtp_port: "70000" })).toEqual({ smtp_port: "port" });
-    expect(check("SMTP", { smtp_port: "587a" })).toEqual({ smtp_port: "port" });
-    expect(check("SMTP", { smtp_from_email: "a@b" })).toEqual({ smtp_from_email: "email" });
-    expect(check("SMTP", { smtp_host: "h".repeat(254) })).toEqual({ smtp_host: "tooLong" });
-    expect(check("SMTP", { smtp_user: "u".repeat(501) })).toEqual({ smtp_user: "tooLong" });
-  });
-
-  it("accepts the server's bounds", () => {
-    expect(check("SMTP", { smtp_port: "65535" })).toEqual({});
-    expect(check("SMTP", { smtp_host: "h".repeat(253), smtp_user: "u".repeat(500) })).toEqual({});
-  });
-
-  it("asks a new channel for every field its server predicate needs", () => {
-    expect(check("MAILJET", {})).toEqual({
-      mailjet_api_key: "required",
-      mailjet_secret_key: "required",
-      mailjet_from_email: "required",
+    expect(createBody(SMTP, draft)).toEqual({
+      type: "smtp",
+      name: "SMTP",
+      fields: {
+        host: "smtp.example.com",
+        port: 2525,
+        username: "relay",
+        password: "pw",
+        from_email: "jobs@example.com",
+        recipients: ["me@example.com"],
+      },
     });
-  });
-
-  it("counts a stored secret as present", () => {
-    // smtp_password is empty in the draft but stored: SMTP stays sendable.
-    expect(check("SMTP", { smtp_host: "mail.example.org" })).toEqual({});
-  });
-
-  it("refuses clearing the SMTP user of a configured channel (removal is its own action)", () => {
-    expect(check("SMTP", { smtp_user: "  " })).toEqual({ smtp_user: "required" });
+    const withoutPort = withValues(draft, { port: "" });
+    expect(createBody(SMTP, withoutPort).fields).not.toHaveProperty("port");
   });
 });
 
-describe("emailProblem", () => {
-  it("allows an empty field and refuses junk or overlong addresses", () => {
-    expect(emailProblem("   ")).toBeNull();
-    expect(emailProblem(" me@example.com ")).toBeNull();
-    expect(emailProblem("a@b")).toBe("email");
-    expect(emailProblem(`${"a".repeat(250)}@b.de`)).toBe("tooLong");
+describe("channelProblems", () => {
+  it("needs every required field of a new channel, secrets included", () => {
+    const problems = channelProblems(PUSHOVER, newChannelDraft(PUSHOVER, "Handy"), null);
+    expect(problems).toEqual({ fields: { api_token: "required", user_key: "required" } });
   });
-});
 
-describe("channelDetail", () => {
-  it("names the sender or host, never a secret", () => {
-    expect(channelDetail("RESEND", STORED)).toBe("jobs@example.com");
-    expect(channelDetail("SMTP", STORED)).toBe("smtp.example.com");
-    expect(channelDetail("PUSHOVER", STORED)).toBeNull();
-    expect(channelDetail("MAILJET", STORED)).toBeNull();
+  it("accepts a stored secret that is kept or replaced by nothing", () => {
+    const stored = channelOf(PUSHOVER_CHANNEL);
+    const draft = channelDraftOf(PUSHOVER, stored);
+    expect(channelProblems(PUSHOVER, draft, stored)).toEqual({ fields: {} });
+    const replacing: ChannelDraft = {
+      ...draft,
+      secrets: { ...draft.secrets, api_token: "replace" },
+    };
+    expect(channelProblems(PUSHOVER, replacing, stored)).toEqual({ fields: {} });
+  });
+
+  it("checks each kind by the service's rules", () => {
+    const draft = withValues(channelDraftOf(SMTP, SMTP_STORED), {
+      host: "x".repeat(254),
+      port: "70000",
+      username: "jörg",
+      from_email: "kein-at",
+      recipients: "a@example.com, nein",
+    });
+    expect(channelProblems(SMTP, draft, SMTP_STORED).fields).toEqual({
+      host: "tooLong",
+      port: "port",
+      username: "ascii",
+      from_email: "email",
+      recipients: "emails",
+    });
+  });
+
+  it("refuses a token with a space and more recipients than the schema allows", () => {
+    const many = Array.from({ length: 51 }, (_, index) => `p${index}@example.com`).join(", ");
+    const draft = withValues(newChannelDraft(RESEND, "Mail"), {
+      api_key: "re key",
+      from_email: "jobs@example.com",
+      recipients: many,
+    });
+    expect(channelProblems(RESEND, draft, null).fields).toEqual({
+      api_key: "token",
+      recipients: "tooManyItems",
+    });
+  });
+
+  it("needs a name of at most 100 characters", () => {
+    const draft = channelDraftOf(SMTP, SMTP_STORED);
+    expect(channelProblems(SMTP, { ...draft, name: "  " }, SMTP_STORED).name).toBe("required");
+    const long = { ...draft, name: "n".repeat(101) };
+    expect(channelProblems(SMTP, long, SMTP_STORED).name).toBe("tooLong");
   });
 });

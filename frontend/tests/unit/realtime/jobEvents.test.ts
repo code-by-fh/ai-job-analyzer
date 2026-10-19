@@ -31,26 +31,12 @@ describe("job events", () => {
     expect(isInvalidated(queryClient, queryKeys.jobDocuments("job-1"))).toBe(true);
   });
 
-  it("a render event does not write the event status into the cache", () => {
+  it("a job_update does not write the event status into the cache", () => {
     const { queryClient, send } = setup();
-    send({ type: "job_update", job_id: "job-1", status: "FAILED", rendered_kind: "cv" });
+    send({ type: "job_update", job_id: "job-1", status: "FAILED" });
     expect(queryClient.getQueryData<{ status: string }>(queryKeys.job("job-1"))?.status).toBe(
       "DRAFTED",
     );
-  });
-
-  it("finishes the pending render of that kind", () => {
-    const cv = pendingTaskId.render("job-1", "cv");
-    const { send, pendingNow } = setup(startTask(EMPTY_PENDING, cv, NOW));
-    send({ type: "job_update", job_id: "job-1", status: "DRAFTED", rendered_kind: "cv" });
-    expect(pendingNow()[cv]).toBeUndefined();
-  });
-
-  it("marks a pending render failed on an error event", () => {
-    const letter = pendingTaskId.render("job-1", "cover_letter");
-    const { send, pendingNow } = setup(startTask(EMPTY_PENDING, letter, NOW));
-    send({ type: "job_update", job_id: "job-1", status: "FAILED", error: "weasyprint" });
-    expect(pendingNow()[letter]?.failed).toBe(true);
   });
 
   it("finishes a pending generation on the final job_update", () => {
@@ -81,6 +67,24 @@ describe("job events", () => {
     send({ type: "company_profile_ready", domain: "acme.de" });
     expect(pendingNow()[research]).toBeUndefined();
     expect(isInvalidated(queryClient, queryKeys.company("acme.de"))).toBe(true);
+  });
+});
+
+describe("company_profile_ready of a research started on a job", () => {
+  it("reloads that job and finishes its pending research", () => {
+    const research = pendingTaskId.jobResearch("job-1");
+    const { queryClient, send, pendingNow } = setup(startTask(EMPTY_PENDING, research, NOW));
+    send({ type: "company_profile_ready", domain: "bahn.de", job_id: "job-1" });
+    expect(pendingNow()[research]).toBeUndefined();
+    expect(isInvalidated(queryClient, queryKeys.job("job-1"))).toBe(true);
+  });
+
+  it("without a domain (the AI found none) still reloads the job and touches no profile", () => {
+    const { queryClient, send } = setup();
+    queryClient.setQueryData(queryKeys.company("acme.de"), null);
+    send({ type: "company_profile_ready", domain: null, job_id: "job-1" });
+    expect(isInvalidated(queryClient, queryKeys.job("job-1"))).toBe(true);
+    expect(isInvalidated(queryClient, queryKeys.company("acme.de"))).toBe(false);
   });
 });
 

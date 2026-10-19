@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,6 +51,29 @@ describe("Quellen list", () => {
     expect(stepstone).toHaveTextContent("In Ordnung");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Quellen");
     expect(screen.getByText("2 Quellen, 1 mit Fehler.")).toBeInTheDocument();
+  });
+
+  it("each row has a labelled edit button that opens the source's drawer", async () => {
+    sourcesStubs();
+    renderWithProviders(<SourcesPage />);
+    const [indeed] = await rows();
+    await userEvent.click(within(indeed!).getByRole("button", { name: "Indeed bearbeiten" }));
+    expect(liveNavigation.replace).toHaveBeenCalledWith("/sources?quelle=2", { scroll: false });
+  });
+
+  it("shows the site's favicon without a referrer, and the initials when it fails to load", async () => {
+    const icon = "https://www.google.com/s2/favicons?sz=64&domain=www.stepstone.de";
+    sourcesStubs([{ ...SOURCE_A, favicon_url: icon }, SOURCE_B]);
+    const { container } = renderWithProviders(<SourcesPage />);
+    await rows();
+    const image = container.querySelector<HTMLImageElement>(".src-icon img")!;
+    expect([image.getAttribute("src"), image.getAttribute("referrerpolicy")]).toEqual([
+      icon,
+      "no-referrer",
+    ]);
+    expect(container.querySelector(".src-icon .monogram")).toHaveTextContent("IN");
+    fireEvent.error(image);
+    expect(container.querySelectorAll(".src-icon .monogram")).toHaveLength(2);
   });
 
   it("names failing sources in one banner and opens a source from it", async () => {
@@ -113,11 +136,13 @@ describe("Quellen list", () => {
     renderWithProviders(<SourcesPage />);
     await waitFor(() =>
       expect(calls.map((call) => new URL(call.url).pathname).sort()).toEqual([
-        "/notification-settings/channels",
         "/notification-templates",
+        "/notifications/channel-types",
+        "/notifications/channels",
         "/platforms",
         "/scraper/crawl-status",
         "/settings",
+        "/setup-status",
       ]),
     );
   });

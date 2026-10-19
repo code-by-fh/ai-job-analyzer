@@ -12,7 +12,14 @@ const input = (status: string, documents = READY, pre?: string): GuardInput => (
 describe("guardFor", () => {
   it("moves one phase forward directly", () => {
     expect(guardFor(input("OPEN", NONE), "DRAFTED")).toEqual({ kind: "direct", to: "DRAFTED" });
-    expect(guardFor(input("APPLIED"), "INTERVIEW")).toEqual({ kind: "direct", to: "INTERVIEW" });
+    expect(guardFor(input("INTERVIEW"), "OFFER")).toEqual({ kind: "direct", to: "OFFER" });
+  });
+
+  it("asks for the optional interview date when moving on to Interview", () => {
+    expect(guardFor(input("APPLIED"), "INTERVIEW")).toEqual({
+      kind: "askInterviewDate",
+      to: "INTERVIEW",
+    });
   });
 
   it("asks before moving backwards", () => {
@@ -44,10 +51,7 @@ describe("guardFor", () => {
   });
 
   it("does not warn about documents once the application is out", () => {
-    expect(guardFor(input("APPLIED", NONE), "INTERVIEW")).toEqual({
-      kind: "direct",
-      to: "INTERVIEW",
-    });
+    expect(guardFor(input("INTERVIEW", NONE), "OFFER")).toEqual({ kind: "direct", to: "OFFER" });
   });
 
   it("asks for the outcome when closing, also from a closed state", () => {

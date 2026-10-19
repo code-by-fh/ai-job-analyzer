@@ -35,6 +35,11 @@
   --page-pad: 48px;
   --sidebar-w: 252px;
   --list-w: 420px;
+  --bottombar-h: 62px;
+  --crawl-dock-h: 52px;
+  --bottombar-clear: 2px;
+  --toast-edge: 22px;
+  --toast-gap: 16px;
   --rule-w: 4px;
 
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -46,6 +51,8 @@
   --z-drawer: 51;
   --z-dialog-scrim: 52;
   --z-dialog: 53;
+  /* The accepted-offer celebration (feedback 1 T14): above the page and dialogs, below the toasts. */
+  --z-celebration: 55;
 
   /* light: paper and ink */
   --bg: oklch(0.977 0.004 80);
@@ -95,6 +102,9 @@
   --paper-rule: oklch(0.86 0.006 70);
   --desk: oklch(0.925 0.008 72);
   --mark: oklch(0.42 0.01 60);
+  --paper-shadow:
+    0 0 0 1px oklch(0.2 0.008 60 / 0.06), 0 2px 3px oklch(0.2 0.008 60 / 0.06),
+    0 22px 40px -22px oklch(0.2 0.008 60 / 0.4);
   /* sidebar, bottom bar: always ink */
   --sb-bg: oklch(0.2 0.008 60);
   --sb-raised: oklch(0.255 0.009 60);
@@ -154,6 +164,10 @@
   --st-closed: oklch(0.5 0.008 70);
   --desk: oklch(0.13 0.004 60);
   --mark: oklch(0.66 0.008 70);
+  /* On the dark desk a dark shadow vanishes: a light hairline ring and a soft glow set the page off. */
+  --paper-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.14), 0 0 0 5px oklch(1 0 0 / 0.04),
+    0 24px 60px -24px oklch(0 0 0 / 0.9);
   --sb-bg: oklch(0.125 0.004 60);
   --sb-raised: oklch(0.2 0.006 60);
   --sb-line: oklch(0.28 0.008 60);

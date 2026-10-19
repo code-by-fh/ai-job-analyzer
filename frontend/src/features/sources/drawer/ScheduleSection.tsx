@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import type { PlatformPatch } from "@/api/platforms";
 import { useI18n } from "@/i18n/useI18n";
 import {
   hasScheduleErrors,
   ScheduleFields,
   scheduleDraftOf,
   scheduleErrors,
-  schedulePatch,
+  scheduleRequest,
   type ScheduleDraft,
   type ScheduleErrors,
 } from "./ScheduleFields";
@@ -18,11 +19,19 @@ import { sectionFieldErrors, useSectionSave } from "./useSectionSave";
 const SECTION = "schedule";
 const ID_PREFIX = "src-schedule";
 
-/** "Days without time" comes back on schedule_time, so it reads as the time field's error. */
+/**
+ * The schedule switch is the source's only on/off (feedback 1, T5): a save always leaves the source
+ * active, so one without a schedule can still be crawled by hand ("Nur manuell").
+ */
+function schedulePatch(draft: ScheduleDraft): PlatformPatch {
+  return { ...scheduleRequest(draft), is_active: true };
+}
+
+/** "Days without time" comes back on schedule_times, so it reads as the time field's error. */
 function serverErrors(error: unknown): ScheduleErrors {
   const fields = sectionFieldErrors(error);
   return {
-    time: fields.includes("schedule_time") ? "sources.error.time" : undefined,
+    time: fields.includes("schedule_times") ? "sources.error.time" : undefined,
     days: fields.includes("schedule_days") ? "sources.error.days" : undefined,
   };
 }

@@ -26,7 +26,7 @@ const USERS = [ADMIN, MEMBER, OTHER_ADMIN];
 const NEW_PASSWORD = "sehr-geheim-123";
 const SHARE_HINT = "Teile das Passwort auf einem sicheren Weg.";
 const DELETE_TEXT =
-  "Das Konto wird mit allem gelöscht, was ihm gehört: Stellen und Bewerbungen mit Verlauf und Dokumenten, Quellen mit ihren Läufen, das Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, die Google-Drive-Verbindung, Sprache und Zeitzone. Dateien in Google Drive bleiben dort. Das lässt sich nicht rückgängig machen.";
+  "Das Konto wird mit allem gelöscht, was ihm gehört: Stellen und Bewerbungen mit Verlauf und Dokumenten, Quellen mit ihren Läufen, das Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, Sprache und Zeitzone. Das lässt sich nicht rückgängig machen.";
 
 const isCall = (method: string, path: string) => (call: RecordedCall) =>
   call.method === method && new URL(call.url).pathname === path;

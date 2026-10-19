@@ -5,6 +5,7 @@ import type { ApiLog, MutableRoutes } from "./support/mockApi";
 import { INDEED, PLATFORMS, STEPSTONE } from "./support/platformFixtures";
 import { finishCrawl, SourcesServer, sourcesRoutes } from "./support/sourcesServer";
 import { expect, test } from "./support/test";
+import { chooseLinksAndConfirm } from "./support/wizardSteps";
 
 // Spec section 7: "add source" and "crawl progress", and the hand-offs between Quellen and
 // Eingang. Per-feature assertions live in the sources*.spec.ts files; here one SourcesServer
@@ -57,12 +58,12 @@ function pushCrawlProgress(log: ApiLog, crawlId: string): void {
   events.forEach((event) => pushEvent(log, { job_id: crawlId, ...event }));
 }
 
-/** The wizard with the prototype's page, the six postings preselected and the default first run (seed). */
+/** The wizard with the prototype's page, two postings chosen and the default first run (seed). */
 async function addSourceWithWizard(page: Page): Promise<void> {
   const wizard = page.getByRole("dialog", { name: "Quelle hinzufügen" });
   await wizard.getByLabel("Adresse einer Suchergebnisseite").fill(NEW_URL);
   await wizard.getByRole("button", { name: "Seite prüfen" }).click();
-  await expect(wizard.getByText("6 ausgewählt")).toBeVisible();
+  await chooseLinksAndConfirm(wizard);
   await wizard.getByRole("button", { name: "Weiter", exact: true }).click();
   await wizard.getByRole("button", { name: "Quelle anlegen" }).click();
   await expect(page.getByText(`Quelle „${NEW_NAME}“ angelegt.`, { exact: true })).toBeVisible();
@@ -138,24 +139,24 @@ test.describe("saved sections and a refused save", () => {
     await page.goto(`/sources?quelle=${INDEED.id}`);
     const schedule = section(page, "Indeed", "Zeitplan");
     await schedule.getByLabel("Automatisch durchsuchen").check();
-    await schedule.getByLabel("Uhrzeit").fill("07:30");
+    await schedule.getByLabel("Uhrzeit 1", { exact: true }).fill("07:30");
     await schedule.getByRole("button", { name: "Speichern" }).click();
     await expect(page.getByText("Gespeichert.")).toBeVisible();
     const notify = drawer(page, "Indeed").getByRole("form", { name: "Benachrichtigungen" });
-    await notify.getByLabel("SMTP benachrichtigen").check();
-    await notify.getByLabel("Empfänger").fill("ich@example.com");
+    await notify.getByLabel("Firmen-SMTP benachrichtigen").check();
+    await notify.getByLabel("Empfänger für E-Mail (SMTP)").fill("ich@example.com");
     await notify.getByRole("button", { name: "Speichern" }).click();
     await expect.poll(() => server.get(INDEED.id).smtp_recipients).toEqual(["ich@example.com"]);
     await page.reload();
-    await expect(schedule.getByLabel("Uhrzeit")).toHaveValue("07:30");
-    await expect(notify.getByLabel("SMTP benachrichtigen")).toBeChecked();
+    await expect(schedule.getByLabel("Uhrzeit 1", { exact: true })).toHaveValue("07:30");
+    await expect(notify.getByLabel("Firmen-SMTP benachrichtigen")).toBeChecked();
     const source = section(page, "Indeed", "Quelle");
     await source.getByLabel("Adresse der Suchergebnisseite").fill(PRIVATE_URL);
     await source.getByRole("button", { name: "Speichern" }).click();
     await expect(source.getByText("Diese Adresse kann nicht geprüft werden.")).toBeVisible();
     await expect(source.getByLabel("Adresse der Suchergebnisseite")).toHaveValue(PRIVATE_URL);
-    await expect(schedule.getByLabel("Uhrzeit")).toHaveValue("07:30");
-    expect(server.get(INDEED.id)).toMatchObject({ url: INDEED.url, schedule_time: "07:30" });
+    await expect(schedule.getByLabel("Uhrzeit 1", { exact: true })).toHaveValue("07:30");
+    expect(server.get(INDEED.id)).toMatchObject({ url: INDEED.url, schedule_times: ["07:30"] });
   });
 });
 

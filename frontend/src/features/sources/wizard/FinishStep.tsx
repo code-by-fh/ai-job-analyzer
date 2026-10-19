@@ -1,21 +1,26 @@
 "use client";
 
-import type { Dispatch, FormEvent } from "react";
+import { useState, type Dispatch, type FormEvent } from "react";
 import { INITIAL_RUNS, type InitialRun } from "@/api/platformPaths";
 import { hostOf } from "@/domain/links";
-import { isName, MAX_NAME_LENGTH } from "@/domain/sources";
+import { isName } from "@/domain/sources";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
-import { TextField } from "@/ui/Field";
 import { ScheduleFields, scheduleErrors } from "../drawer/ScheduleFields";
 import { INITIAL_RUN_LABEL } from "../labels";
+import { SourceNameField } from "../SourceFields";
 import { StepFoot } from "./StepFoot";
 import { setupRequestOf, useCreateSource } from "./useCreateSource";
+import { NewChannelDialog, WizardNotify } from "./WizardNotify";
+import { WizardGroup } from "./WizardGroup";
 import type { WizardAction, WizardErrors, WizardState } from "./wizardState";
 
 export const WIZARD_NAME_ID = "wizard-name";
 export const WIZARD_SCHEDULE_ID = "wizard-schedule";
 const RUN_GROUP = "wizard-first-run";
+const NAME_HEADING_ID = "wizard-name-h";
+const SCHEDULE_HEADING_ID = "wizard-schedule-h";
+const RUN_HEADING_ID = "wizard-first-run-h";
 
 interface StepProps {
   state: WizardState;
@@ -33,7 +38,7 @@ function finishErrors(state: WizardState): WizardErrors {
   const schedule = scheduleErrors(state.schedule);
   return {
     name: name === "" || isName(name) ? undefined : "sources.error.name",
-    schedule_time: schedule.time,
+    schedule_times: schedule.time,
     schedule_days: schedule.days,
   };
 }
@@ -53,22 +58,58 @@ function useFinishSubmit({ state, dispatch, onCreated }: FinishStepProps) {
   return { submit, busy };
 }
 
-/** D10 step 3: name, schedule and the first run (B8), then "Quelle anlegen". */
+/**
+ * D10 step 3: name, schedule and the first run (B8), each in its own framed group (feedback 1,
+ * T5), then "Quelle anlegen", which closes the wizard once the source exists.
+ */
 export function FinishStep(props: FinishStepProps) {
+  const { state, dispatch } = props;
+  const [creatingChannel, setCreatingChannel] = useState(false);
+  return (
+    <>
+      <FinishForm {...props} onCreateChannel={() => setCreatingChannel(true)} />
+      {/* Beside the form, not in it: a form in a form would submit the step. */}
+      <NewChannelDialog
+        open={creatingChannel}
+        onClose={() => setCreatingChannel(false)}
+        state={state}
+        dispatch={dispatch}
+      />
+    </>
+  );
+}
+
+function FinishForm(props: FinishStepProps & { onCreateChannel: () => void }) {
   const { t } = useI18n();
   const { state, dispatch } = props;
   const { submit, busy } = useFinishSubmit(props);
   return (
     <form noValidate onSubmit={submit} className="wizard-finish">
-      <NameField state={state} dispatch={dispatch} />
-      <WizardSchedule state={state} dispatch={dispatch} />
-      <FirstRun state={state} dispatch={dispatch} />
+      <FinishGroups state={state} dispatch={dispatch} />
+      <WizardNotify state={state} dispatch={dispatch} onCreate={props.onCreateChannel} />
       <StepFoot onBack={() => dispatch({ type: "back" })}>
         <Button type="submit" variant="primary" busy={busy}>
           {t("sources.wizard.create")}
         </Button>
       </StepFoot>
     </form>
+  );
+}
+
+function FinishGroups({ state, dispatch }: StepProps) {
+  const { t } = useI18n();
+  return (
+    <>
+      <WizardGroup headingId={NAME_HEADING_ID} title={t("sources.wizard.nameTitle")}>
+        <NameField state={state} dispatch={dispatch} />
+      </WizardGroup>
+      <WizardGroup headingId={SCHEDULE_HEADING_ID} title={t("sources.section.schedule")}>
+        <WizardSchedule state={state} dispatch={dispatch} />
+      </WizardGroup>
+      <WizardGroup headingId={RUN_HEADING_ID} title={t("sources.wizard.firstRun")}>
+        <FirstRun state={state} dispatch={dispatch} />
+      </WizardGroup>
+    </>
   );
 }
 
@@ -79,7 +120,7 @@ function WizardSchedule({ state, dispatch }: StepProps) {
       idPrefix={WIZARD_SCHEDULE_ID}
       value={state.schedule}
       onChange={(schedule) => dispatch({ type: "schedule", schedule })}
-      errors={{ time: state.errors.schedule_time, days: state.errors.schedule_days }}
+      errors={{ time: state.errors.schedule_times, days: state.errors.schedule_days }}
     />
   );
 }
@@ -87,27 +128,22 @@ function WizardSchedule({ state, dispatch }: StepProps) {
 /** The placeholder shows the host the server's own name proposal starts from. */
 function NameField({ state, dispatch }: StepProps) {
   const { t } = useI18n();
-  const error = state.errors.name;
   return (
-    <TextField
+    <SourceNameField
       id={WIZARD_NAME_ID}
-      label={t("sources.field.name")}
       hint={t("sources.wizard.nameHint")}
-      maxLength={MAX_NAME_LENGTH}
       placeholder={hostOf(state.url) ?? undefined}
       value={state.name}
-      onChange={(event) => dispatch({ type: "name", name: event.target.value })}
-      error={error ? t(error) : undefined}
+      onChange={(name) => dispatch({ type: "name", name })}
+      error={state.errors.name}
     />
   );
 }
 
-/** Preflight ruling 30: native radios in a named group, no new primitive. */
+/** Preflight ruling 30: native radios in a group named by the frame's heading, no new primitive. */
 function FirstRun({ state, dispatch }: StepProps) {
-  const { t } = useI18n();
   return (
-    <fieldset className="field run-choices">
-      <legend className="label">{t("sources.wizard.firstRun")}</legend>
+    <fieldset className="run-choices" aria-labelledby={RUN_HEADING_ID}>
       {INITIAL_RUNS.map((run) => (
         <RunChoice
           key={run}

@@ -2,6 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
+import { usePrinting } from "@/lib/usePrinting";
 import { Icon } from "./Icon";
 
 export interface DisclosureProps {
@@ -26,14 +27,18 @@ function useOpenState({ defaultOpen = false, open, onOpenChange }: OpenState) {
   return { shown, toggle };
 }
 
-/** Show/hide region (prototype .disclosure); the region stays in the DOM so aria-controls resolves. */
+/**
+ * Show/hide region (prototype .disclosure); the region stays in the DOM so aria-controls resolves.
+ * A printout shows every region: CSS cannot undo `hidden` (Tailwind's preflight sets it !important).
+ */
 export function Disclosure({ label, children, ...state }: DisclosureProps) {
   const { shown, toggle } = useOpenState(state);
+  const printing = usePrinting();
   const regionId = useId();
   return (
     <div className="disclosure-block">
       <DisclosureToggle label={label} open={shown} regionId={regionId} onToggle={toggle} />
-      <div id={regionId} className="disclosure-body" hidden={!shown}>
+      <div id={regionId} className="disclosure-body" hidden={!shown && !printing}>
         {children}
       </div>
     </div>

@@ -17,11 +17,12 @@ import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
 import { cx } from "@/ui/cx";
 import { Icon } from "@/ui/Icon";
+import { Button } from "@/ui/Button";
 import { Masthead } from "@/ui/Masthead";
-import { ImportButton } from "../import/ImportButton";
 import { AiSetupAction } from "./AiSetupAction";
 
 const PERCENT = 100;
+const SOURCE_BLOCKED_ID = "onboard-source-needs-profile";
 const STEP_COPY: Readonly<Record<OnboardingStep, { title: MessageKey; text: MessageKey }>> = {
   profile: { title: "onboard.profile.title", text: "onboard.profile.text" },
   source: { title: "onboard.source.title", text: "onboard.source.text" },
@@ -48,7 +49,7 @@ export function Onboarding({ status, requested }: OnboardingProps) {
   const total = ONBOARDING_STEPS.length;
   return (
     <div className="page onboard">
-      <OnboardingHead status={status} done={done} total={total} />
+      <OnboardingHead done={done} total={total} />
       <OnboardingProgress done={done} total={total} />
       <OnboardingSteps status={status} />
       <OnboardingFoot requested={requested} />
@@ -57,28 +58,15 @@ export function Onboarding({ status, requested }: OnboardingProps) {
 }
 
 interface HeadProps {
-  status: SetupStatus;
   done: number;
   total: number;
 }
 
-function OnboardingHead({ status, done, total }: HeadProps) {
+function OnboardingHead({ done, total }: HeadProps) {
   const { t } = useI18n();
   const title = useOnboardingTitle();
   return (
-    <>
-      <Masthead
-        number={navNumber("inbox")}
-        title={title}
-        deck={t("onboard.deck", { done, total })}
-      />
-      {/* R19(3): with an AI provider a single job can be imported and scored without a source. */}
-      {status.ai_configured ? (
-        <div className="ob-import">
-          <ImportButton />
-        </div>
-      ) : null}
-    </>
+    <Masthead number={navNumber("inbox")} title={title} deck={t("onboard.deck", { done, total })} />
   );
 }
 
@@ -136,18 +124,42 @@ function OnboardingItem({ step, number, status }: ItemProps) {
 function StepState({ step, status }: { step: OnboardingStep; status: SetupStatus }) {
   const { t } = useI18n();
   if (stepDone(status, step)) return <span className="meta ob-done">{t("onboard.done")}</span>;
-  return <StepAction step={step} primary={currentStep(status) === step} />;
+  return <StepAction step={step} primary={currentStep(status) === step} status={status} />;
 }
 
-function StepAction({ step, primary }: { step: OnboardingStep; primary: boolean }) {
+function StepAction({
+  step,
+  primary,
+  status,
+}: {
+  step: OnboardingStep;
+  primary: boolean;
+  status: SetupStatus;
+}) {
   const { t } = useI18n();
   const className = cx("btn", primary && "btn-primary");
   if (step === "ai") return <AiSetupAction className={className} />;
+  if (step === "source" && !status.profile_complete) return <SourceNeedsProfile />;
   const link = STEP_LINK[step];
   return (
     <Link className={className} href={link.href}>
       {t(link.label)}
     </Link>
+  );
+}
+
+/** Sources need a maintained profile (the server refuses otherwise): inactive, with the reason. */
+function SourceNeedsProfile() {
+  const { t } = useI18n();
+  return (
+    <>
+      <Button inactive aria-describedby={SOURCE_BLOCKED_ID}>
+        {t("onboard.source.action")}
+      </Button>
+      <span id={SOURCE_BLOCKED_ID} className="meta">
+        {t("onboard.source.needsProfile")}
+      </span>
+    </>
   );
 }
 

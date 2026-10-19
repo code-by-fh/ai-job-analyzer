@@ -191,7 +191,7 @@ def get_settings_view(current_user: User = Depends(get_current_user)):
                     "name": p.name,
                     "favicon_url": p.favicon_url,
                     "crawl_interval_minutes": p.crawl_interval_minutes,
-                    "schedule_time": p.schedule_time,
+                    "schedule_times": p.schedule_times,
                     "schedule_days": p.schedule_days,
                     "last_crawl_at": iso_utc(p.last_crawl_at),
                     "is_active": p.is_active,

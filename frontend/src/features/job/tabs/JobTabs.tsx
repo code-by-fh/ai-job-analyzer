@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import type { JobDetail } from "@/api/jobs";
-import { phaseOf } from "@/domain/jobStatus";
+import { effectiveStatus, phaseOf } from "@/domain/jobStatus";
 import { useI18n } from "@/i18n/useI18n";
 import { useUnsavedChanges } from "@/ui/UnsavedChanges";
 import { TabPanel, Tabs } from "@/ui/Tabs";
@@ -12,14 +12,16 @@ import { DocumentsTab } from "../documents/DocumentsTab";
 import { FitTab } from "../fit/FitTab";
 import { HistoryTab } from "../history/HistoryTab";
 import { InterviewTab } from "../interview/InterviewTab";
+import { FirstDayTab } from "../outcome/FirstDayTab";
+import { MoveOnTab } from "../outcome/MoveOnTab";
 import { DimPanel } from "./DimPanel";
 import {
-  defaultTab,
+  defaultTabFor,
   dimReason,
-  JOB_TABS,
   TAB_QUERY_KEY,
   tabFromParam,
   tabParam,
+  visibleTabs,
   type JobTab,
 } from "./jobTabs";
 
@@ -31,6 +33,8 @@ export const TAB_PANELS: Readonly<Record<JobTab, (props: { job: JobDetail }) => 
   company: CompanyTab,
   interview: InterviewTab,
   history: HistoryTab,
+  firstDay: FirstDayTab,
+  moveOn: MoveOnTab,
 };
 
 /** Switches the tab through the URL (?tab=), so reloads and links restore it (decision D12). */
@@ -44,16 +48,19 @@ export function useOpenTab(): (tab: JobTab) => void {
   };
 }
 
-/** The tab from ?tab=, or the phase's default for a missing or unknown value. */
-function useSelectedTab(job: JobDetail): JobTab {
-  return tabFromParam(useSearchParams().get(TAB_QUERY_KEY)) ?? defaultTab(phaseOf(job));
+/** The tab from ?tab=, or the default for a missing, unknown or (for this status) hidden value. */
+function useSelectedTab(job: JobDetail, tabs: readonly JobTab[]): JobTab {
+  const requested = tabFromParam(useSearchParams().get(TAB_QUERY_KEY));
+  if (requested && tabs.includes(requested)) return requested;
+  return defaultTabFor(effectiveStatus(job), phaseOf(job));
 }
 
 export function JobTabs({ job }: { job: JobDetail }) {
   const { t } = useI18n();
   const openTab = useOpenTab();
-  const selected = useSelectedTab(job);
-  const items = JOB_TABS.map((key) => ({ key, label: t(`tab.${key}`) }));
+  const tabs = visibleTabs(effectiveStatus(job));
+  const selected = useSelectedTab(job, tabs);
+  const items = tabs.map((key) => ({ key, label: t(`tab.${key}`) }));
   return (
     <section className="jd-tabs">
       <Tabs

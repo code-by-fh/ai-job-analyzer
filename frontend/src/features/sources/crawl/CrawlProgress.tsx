@@ -1,14 +1,14 @@
 "use client";
 
 import type { Platform } from "@/api/platforms";
-import { STEP_LABEL } from "@/features/shell/ActivityPanel";
+import { CrawlBar } from "@/features/shell/crawl/CrawlBar";
+import { crawlStepText } from "@/features/shell/crawl/crawlText";
 import { useI18n } from "@/i18n/useI18n";
-import { progressPercent, type ActivityTask } from "@/realtime/activity";
+import { taskStart, type ActivityTask } from "@/realtime/activity";
 import { Button } from "@/ui/Button";
+import { Elapsed } from "@/ui/Elapsed";
 import { crawlCancelId, crawlStartId, useFocusHandoff, type CrawlPlace } from "./crawlFocus";
 import { useCancelCrawl } from "./useCrawlActions";
-
-const FULL = 100;
 
 interface CrawlProgressProps {
   platform: Platform;
@@ -23,18 +23,13 @@ interface CrawlProgressProps {
 export function CrawlProgress({ platform, task, place = "row" }: CrawlProgressProps) {
   const { t } = useI18n();
   const ref = useFocusHandoff<HTMLDivElement>(crawlStartId(platform.id, place));
-  const step = t(STEP_LABEL[task.step], { done: task.done, total: task.total });
+  const step = crawlStepText(task, t);
   return (
     <div ref={ref} className="crawl-live">
-      <span className="crawl-step">{step}</span>
-      {/* aria-valuetext: "Startet …" says more than the 5 % a just-started bar shows. */}
-      <progress
-        className="crawl-bar"
-        max={FULL}
-        value={progressPercent(task)}
-        aria-label={t("sources.crawl.progress", { name: platform.name })}
-        aria-valuetext={step}
-      />
+      <span className="crawl-step">
+        {step} <Elapsed startedAt={taskStart(task)} />
+      </span>
+      <CrawlBar task={task} sourceName={platform.name} step={step} />
       <CancelButton platform={platform} task={task} id={crawlCancelId(platform.id, place)} />
     </div>
   );

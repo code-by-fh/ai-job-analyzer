@@ -3,10 +3,11 @@
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Building2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { startCompanyResearch, type ResearchStart } from "@/api/companies";
+import { startJobCompanyResearch, type ResearchStart } from "@/api/companies";
 import { describeError } from "@/api/describeError";
 import { fieldErrorsFrom } from "@/api/fieldErrors";
-import { patchJob, type JobDetail } from "@/api/jobs";
+import type { JobDetail } from "@/api/jobs";
+import { researchFailureKey } from "@/domain/companyResearch";
 import { hostOf } from "@/domain/links";
 import { queryKeys } from "@/api/queryKeys";
 import { pendingTaskId } from "@/domain/pendingTasks";
@@ -24,10 +25,17 @@ const MAX_INPUT_LENGTH = MAX_DOMAIN_LENGTH * 2;
 const DOMAIN_FIELD = "company_domain";
 const domainField = (serverField: string) => (serverField === DOMAIN_FIELD ? DOMAIN_FIELD : null);
 
-function noteResearch(queryClient: QueryClient, domain: string, started: ResearchStart): void {
+interface Started {
+  jobId: string;
+  domain: string | null;
+  started: ResearchStart;
+}
+
+/** "exists" links a stored profile (only possible with a domain): nothing is pending, it is loaded. */
+function noteResearch(queryClient: QueryClient, { jobId, domain, started }: Started): void {
   if (started === "queued") {
-    markTaskStarted(queryClient, pendingTaskId.research(domain), Date.now());
-  } else {
+    markTaskStarted(queryClient, pendingTaskId.jobResearch(jobId), Date.now());
+  } else if (domain) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.company(domain) });
   }
 }
@@ -37,18 +45,15 @@ interface DomainHandlers {
   onRejected: () => void;
 }
 
-/** PATCH and research start as one request chain, so the button stays busy until both ran. */
+/** One request stores the typed domain (or none) on the job and starts the research. */
 function useSaveDomain(job: JobDetail, { onDone, onRejected }: DomainHandlers) {
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const toast = useToast();
   return useMutation({
-    mutationFn: async (domain: string) => {
-      await patchJob(job.id, { company_domain: domain });
-      return startCompanyResearch(domain, false);
-    },
+    mutationFn: (domain: string | null) => startJobCompanyResearch(job.id, domain, false),
     onSuccess: (started, domain) => {
-      noteResearch(queryClient, domain, started);
+      noteResearch(queryClient, { jobId: job.id, domain, started });
       onDone?.();
     },
     onError: (failure) => {
@@ -64,10 +69,13 @@ function useDomainSubmit(job: JobDetail, onDone?: () => void) {
   const [error, setError] = useState<string | undefined>();
   const onRejected = () => setError(t("company.domainInvalid"));
   const save = useSaveDomain(job, { onDone, onRejected });
+  // An empty field is allowed: the server's AI then identifies the domain.
   const submit = (value: string) => {
-    const domain = normalizeDomain(value);
-    setError(domain ? undefined : t("company.domainInvalid"));
-    if (domain) save.mutate(domain);
+    const empty = !value.trim();
+    const domain = empty ? null : normalizeDomain(value);
+    const invalid = !empty && !domain;
+    setError(invalid ? t("company.domainInvalid") : undefined);
+    if (!invalid) save.mutate(domain);
   };
   return { submit, error, busy: save.isPending };
 }
@@ -107,6 +115,13 @@ function BoardNotice({ value, jobUrl }: { value: string; jobUrl?: string | null 
   return <Notice tone="warn">{t("company.boardHint")}</Notice>;
 }
 
+/** The end of the last research run on this job, as a fixed text. */
+function ResearchFailure({ job }: { job: JobDetail }) {
+  const { t } = useI18n();
+  const key = researchFailureKey(job);
+  return key ? <Notice tone="error">{t(key)}</Notice> : null;
+}
+
 interface CompanyDomainFormProps {
   job: JobDetail;
   /** The job already carries a domain the user has not confirmed yet. */
@@ -126,6 +141,7 @@ export function CompanyDomainForm({ job, confirming, onDone }: CompanyDomainForm
   return (
     <form className="company-domain" onSubmit={onSubmit} noValidate>
       {confirming ? <h3 className="sec-title-sm">{t("company.confirmTitle")}</h3> : null}
+      <ResearchFailure job={job} />
       <BoardNotice value={value} jobUrl={job.url} />
       <DomainInput value={value} error={form.error} onChange={setValue} />
       <Button type="submit" icon={Building2} busy={form.busy}>

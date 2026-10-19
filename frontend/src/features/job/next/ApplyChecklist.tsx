@@ -3,26 +3,22 @@
 import { Check, Download, ExternalLink } from "lucide-react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { describeError } from "@/api/describeError";
-import {
-  DOCUMENT_KINDS,
-  downloadJobDocument,
-  generatedDocument,
-  jobDocumentsQueryOptions,
-} from "@/api/jobDocuments";
+import { DOCUMENT_KINDS, jobDocumentsQueryOptions } from "@/api/jobDocuments";
 import { patchJob, type JobDetail } from "@/api/jobs";
 import { addDays, fromDateInputValue, toDateInputValue } from "@/domain/calendar";
 import { CHECKLIST_KEYS, checklistOf, type ChecklistKey } from "@/domain/checklist";
 import { safeHref } from "@/domain/links";
 import { FOLLOW_UP_DAYS } from "@/domain/nextStep";
+import type { Translate } from "@/i18n/translate";
 import { useI18n } from "@/i18n/useI18n";
 import { useNow } from "@/lib/clock";
 import { Button } from "@/ui/Button";
 import { CheckField, TextField } from "@/ui/Field";
 import { Icon } from "@/ui/Icon";
 import { useToast } from "@/ui/ToastProvider";
-import { DRIVE_UNSUPPORTED, saveFile } from "../documents/saveFile";
+import { describePdfError, savePdf } from "../documents/downloadPdf";
 import { useJobFormat } from "../format/useJobFormat";
+import { DOCUMENT_LABEL } from "../labels";
 import { useChangeStatus } from "../phase/useChangeStatus";
 import { refreshJobQueries } from "../jobWrites";
 import { useTick, type Tick } from "./useChecklist";
@@ -115,15 +111,18 @@ function PostingLink({ job, onOpen }: { job: JobDetail; onOpen: () => void }) {
   );
 }
 
-/** Saves every generated PDF that exists; returns how many were saved. */
-async function downloadGenerated(queryClient: QueryClient, jobId: string): Promise<number> {
-  const documents = await queryClient.fetchQuery(jobDocumentsQueryOptions(jobId));
+interface DownloadSource {
+  queryClient: QueryClient;
+  job: JobDetail;
+  t: Translate;
+}
+
+/** Saves the PDF of every generated document that exists; returns how many were saved. */
+async function downloadGenerated({ queryClient, job, t }: DownloadSource): Promise<number> {
+  const documents = await queryClient.fetchQuery(jobDocumentsQueryOptions(job.id));
   let saved = 0;
   for (const kind of DOCUMENT_KINDS) {
-    const document = generatedDocument(documents, kind);
-    if (!document) continue;
-    saveFile(await downloadJobDocument(jobId, document.id), document.original_filename);
-    saved += 1;
+    if (await savePdf({ job, kind, documents, label: t(DOCUMENT_LABEL[kind]) })) saved += 1;
   }
   return saved;
 }
@@ -136,11 +135,11 @@ function useDownloadBoth(job: JobDetail, onDone: () => void) {
   const download = async () => {
     setBusy(true);
     try {
-      const saved = await downloadGenerated(queryClient, job.id);
+      const saved = await downloadGenerated({ queryClient, job, t });
       if (saved === 0) toast.show({ tone: "error", message: t("checklist.noDocuments") });
       else onDone();
     } catch (error) {
-      toast.show({ tone: "error", message: describeError(error, t, DRIVE_UNSUPPORTED) });
+      toast.show({ tone: "error", message: describePdfError(error, t) });
     } finally {
       setBusy(false);
     }

@@ -31,7 +31,13 @@ from routers.deps import PASSWORD_CHECK_RATE, _template_to_dict, limiter, refuse
 from core.connection_errors import REASON_FAILED, reason_for_error, reason_for_status
 from core.logger import get_logger
 from services.company_domain import CompanyDomain
-from services.user_data import delete_owned_jobs, delete_owned_platforms
+from routers.notifications import http_error
+from services.notifications_client import NotifyError
+from services.user_data import (
+    delete_notification_channels,
+    delete_notification_channels_best_effort,
+    delete_user_content,
+)
 from workers.crawl_control import reap_stalled_crawls
 from workers.tasks.research import MAX_COMPANY_NAME_LENGTH
 
@@ -337,8 +343,15 @@ def system_status(current_user: User = Depends(get_current_admin_user)):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=STATUS_UNAVAILABLE)
 
 
-def _wipe_all(db) -> None:
-    """Every account's jobs, sources and runs, and every company profile."""
+def _wipe_all(db) -> list:
+    """Every account's content (jobs, sources, runs, profile data) and every company profile; the accounts stay.
+
+    The per-account order is the factory reset's; the bulk deletes after it catch rows no account owns.
+    Returns the user ids, whose notification channels the caller deletes once the commit succeeded.
+    """
+    user_ids = [user_id for (user_id,) in db.query(User.id).all()]
+    for user_id in user_ids:
+        delete_user_content(db, user_id)
     db.query(JobStatusHistory).delete(synchronize_session=False)
     db.query(JobDocument).delete(synchronize_session=False)
     db.query(JobEntry).delete(synchronize_session=False)
@@ -346,16 +359,15 @@ def _wipe_all(db) -> None:
     db.query(PlatformRun).delete(synchronize_session=False)
     db.query(JobPlatform).delete(synchronize_session=False)
     db.query(CompanyProfile).delete(synchronize_session=False)
+    return user_ids
 
 
 def _wipe_own(db, admin_id: int) -> None:
-    """The admin's jobs and sources, then every company profile no remaining job refers to.
-
-    Not delete_user_content: the own scope keeps proofs, templates and the profile row (the danger copy, R12).
-    """
+    """Everything the admin owns except the account (the factory reset), then every company profile no remaining job refers to."""
     logger.info(f"Wiping data for user {admin_id}")
-    delete_owned_jobs(db, admin_id)
-    delete_owned_platforms(db, admin_id)
+    # One account, like the factory reset: the channels first, so a down service deletes nothing (502).
+    delete_notification_channels(admin_id)
+    delete_user_content(db, admin_id)
     # NOT IN over a list holding a NULL is NULL for every row, so jobs without a domain must stay out of it.
     referenced = db.query(JobEntry.company_domain).filter(JobEntry.company_domain.isnot(None)).distinct()
     db.query(CompanyProfile).filter(CompanyProfile.domain.notin_(referenced)).delete(synchronize_session=False)
@@ -383,14 +395,18 @@ def wipe_database(
             # 400, never 401: the web treats a 401 as an expired session.
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=WRONG_PASSWORD)
         _refuse_wipe_while_crawling(db, current_user.id, body.wipe_all_users)
-        if body.wipe_all_users:
-            _wipe_all(db)
-        else:
+        wiped_user_ids = _wipe_all(db) if body.wipe_all_users else []
+        if not body.wipe_all_users:
             _wipe_own(db, current_user.id)
         db.commit()
+        # Only after the commit: a failed wipe must not leave the accounts without their channels.
+        delete_notification_channels_best_effort(wiped_user_ids)
         return {"status": "success"}
     except HTTPException:
         raise
+    except NotifyError as error:
+        db.rollback()
+        raise http_error(error) from error
     except Exception as e:
         logger.error(f"Wipe Error: {e}")
         db.rollback()

@@ -47,3 +47,23 @@ def normalised_host(url: Optional[str]) -> Optional[str]:
         return validate_company_domain(host.removeprefix(WWW_PREFIX).encode("idna").decode("ascii"))
     except ValueError:
         return None
+
+
+# Hosts that serve postings or forward links for many employers, so they are never an employer's own
+# domain. Subdomains count too (de.indeed.com). Not exhaustive: an unknown board passes, the user can
+# then correct the domain in the Firma tab.
+JOB_BOARD_HOSTS = frozenset({
+    "stepstone.de", "indeed.com", "indeed.de", "linkedin.com", "xing.com", "monster.de", "monster.com",
+    "glassdoor.com", "glassdoor.de", "kununu.com", "arbeitsagentur.de", "jobware.de", "stellenanzeigen.de",
+    "meinestadt.de", "karriere.at", "jobs.ch", "softgarden.io", "personio.de", "personio.com",
+    "greenhouse.io", "lever.co", "workday.com", "myworkdayjobs.com", "join.com", "talent.com",
+})
+REDIRECT_HOSTS = frozenset({
+    "google.com", "google.de", "bing.com", "duckduckgo.com", "t.co", "bit.ly", "lnkd.in",
+    "safelinks.protection.outlook.com", "urldefense.com",
+})
+
+
+def is_job_board_or_redirect(host: str) -> bool:
+    """True for a known job board or link redirector host, or a subdomain of one."""
+    return any(host == known or host.endswith(f".{known}") for known in JOB_BOARD_HOSTS | REDIRECT_HOSTS)

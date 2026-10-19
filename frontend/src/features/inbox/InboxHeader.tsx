@@ -6,6 +6,7 @@ import { navNumber } from "@/features/shell/navigation";
 import type { Translate } from "@/i18n/translate";
 import { useI18n } from "@/i18n/useI18n";
 import { Masthead } from "@/ui/Masthead";
+import { ArchiveAllButton } from "./archive/ArchiveAllButton";
 import { ImportButton } from "./import/ImportButton";
 import { RunLine } from "./RunLine";
 import { useInboxList } from "./useInboxLists";
@@ -22,9 +23,18 @@ export function InboxHeader({ onShowBelow }: { onShowBelow?: () => void }) {
         number={navNumber("inbox")}
         title={t("nav.inbox")}
         deck={first ? <Deck page={first} t={t} /> : undefined}
-        actions={<ImportButton />}
+        actions={<HeaderActions />}
       />
       <RunLine onShowBelow={onShowBelow} />
+    </>
+  );
+}
+
+function HeaderActions() {
+  return (
+    <>
+      <ArchiveAllButton />
+      <ImportButton />
     </>
   );
 }

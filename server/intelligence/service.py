@@ -13,6 +13,8 @@ from openai import (
     APIStatusError,
 )
 from urllib.parse import urlparse
+
+from core.url_safety import host_for_log
 import redis as _redis_sync
 
 from intelligence.prompts import (
@@ -23,6 +25,8 @@ from intelligence.prompts import (
     get_company_profile_summary_messages,
     get_extract_job_details_messages,
     get_deep_dive_messages,
+    get_posting_details_messages,
+    get_identify_company_domain_messages,
     get_tailored_cv_messages,
     get_annotate_cv_template_messages,
 )
@@ -267,7 +271,9 @@ def _call_openrouter(
         )
         raise
     except APIConnectionError as e:
-        logger.error(f"OpenRouter connection error in {func_name}: {e}")
+        # The base URL tells a cloud call from a local one (the task routing may send it to Ollama),
+        # the cause tells DNS from a refused or dropped connection.
+        logger.error(f"AI connection error in {func_name} to {host_for_log(str(client.base_url))}: {e} (cause: {e.__cause__!r})")
         store_ai_404_error(
             "Verbindung zu OpenRouter fehlgeschlagen. Netzwerk oder Service prüfen.", AI_ERROR_CONNECTION
         )
@@ -537,6 +543,56 @@ def generate_company_profile_summary(
     content = response.choices[0].message.content.strip()
     result = extract_json(content)
     return result
+
+
+IDENTIFY_DOMAIN_MAX_TOKENS = 200
+
+
+def identify_company_domain(
+    company_name: str, job_title: str, source_url: str, model: str, client
+) -> Optional[str]:
+    """The AI's guess of the employer's website domain, unvalidated; None when it gives no text.
+
+    Raises the client's API errors; an answer that is not JSON yields None.
+    """
+    messages = get_identify_company_domain_messages(company_name, job_title, source_url)
+    response = _call_openrouter(
+        client=client,
+        model=model,
+        messages=messages,
+        temperature=0.0,
+        max_tokens=IDENTIFY_DOMAIN_MAX_TOKENS,
+        func_name="identify_company_domain",
+    )
+    try:
+        answer = extract_json(response.choices[0].message.content or "")
+    except json.JSONDecodeError:
+        return None
+    domain = answer.get("domain") if isinstance(answer, dict) else None
+    return domain if isinstance(domain, str) else None
+
+
+POSTING_DETAILS_MAX_TOKENS = 1500
+
+
+def extract_posting_details(job_title: str, job_description: str, model: str, client) -> dict:
+    """The contact, recruiter and salary details the AI reads out of one posting, unvalidated.
+
+    Raises the client's API errors; an answer that is not a JSON object yields {}.
+    """
+    response = _call_openrouter(
+        client=client,
+        model=model,
+        messages=get_posting_details_messages(job_title, job_description),
+        temperature=0.0,
+        max_tokens=POSTING_DETAILS_MAX_TOKENS,
+        func_name="extract_posting_details",
+    )
+    try:
+        answer = extract_json(response.choices[0].message.content or "")
+    except json.JSONDecodeError:
+        return {}
+    return answer if isinstance(answer, dict) else {}
 
 
 def generate_deep_dive(

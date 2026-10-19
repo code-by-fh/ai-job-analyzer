@@ -1,34 +1,43 @@
 "use client";
 
 import { Pencil } from "lucide-react";
-import { useState } from "react";
+import type { ReactNode } from "react";
 import type { JobDetail } from "@/api/jobs";
+import { mailtoHref } from "@/domain/links";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
 import { useJobFormat, type JobFormat } from "../format/useJobFormat";
 import { followUpLabel } from "../labels";
-import { DatesDrawer } from "./DatesDrawer";
+import { DATES_EDIT_ID, useOpenDates } from "./DatesDrawerProvider";
 import { hasCustomTime } from "./datesForm";
+import { PostingDetailsAction } from "./PostingDetailsAction";
 
 const CARD_TITLE_ID = "dates-title";
 
 /** Small "Termine & Daten" card under the next step (spec 4.2). */
 export function DatesCard({ job }: { job: JobDetail }) {
   const { t } = useI18n();
-  const [editing, setEditing] = useState(false);
   return (
     <section className="jd-card" aria-labelledby={CARD_TITLE_ID}>
       <div className="row-between">
         <h2 className="sec-title-sm" id={CARD_TITLE_ID}>
           {t("dates.title")}
         </h2>
-        <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>
-          {t("dates.edit")}
-        </Button>
+        <EditButton />
       </div>
       <DatesList job={job} />
-      {editing ? <DatesDrawer job={job} onClose={() => setEditing(false)} /> : null}
+      <PostingDetailsAction job={job} />
     </section>
+  );
+}
+
+function EditButton() {
+  const { t } = useI18n();
+  const openDates = useOpenDates();
+  return (
+    <Button id={DATES_EDIT_ID} size="sm" variant="ghost" icon={Pencil} onClick={() => openDates()}>
+      {t("dates.edit")}
+    </Button>
   );
 }
 
@@ -43,13 +52,49 @@ function DatesList({ job }: { job: JobDetail }) {
       <dd className="num">{day(job.next_follow_up_at)}</dd>
       <dt>{t("dates.interviewAt")}</dt>
       <dd className="num">{interviewText(job.interview_at, format) ?? none}</dd>
-      <dt>{t("dates.contacts")}</dt>
-      <dd>{job.contact_persons?.length ? <ContactList contacts={job.contact_persons} /> : none}</dd>
-      <dt>{t("dates.recruiter")}</dt>
-      <dd>{recruiterText(job) || none}</dd>
-      <dt>{t("dates.salary")}</dt>
-      <dd className="num">{salaryText(job, t) || none}</dd>
+      <PostingRows job={job} />
     </dl>
+  );
+}
+
+function PostingRows({ job }: { job: JobDetail }) {
+  const { t } = useI18n();
+  const none = t("dates.none");
+  return (
+    <>
+      <PostingRow job={job} field="contact_persons" label={t("dates.contacts")}>
+        {job.contact_persons?.length ? <ContactList contacts={job.contact_persons} /> : none}
+      </PostingRow>
+      <PostingRow job={job} field="recruiter_info" label={t("dates.recruiter")}>
+        {recruiterText(job) || none}
+      </PostingRow>
+      <PostingRow job={job} field="salary_benchmark" label={t("dates.salary")} className="num">
+        {salaryText(job, t) || none}
+      </PostingRow>
+    </>
+  );
+}
+
+type PostingRowProps = {
+  job: JobDetail;
+  field: string;
+  label: string;
+  className?: string;
+  children: ReactNode;
+};
+
+/** A row that says "from the posting" while the analysis' value is still untouched by the user. */
+function PostingRow({ job, field, label, className, children }: PostingRowProps) {
+  const { t } = useI18n();
+  const fromPosting = job.posting_extracted?.includes(field);
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd className={className}>
+        {children}
+        {fromPosting ? <small className="posting-hint">{t("dates.fromPosting")}</small> : null}
+      </dd>
+    </>
   );
 }
 
@@ -70,6 +115,17 @@ function salaryText({ salary_benchmark: salary }: JobDetail, t: Translate): stri
   return t("dates.salaryRange", { min: salary.min ?? open, max: salary.max ?? open });
 }
 
+function ContactEmail({ email }: { email: string }) {
+  const href = mailtoHref(email);
+  return href ? (
+    <a className="link" href={href}>
+      {email}
+    </a>
+  ) : (
+    <>{email}</>
+  );
+}
+
 function ContactList({ contacts }: { contacts: NonNullable<JobDetail["contact_persons"]> }) {
   return (
     <ul role="list" className="plain-list">
@@ -79,10 +135,8 @@ function ContactList({ contacts }: { contacts: NonNullable<JobDetail["contact_pe
           {contact.phone ? ` · ${contact.phone}` : null}
           {contact.email ? (
             <>
-              {" · "}
-              <a className="link" href={`mailto:${contact.email}`}>
-                {contact.email}
-              </a>
+              {" "}
+              · <ContactEmail email={contact.email} />
             </>
           ) : null}
         </li>

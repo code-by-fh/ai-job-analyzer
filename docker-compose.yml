@@ -30,16 +30,69 @@ services:
     container_name: ai-job-agent-rabbitmq
     hostname: ai-job-agent-rabbitmq
 
-  ai-job-agent-botosaurus:
-    image: doublelayer/botosaurus-api-service:latest
+  ai-job-agent-page-render:
+    image: doublelayer/page-render-service:latest
     ports:
-      - "8000:8000"
+      # Only for local development (server running on the host); the server container
+      # reaches the service over the compose network. Loopback only: Docker's published
+      # ports bypass host firewalls. Host port 18431 instead of the common 8000, so it does
+      # not collide with other local services; inside the container the service stays on 8000.
+      - "127.0.0.1:18431:8000"
     environment:
-      - MAX_WORKERS=${BOTOSAURUS_MAX_WORKERS:-3}
       - API_KEYS=${RENDER_API_KEY:?set RENDER_API_KEY in .env (at least 32 characters)}
-      - HEADLESS=true
-    container_name: ai-job-agent-botosaurus
-    hostname: ai-job-agent-botosaurus
+      - MAX_WORKERS=${RENDER_MAX_WORKERS:-2}
+      - ENABLE_VNC=true
+      - VNC_PASSWORD=pw
+    restart: unless-stopped
+    # The service waits up to 30 s for running renders on shutdown; Docker's default of 10 s
+    # would kill it in the middle of them.
+    stop_grace_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /home/app:size=256m,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 2048
+    container_name: ai-job-agent-page-render
+    hostname: ai-job-agent-page-render
+
+  ai-job-agent-notify:
+    build: ./notification-service
+    # No published port. The server reaches the service over "notify" (internal: no route out, joined
+    # only by these two); the service reaches Pushover, Resend, Mailjet and SMTP servers through
+    # "notify_egress", which no other service joins.
+    environment:
+      - NOTIFY_API_KEYS=ai-job-agent:${NOTIFY_API_KEY:?set NOTIFY_API_KEY in .env (at least 32 characters)}
+      - NOTIFY_ENCRYPTION_KEY=${NOTIFY_ENCRYPTION_KEY:?set NOTIFY_ENCRYPTION_KEY in .env (a Fernet key)}
+      - NOTIFY_ENCRYPTION_KEY_OLD=${NOTIFY_ENCRYPTION_KEY_OLD:-}
+      - NOTIFY_DATABASE_PATH=/data/notifications.sqlite3
+    volumes:
+      - notify_data:/data
+    networks:
+      - notify
+      - notify_egress
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    container_name: ai-job-agent-notify
+    hostname: ai-job-agent-notify
 
   ai-job-agent-server:
     build: ./server
@@ -51,19 +104,24 @@ services:
       - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@ai-job-agent-rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://ai-job-agent-redis:6379/0
       - PYTHONUNBUFFERED=1
-      - RENDER_API_URL=${RENDER_API_URL:-http://ai-job-agent-botosaurus:8000/render}
+      - RENDER_SERVICE=${RENDER_SERVICE:-page-render-service}
+      - RENDER_API_URL=${RENDER_API_URL:-http://ai-job-agent-page-render:8000/api/v1/render}
       - RENDER_API_KEY=${RENDER_API_KEY}
+      - NOTIFY_API_URL=${NOTIFY_API_URL:-http://ai-job-agent-notify:8000}
+      - NOTIFY_API_KEY=${NOTIFY_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       - ai-job-agent-database
       - ai-job-agent-rabbitmq
       - ai-job-agent-redis
-      - ai-job-agent-botosaurus
+      - ai-job-agent-page-render
+      - ai-job-agent-notify
+    networks:
+      - default
+      - notify
     container_name: ai-job-agent-server
     hostname: ai-job-agent-server
     extra_hosts:
@@ -88,3 +146,9 @@ services:
 
 volumes:
   db_data:
+  notify_data:
+
+networks:
+  notify:
+    internal: true
+  notify_egress:

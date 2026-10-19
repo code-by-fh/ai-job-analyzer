@@ -378,7 +378,7 @@ const AI_NO_SOURCE: SetupStatusBody = {
   has_jobs: false,
 };
 
-test("first run: the first imported job turns the onboarding into the inbox", async ({
+test("first run: the first found job turns the onboarding into the inbox", async ({
   page,
   mockApi,
 }) => {
@@ -396,9 +396,6 @@ test("first run: the first imported job turns the onboarding into the inbox", as
   const log = await mockApi(routes);
   await page.goto("/inbox");
   await expect(page.getByRole("heading", { level: 1, name: "Willkommen, admin" })).toBeVisible();
-  await page.getByRole("button", { name: "Per URL importieren: eine einzelne Stelle" }).click();
-  await page.getByLabel("Link zur Stellenanzeige").fill("https://karriere.example.de/jobs/1");
-  await page.getByRole("button", { name: "Importieren und bewerten" }).click();
 
   await expect.poll(() => log.sockets.length).toBeGreaterThan(0);
   server.lists.new = [KOTLIN];
@@ -411,13 +408,9 @@ test("first run: the first imported job turns the onboarding into the inbox", as
   });
   pushEvent(log, { type: "crawl_job_completed", job_id: "crawl-9" });
   await expect(page.getByRole("heading", { level: 1, name: "Eingang" })).toBeVisible();
-  // The drawer left with the onboarding: focus lands on the inbox title, the toast names the result.
+  // Focus lands on the inbox title once the onboarding gives way.
   await expect(page.getByRole("heading", { level: 1, name: "Eingang" })).toBeFocused();
-  await expect(page.getByText("Importiert und bewertet: 86 · Stark.")).toBeVisible();
   await expect(link(page, KOTLIN.title!)).toBeVisible();
-  expect(sentTo(log, "POST /scraper/import-job")).toEqual([
-    { url: "https://karriere.example.de/jobs/1" },
-  ]);
 });
 
 test("no horizontal scroll at 375px with due card, threshold and setup view", async ({

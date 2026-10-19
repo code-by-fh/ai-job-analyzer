@@ -4,9 +4,8 @@ import type { JobDetail } from "@/api/jobs";
 import { useI18n } from "@/i18n/useI18n";
 import { NotesEditor } from "./NotesEditor";
 import { Timeline } from "./Timeline";
-import { TodoList } from "./TodoList";
 
-/** Prototype tabHistory plus the to-dos that used to live in localStorage (C.2, now B7). */
+/** Prototype tabHistory; the to-dos moved to the side column (Feedback 1 T13). */
 export function HistoryTab({ job }: { job: JobDetail }) {
   const { t } = useI18n();
   return (
@@ -17,7 +16,6 @@ export function HistoryTab({ job }: { job: JobDetail }) {
       </section>
       <div className="history-side">
         <NotesEditor job={job} />
-        <TodoList job={job} />
       </div>
     </div>
   );

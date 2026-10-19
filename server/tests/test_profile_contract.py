@@ -1,15 +1,20 @@
 """The web's profile sections and CV import: limits, independent saves, a bounded routed import."""
 
+import threading
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import httpx
 import openai
 import pytest
+import redis
 
 from database.core import UserProfile
+from core.cv_import_state import claim_import
 from routers.settings import ParsedCv
-from tests.factories import PDF_BYTES, TEST_USER_ID, make_profile
+from workers.tasks.time_limits import GENERATION_SWEEP_MARGIN_SECONDS, SYNC_AI_RUN_LIMIT_SECONDS
+from tests.factories import PDF_BYTES, TEST_USER_ID, events_of_type, make_profile
 
 pytestmark = pytest.mark.usefixtures("fresh_rate_limits")
 
@@ -19,10 +24,9 @@ CREDENTIALS = {
     "mailjet_api_key": "MJ_KEY_4711", "mailjet_secret_key": "MJ_SECRET_4711", "mailjet_from_email": "mj@example.com",
     "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_user": "me", "smtp_password": "SMTP_PW_4711",
     "smtp_from_email": "me@example.com", "email_global_recipient": "me@example.com",
-    "google_drive_refresh_token": "DRIVE_TOKEN_4711", "google_drive_email": "me@gmail.com",
-    "active_storage_service": "GOOGLE_DRIVE", "active_notification_service": "PUSHOVER",
+    "active_notification_service": "PUSHOVER",
 }
-SECRETS = ("PUSH_TOKEN_4711", "RESEND_KEY_4711", "MJ_KEY_4711", "MJ_SECRET_4711", "SMTP_PW_4711", "DRIVE_TOKEN_4711")
+SECRETS = ("PUSH_TOKEN_4711", "RESEND_KEY_4711", "MJ_KEY_4711", "MJ_SECRET_4711", "SMTP_PW_4711")
 GOAL_BODY = {"role": "Lead", "skills": "Kotlin, Java", "min_salary": "80000", "location": "Hamburg",
              "preferences": "Hybrid", "spoken_languages": ["Deutsch", "Englisch"]}
 CV_BODY = {"cv_data": {"experience": [{"company": "Acme", "role": "Dev", "duration": "2020-", "description": "APIs"}],
@@ -387,3 +391,128 @@ def test_cv_import_reads_text_entries_as_a_description_or_a_project_name(api_cli
                       '{"experience": ["Entwickler bei Acme"], "projects": ["Shop"]}')
     assert cv["experience"] == [{"company": "", "role": "", "duration": "", "description": "Entwickler bei Acme"}]
     assert cv["projects"] == [{"name": "Shop", "tech_stack": "", "description": ""}]
+
+
+@pytest.fixture()
+def run_events(monkeypatch, fake_redis):
+    monkeypatch.setattr("services.run_events.events_redis", lambda: fake_redis)
+    return fake_redis
+
+
+def test_cv_import_is_stamped_running_and_committed_before_the_ai_call(api_client, seed, session_factory, run_events):
+    seed(make_profile())
+    seen = {}
+
+    def _parse(*_args):
+        seen["running"] = _stored(session_factory).cv_import_started_at is not None
+        return ParsedCv.model_validate(PARSED)
+
+    with patch("routers.settings.extract_text_from_pdf", return_value="x" * 80), \
+         patch("routers.settings.get_client_and_model", MagicMock(return_value=(None, "model"))), \
+         patch("routers.settings.parse_cv_with_ai", side_effect=_parse):
+        api_client.post("/settings/upload-cv", files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")})
+    assert seen == {"running": True}
+
+
+def test_settings_show_a_running_cv_import_with_its_start(api_client, seed):
+    seed(make_profile(cv_import_started_at=datetime(2026, 10, 16, 9, 30, tzinfo=timezone.utc)))
+    body = api_client.get("/settings").json()
+    assert (body["cv_import_running"], body["cv_import_started_at"], body["cv_import_error"]) == (
+        True, "2026-10-16T09:30:00+00:00", None,
+    )
+
+
+def test_cv_import_success_ends_the_run_and_tells_the_owner(api_client, seed, session_factory, run_events):
+    seed(make_profile(cv_import_error="cv_parse_failed"))
+    _import(api_client)
+    profile = _stored(session_factory)
+    assert (profile.cv_import_started_at, profile.cv_import_error) == (None, None)
+    assert events_of_type(run_events, "cv_import_ended") == [{"type": "cv_import_ended", "user_id": TEST_USER_ID}]
+    assert api_client.get("/settings").json()["cv_import_running"] is False
+
+
+def test_cv_import_parse_failure_ends_the_run_with_the_fixed_error(api_client, seed, session_factory, run_events):
+    seed(make_profile())
+    _import(api_client, parsed=None)
+    profile = _stored(session_factory)
+    assert (profile.cv_import_started_at, profile.cv_import_error) == (None, "cv_parse_failed")
+    assert len(events_of_type(run_events, "cv_import_ended")) == 1
+
+
+def test_cv_import_unexpected_failure_ends_the_run_with_the_fixed_error(api_client, seed, session_factory, run_events):
+    seed(make_profile())
+    with patch("routers.settings.extract_text_from_pdf", return_value="x" * 80), \
+         patch("routers.settings.get_client_and_model", side_effect=RuntimeError("db down")), \
+         pytest.raises(RuntimeError):
+        api_client.post("/settings/upload-cv", files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")})
+    profile = _stored(session_factory)
+    assert (profile.cv_import_started_at, profile.cv_import_error) == (None, "cv_parse_failed")
+    assert len(events_of_type(run_events, "cv_import_ended")) == 1
+
+
+def test_cv_import_while_one_runs_is_refused_and_leaves_it_running(api_client, seed, session_factory):
+    started = datetime.now(timezone.utc)
+    seed(make_profile(cv_import_started_at=started))
+    response, parse, _ = _import(api_client)
+    assert (response.status_code, response.json()) == (409, {"detail": "cv_import_running"})
+    parse.assert_not_called()
+    assert _stored(session_factory).cv_import_started_at is not None
+
+
+def test_refused_cv_file_never_starts_a_run(api_client, seed, session_factory, run_events):
+    seed(make_profile(cv_import_error="cv_parse_failed"))
+    _import(api_client, text="   ")
+    profile = _stored(session_factory)
+    assert (profile.cv_import_started_at, profile.cv_import_error) == (None, "cv_parse_failed")
+    assert events_of_type(run_events, "cv_import_ended") == []
+
+
+def test_cv_import_survives_a_redis_outage_for_its_end_event(api_client, seed, session_factory, monkeypatch):
+    seed(make_profile())
+    broken = MagicMock()
+    broken.publish.side_effect = redis.ConnectionError("down")
+    monkeypatch.setattr("services.run_events.events_redis", lambda: broken)
+    response, _, _ = _import(api_client)
+    assert (response.status_code, _stored(session_factory).cv_import_started_at) == (200, None)
+
+
+# Older than the sweep's cutoff (SYNC_AI_RUN_LIMIT_SECONDS 630 s + 120 s margin): the request died.
+STALE_IMPORT_AGE = timedelta(seconds=SYNC_AI_RUN_LIMIT_SECONDS + GENERATION_SWEEP_MARGIN_SECONDS + 60)
+
+
+@pytest.fixture()
+def one_ai_slot(monkeypatch):
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr("routers.sync_ai_runs._sync_ai_slots", slots)
+    return slots
+
+
+def test_cv_import_with_every_ai_slot_taken_is_503_and_starts_no_run(api_client, seed, session_factory, one_ai_slot):
+    seed(make_profile())
+    one_ai_slot.acquire()
+    response, parse, _ = _import(api_client)
+    assert (response.status_code, response.json()) == (503, {"detail": "ai_busy"})
+    parse.assert_not_called()
+    assert _stored(session_factory).cv_import_started_at is None
+
+
+def test_cv_import_gives_its_ai_slot_back_after_success_and_failure(api_client, seed, one_ai_slot):
+    seed(make_profile())
+    statuses = [_import(api_client, parsed=parsed)[0].status_code for parsed in (PARSED, None, PARSED)]
+    assert statuses == [200, 502, 200]
+
+
+def test_cv_import_replaces_a_stale_run_whose_request_died(api_client, seed, session_factory):
+    seed(make_profile(cv_import_started_at=datetime.now(timezone.utc) - STALE_IMPORT_AGE))
+    response, parse, _ = _import(api_client)
+    assert response.status_code == 200
+    parse.assert_called_once()
+    assert _stored(session_factory).cv_import_started_at is None
+
+
+def test_claim_import_refuses_while_another_claim_holds_the_run(session_factory, seed):
+    seed(make_profile())
+    with session_factory() as db:
+        profile_id = _stored(session_factory).id
+        cutoff = datetime.now(timezone.utc) - STALE_IMPORT_AGE
+        assert (claim_import(db, profile_id, cutoff), claim_import(db, profile_id, cutoff)) == (True, False)

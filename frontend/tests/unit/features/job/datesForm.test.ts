@@ -5,6 +5,7 @@ import {
   SALARY_NOTE_MAX,
   firstInvalidField,
   formFromJob,
+  interviewDatePatch,
   newContact,
   patchFromForm,
   validateDatesForm,
@@ -228,5 +229,25 @@ describe("firstInvalidField", () => {
 
   it("returns null without problems", () => {
     expect(firstInvalidField({})).toBeNull();
+  });
+});
+
+describe("interviewDatePatch", () => {
+  it("leaves the stored interview date alone when the day is empty", () => {
+    expect(interviewDatePatch("", "")).toEqual({});
+    expect(interviewDatePatch("", "14:30")).toEqual({});
+  });
+
+  it("sends a picked day at 09:00 or at the given time, like the dates drawer", () => {
+    expect(interviewDatePatch("2026-10-20", "")).toEqual({
+      interview_at: new Date(2026, 9, 20, 9, 0).toISOString(),
+    });
+    expect(interviewDatePatch("2026-10-20", "14:30")).toEqual({
+      interview_at: new Date(2026, 9, 20, 14, 30).toISOString(),
+    });
+  });
+
+  it("never clears the stored date for an unreadable day", () => {
+    expect(interviewDatePatch("2026-02-31", "")).toEqual({});
   });
 });

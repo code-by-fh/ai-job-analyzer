@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_PENDING,
-  failTasks,
   finishTask,
   pendingTaskId,
   STALL_AFTER_MS,
@@ -30,14 +29,6 @@ describe("pending tasks", () => {
   it("is idle again once finished", () => {
     const tasks = finishTask(startTask(EMPTY_PENDING, PREP, T0), PREP);
     expect(taskPhase(tasks, PREP, T0 + 1)).toBe("idle");
-  });
-
-  it("marks every render of a job failed, and nothing else", () => {
-    const cv = pendingTaskId.render("job-1", "cv");
-    const tasks = startTask(startTask(EMPTY_PENDING, cv, T0), PREP, T0);
-    const failed = failTasks(tasks, pendingTaskId.renderPrefix("job-1"));
-    expect(taskPhase(failed, cv, T0 + 1)).toBe("failed");
-    expect(taskPhase(failed, PREP, T0 + 1)).toBe("running");
   });
 
   it("keeps the earliest start when started twice", () => {

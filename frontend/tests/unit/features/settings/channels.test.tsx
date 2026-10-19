@@ -4,10 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformBody } from "@/api/platforms";
 import { queryKeys } from "@/api/queryKeys";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import {
+  CHANNEL_TYPES,
+  CHANNELS,
+  PUSHOVER_CHANNEL,
+  SMTP_CHANNEL,
+} from "../../../e2e/support/notificationFixtures";
 import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
 import { liveNavigation } from "../../support/liveNavigation";
 import { renderWithProviders } from "../../support/render";
-import { settingsStubs, STORED_NOTIFICATION_SETTINGS } from "../../support/settingsRoutes";
+import { settingsStubs } from "../../support/settingsRoutes";
 import { stubRoutes } from "../../support/stubRoutes";
 
 vi.mock("next/navigation", async () =>
@@ -17,325 +23,374 @@ vi.mock("next/navigation", async () =>
 beforeEach(() => liveNavigation.reset("section=notifications"));
 afterEach(() => vi.unstubAllGlobals());
 
-const HTTP_BAD_REQUEST = 400;
+const HTTP_CREATED = 201;
+const HTTP_NO_CONTENT = 204;
+const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
-const HTTP_TOO_MANY = 429;
-const SAVE_PATH = "/notification-settings";
-const SAVED = { status: "saved" };
-const RESEND_TEST = "/notification-settings/test-resend";
-const SMTP_TEST = "/notification-settings/test-smtp";
-const SHAPE_TEXT = "Bitte eine E-Mail-Adresse wie name@beispiel.de eingeben.";
+const HTTP_BAD_GATEWAY = 502;
+const CHANNEL_LIMIT = 20;
+const SMTP_PATH = `/notifications/channels/${SMTP_CHANNEL.id}`;
+const PUSHOVER_PATH = `/notifications/channels/${PUSHOVER_CHANNEL.id}`;
+const DEFAULT_RECIPIENTS_TEXT =
+  "An diese Adresse gehen Benachrichtigungen dieses Kanals, wenn eine Quelle keinen eigenen Empfänger festlegt.";
 
-const isPostTo = (path: string) => (call: RecordedCall) =>
-  call.method === "POST" && new URL(call.url).pathname === path;
+const callsTo = (calls: readonly RecordedCall[], method: string, path: string) =>
+  calls.filter((call) => call.method === method && new URL(call.url).pathname === path);
 const bodyOf = (call: RecordedCall | undefined) => JSON.parse(call?.body ?? "null") as unknown;
 const form = (name: string) => screen.getByRole("form", { name });
 const saveIn = (name: string) => within(form(name)).getByRole("button", { name: "Speichern" });
-const openChannel = async (name: string) =>
-  userEvent.click(await screen.findByRole("button", { name }));
-/** Opens an email channel's test dialog and returns its recipient field. */
-async function openTestDialog(name: string): Promise<HTMLElement> {
-  await openChannel(name);
-  const dialog = await screen.findByRole("dialog", { name: "Test-E-Mail senden" });
-  return within(dialog).getByLabelText("Empfänger");
-}
+const click = async (name: string) => userEvent.click(await screen.findByRole("button", { name }));
+const listOf = (items: unknown[]) => ({ items, total: items.length });
 
-/** Platforms with notifications for the per-source overview. */
+/** A source that notifies through Pushover and SMTP, and one that does not notify. */
 const PLATFORMS: PlatformBody[] = [
   {
     id: 7,
     name: "StepStone",
     url: "https://www.stepstone.de",
-    notification_adapters: ["PUSHOVER", "SMTP"],
+    notification_channel_ids: [PUSHOVER_CHANNEL.id, SMTP_CHANNEL.id],
   },
-  { id: 8, name: "Indeed", url: "https://de.indeed.com", notification_adapters: [] },
+  { id: 8, name: "Indeed", url: "https://de.indeed.com", notification_channel_ids: [] },
 ];
 
-describe("channels", () => {
-  it("shows the state from the channel booleans and never a secret", async () => {
+describe("channel list", () => {
+  it("names each channel and its type in the service's words, never a secret", async () => {
     stubRoutes(settingsStubs());
     const { container } = renderWithProviders(<SettingsPage />);
-    expect(await screen.findByText("Eingerichtet · smtp.example.com")).toBeVisible();
-    expect(screen.getByText("Nicht eingerichtet")).toBeVisible(); // Mailjet
-    expect(container.innerHTML).not.toContain("__masked__");
+    expect(await screen.findByText("Firmen-SMTP")).toBeVisible();
+    expect(screen.getByText("E-Mail (SMTP)")).toBeVisible();
+    expect(screen.getByText("E-Mail (Resend)")).toBeVisible();
+    expect(container.innerHTML).not.toMatch(/"set"|not set/);
   });
 
-  it("shows no channel state before both the settings and the channel booleans are there", async () => {
+  it("shows no row before the channel types are there", async () => {
     stubRoutes(
-      settingsStubs({ "GET /notification-settings/channels": () => new Promise(() => undefined) }),
+      settingsStubs({ "GET /notifications/channel-types": () => new Promise(() => undefined) }),
     );
     renderWithProviders(<SettingsPage />);
     await screen.findByRole("heading", { level: 2, name: "Benachrichtigungen" });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText("Nicht eingerichtet")).toBeNull();
-    expect(screen.queryByRole("button", { name: "SMTP ändern" })).toBeNull();
+    expect(screen.queryByText("Firmen-SMTP")).toBeNull();
     const channels = screen.getByRole("region", { name: "Kanäle" });
     expect(within(channels).getByRole("status")).toHaveAttribute("aria-busy", "true");
   });
 
-  it("Speichern sends only the changed SMTP field", async () => {
-    const calls = stubRoutes(settingsStubs({ "POST /notification-settings": SAVED }));
+  it("says when the notification service is down, without the server's text", async () => {
+    stubRoutes(
+      settingsStubs({
+        "GET /notifications/channels": () =>
+          jsonResponse(HTTP_BAD_GATEWAY, { detail: "notification_service_unavailable" }),
+      }),
+    );
     renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    const host = screen.getByLabelText("Server");
-    await userEvent.clear(host);
-    await userEvent.type(host, "mail.example.org");
-    await userEvent.click(saveIn("SMTP"));
-    await screen.findByText("Gespeichert.");
-    expect(bodyOf(calls.find(isPostTo(SAVE_PATH)))).toEqual({ smtp_host: "mail.example.org" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "SMTP ändern" })).toHaveFocus());
+    const channels = await screen.findByRole("region", { name: "Kanäle" });
+    expect(
+      await within(channels).findByText(/Der Benachrichtigungsdienst ist gerade nicht erreichbar/),
+    ).toBeVisible();
+    expect(screen.queryByText(/notification_service_unavailable/)).toBeNull();
   });
 
-  it("a save refreshes the notification settings and the channel booleans, nothing broader", async () => {
-    stubRoutes(settingsStubs({ "POST /notification-settings": SAVED }));
+  it("says when there is no channel yet", async () => {
+    stubRoutes(settingsStubs({ "GET /notifications/channels": listOf([]) }));
+    renderWithProviders(<SettingsPage />);
+    expect(await screen.findByText("Noch kein Kanal eingerichtet.")).toBeVisible();
+  });
+});
+
+describe("editing a channel", () => {
+  it("Speichern sends only the changed field and refreshes only the channels", async () => {
+    const calls = stubRoutes(settingsStubs({ [`PATCH ${SMTP_PATH}`]: SMTP_CHANNEL }));
     const { queryClient } = renderWithProviders(<SettingsPage />);
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    await openChannel("SMTP ändern");
-    await userEvent.type(screen.getByLabelText("Benutzer"), "x");
-    await userEvent.click(saveIn("SMTP"));
+    await click("Firmen-SMTP bearbeiten");
+    const host = screen.getByLabelText("SMTP-Server");
+    await userEvent.clear(host);
+    await userEvent.type(host, "mail.example.org");
+    await userEvent.click(saveIn("Firmen-SMTP"));
     await screen.findByText("Gespeichert.");
-    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+    expect(bodyOf(callsTo(calls, "PATCH", SMTP_PATH)[0])).toEqual({
+      fields: { host: "mail.example.org" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Firmen-SMTP bearbeiten" })).toHaveFocus(),
+    );
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
-      queryKeys.notificationSettings,
-      queryKeys.channelStatus,
+      queryKeys.channels,
     ]);
   });
 
-  it("an untouched secret is never sent and its input starts empty", async () => {
+  it("the recipients field says what the channel's default recipients are for", async () => {
     stubRoutes(settingsStubs());
     renderWithProviders(<SettingsPage />);
-    await openChannel("Pushover ändern");
-    const token = screen.getByLabelText("API-Token");
-    expect(token).toHaveValue("");
-    expect(token).toHaveAttribute("type", "password");
-    expect(token).toHaveAttribute("autocomplete", "new-password");
-    expect(screen.getByText("Gespeichert. Leer lassen, um ihn zu behalten.")).toBeVisible();
-    expect(saveIn("Pushover")).toHaveAttribute("aria-disabled", "true");
-  });
-
-  it("a new channel needs every field before it is sent", async () => {
-    const calls = stubRoutes(settingsStubs());
-    renderWithProviders(<SettingsPage />);
-    await openChannel("Mailjet einrichten");
-    expect(screen.getAllByText("Noch nicht gespeichert.")).toHaveLength(2);
-    await userEvent.type(screen.getByLabelText("Absender"), "mj@example.com");
-    await userEvent.click(saveIn("Mailjet"));
-    expect(within(form("Mailjet")).getAllByText("Bitte ausfüllen.")).toHaveLength(2);
-    expect(calls.some(isPostTo(SAVE_PATH))).toBe(false);
-  });
-
-  it("clearing a required field of a configured channel is refused", async () => {
-    const calls = stubRoutes(settingsStubs());
-    renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    await userEvent.clear(screen.getByLabelText("Server"));
-    await userEvent.click(saveIn("SMTP"));
-    expect(within(form("SMTP")).getByText("Bitte ausfüllen.")).toBeVisible();
-    expect(calls.some(isPostTo(SAVE_PATH))).toBe(false);
-  });
-
-  it("a server refusal shows on its field, without a toast and without the server text", async () => {
-    stubRoutes(
-      settingsStubs({
-        "POST /notification-settings": () =>
-          jsonResponse(HTTP_UNPROCESSABLE, {
-            detail: [{ loc: ["body", "smtp_user"], msg: "server says no", type: "x" }],
-          }),
-      }),
+    await click("Firmen-SMTP bearbeiten");
+    expect(screen.getByLabelText("Empfänger")).toHaveValue("me@example.com");
+    expect(screen.getByLabelText("Empfänger")).toHaveAccessibleDescription(
+      `${DEFAULT_RECIPIENTS_TEXT} Mehrere Adressen mit Komma trennen.`,
     );
-    renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    await userEvent.type(screen.getByLabelText("Benutzer"), "x");
-    await userEvent.click(saveIn("SMTP"));
-    expect(await within(form("SMTP")).findByText("Zu lang.")).toBeVisible();
-    expect(screen.queryByText(/server says no/)).toBeNull();
   });
 
-  it("Testen waits while the form is dirty", async () => {
-    stubRoutes(settingsStubs());
+  it("a stored secret shows only 'gesetzt'; Ersetzen opens an empty password input", async () => {
+    const calls = stubRoutes(settingsStubs({ [`PATCH ${SMTP_PATH}`]: SMTP_CHANNEL }));
     renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    await userEvent.type(screen.getByLabelText("Benutzer"), "x");
-    expect(screen.getByRole("button", { name: "Test über SMTP senden" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(screen.getByText("Erst speichern.")).toBeVisible();
-  });
-
-  it("maps a 400 of a test to its sentence", async () => {
-    stubRoutes(
-      settingsStubs({
-        "POST /notification-settings/test-pushover": () =>
-          jsonResponse(HTTP_BAD_REQUEST, { detail: "Pushover credentials not configured" }),
-      }),
-    );
-    renderWithProviders(<SettingsPage />);
-    await openChannel("Test über Pushover senden");
-    expect(
-      await screen.findByText("Für Pushover fehlen Zugangsdaten oder Empfänger."),
-    ).toBeVisible();
-    expect(screen.queryByText(/credentials not configured/)).toBeNull();
-  });
-
-  it("maps a 429 of a test to the wait sentence", async () => {
-    stubRoutes(
-      settingsStubs({
-        "POST /notification-settings/test-pushover": () =>
-          jsonResponse(HTTP_TOO_MANY, { error: "Rate limit exceeded: 5 per 1 minute" }),
-      }),
-    );
-    renderWithProviders(<SettingsPage />);
-    await openChannel("Test über Pushover senden");
-    expect(await screen.findByText("Zu viele Anfragen, bitte kurz warten.")).toBeVisible();
-    expect(screen.queryByText(/Rate limit exceeded/)).toBeNull();
-  });
-
-  it("an email test asks for the recipient, prefilled with the default one", async () => {
-    const calls = stubRoutes(settingsStubs({ [`POST ${RESEND_TEST}`]: { ok: true } }));
-    renderWithProviders(<SettingsPage />);
-    await openChannel("Test über Resend senden");
-    const dialog = await screen.findByRole("dialog", { name: "Test-E-Mail senden" });
-    const recipient = within(dialog).getByLabelText("Empfänger");
-    expect(recipient).toHaveValue("me@example.com");
-    expect(recipient).toHaveFocus();
-    await userEvent.clear(recipient);
-    await userEvent.type(recipient, "other@example.com");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Senden" }));
-    expect(await screen.findByText("Test über Resend gesendet.")).toBeVisible();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(bodyOf(calls.find(isPostTo(RESEND_TEST)))).toEqual({ recipient: "other@example.com" });
-  });
-
-  it.each([
-    ["empty", ""],
-    ["only spaces", "   "],
-  ])("an %s test recipient with a stored default sends the default marker", async (_, typed) => {
-    const calls = stubRoutes(settingsStubs({ [`POST ${RESEND_TEST}`]: { ok: true } }));
-    renderWithProviders(<SettingsPage />);
-    const recipient = await openTestDialog("Test über Resend senden");
-    await userEvent.clear(recipient);
-    await userEvent.paste(typed);
-    await userEvent.click(screen.getByRole("button", { name: "Senden" }));
-    expect(await screen.findByText("Test über Resend gesendet.")).toBeVisible();
-    expect(bodyOf(calls.find(isPostTo(RESEND_TEST)))).toEqual({ recipient: "" });
-  });
-
-  it("without a stored default the test recipient is required and has no fallback hint", async () => {
-    const calls = stubRoutes(
-      settingsStubs({
-        "GET /settings": { ...STORED_NOTIFICATION_SETTINGS, email_global_recipient: null },
-      }),
-    );
-    renderWithProviders(<SettingsPage />);
-    const recipient = await openTestDialog("Test über Resend senden");
-    expect(recipient).toHaveValue("");
-    expect(screen.queryByText("Leer lassen für den Standard-Empfänger.")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Senden" }));
-    expect(screen.getByText("Bitte ausfüllen.")).toBeVisible();
-    expect(calls.some(isPostTo(RESEND_TEST))).toBe(false);
-  });
-
-  it("an email test refuses an odd address before sending", async () => {
-    const calls = stubRoutes(settingsStubs());
-    renderWithProviders(<SettingsPage />);
-    const recipient = await openTestDialog("Test über SMTP senden");
-    await userEvent.clear(recipient);
-    await userEvent.type(recipient, "a@b");
-    await userEvent.click(screen.getByRole("button", { name: "Senden" }));
-    expect(screen.getByText(SHAPE_TEXT)).toBeVisible();
-    expect(calls.some(isPostTo(SMTP_TEST))).toBe(false);
-  });
-
-  it("an email test shows the server's 422 on the recipient field, without its text", async () => {
-    const calls = stubRoutes(
-      settingsStubs({
-        [`POST ${SMTP_TEST}`]: () =>
-          jsonResponse(HTTP_UNPROCESSABLE, {
-            detail: [{ loc: ["body", "recipient"], msg: "bad", type: "x" }],
-          }),
-      }),
-    );
-    renderWithProviders(<SettingsPage />);
-    await openTestDialog("Test über SMTP senden");
-    await userEvent.click(screen.getByRole("button", { name: "Senden" }));
-    await waitFor(() => expect(calls.some(isPostTo(SMTP_TEST))).toBe(true));
-    const dialog = screen.getByRole("dialog", { name: "Test-E-Mail senden" });
-    expect(await within(dialog).findByText(SHAPE_TEXT)).toBeVisible();
-    expect(screen.queryByText("bad")).toBeNull();
-  });
-
-  it("Kanal entfernen asks, then sends null for every field of the channel", async () => {
-    const calls = stubRoutes(settingsStubs({ "POST /notification-settings": SAVED }));
-    renderWithProviders(<SettingsPage />);
-    await openChannel("Resend ändern");
-    await userEvent.click(screen.getByRole("button", { name: "Kanal entfernen" }));
-    const dialog = await screen.findByRole("dialog", { name: "Zugangsdaten für Resend löschen?" });
-    expect(calls.some(isPostTo(SAVE_PATH))).toBe(false);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Kanal entfernen" }));
-    await waitFor(() => expect(calls.some(isPostTo(SAVE_PATH))).toBe(true));
-    expect(bodyOf(calls.find(isPostTo(SAVE_PATH)))).toEqual({
-      resend_api_key: null,
-      resend_from_email: null,
+    await click("Firmen-SMTP bearbeiten");
+    const group = screen.getByRole("group", { name: "Passwort" });
+    expect(within(group).getByText("gesetzt")).toBeVisible();
+    expect(within(group).queryByRole("button", { name: "Passwort entfernen" })).toBeNull();
+    await userEvent.click(within(group).getByRole("button", { name: "Passwort ersetzen" }));
+    const input = screen.getByLabelText("Passwort");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("type", "password");
+    expect(input).toHaveAttribute("autocomplete", "new-password");
+    expect(saveIn("Firmen-SMTP")).toHaveAttribute("aria-disabled", "true");
+    await userEvent.type(input, "neu-geheim");
+    await userEvent.click(saveIn("Firmen-SMTP"));
+    await screen.findByText("Gespeichert.");
+    expect(bodyOf(callsTo(calls, "PATCH", SMTP_PATH)[0])).toEqual({
+      fields: { password: "neu-geheim" },
     });
-    expect(await screen.findByText("Zugangsdaten für Resend gelöscht.")).toBeVisible();
-    // The stub still reports Resend as set up, so its toggle is "ändern" again.
+  });
+
+  it("Behalten after Ersetzen keeps the stored secret and sends nothing", async () => {
+    stubRoutes(settingsStubs());
+    renderWithProviders(<SettingsPage />);
+    await click("Firmen-SMTP bearbeiten");
+    await click("Passwort ersetzen");
+    await userEvent.type(screen.getByLabelText("Passwort"), "x");
+    await click("Passwort behalten");
+    expect(screen.getByRole("group", { name: "Passwort" })).toHaveTextContent("gesetzt");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Resend ändern" })).toHaveFocus(),
+      expect(screen.getByRole("button", { name: "Passwort ersetzen" })).toHaveFocus(),
     );
+    expect(saveIn("Firmen-SMTP")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("an optional secret can be removed: it is sent as null", async () => {
+    const [pushover] = CHANNEL_TYPES;
+    const optional = { ...pushover!.fields[1]!, required: false };
+    const types = [{ ...pushover!, fields: [pushover!.fields[0]!, optional] }];
+    const calls = stubRoutes(
+      settingsStubs({
+        "GET /notifications/channel-types": { items: types },
+        [`PATCH ${PUSHOVER_PATH}`]: PUSHOVER_CHANNEL,
+      }),
+    );
+    renderWithProviders(<SettingsPage />);
+    await click("Mein Handy bearbeiten");
+    expect(screen.queryByRole("button", { name: "API-Token entfernen" })).toBeNull();
+    await click("User- oder Gruppen-Key entfernen");
+    expect(screen.getByText("wird beim Speichern entfernt")).toBeVisible();
+    await userEvent.click(saveIn("Mein Handy"));
+    await screen.findByText("Gespeichert.");
+    expect(bodyOf(callsTo(calls, "PATCH", PUSHOVER_PATH)[0])).toEqual({
+      fields: { user_key: null },
+    });
+  });
+
+  it("checks the schema before sending: a required field cannot be cleared", async () => {
+    const calls = stubRoutes(settingsStubs());
+    renderWithProviders(<SettingsPage />);
+    await click("Firmen-SMTP bearbeiten");
+    await userEvent.clear(screen.getByLabelText("Benutzername"));
+    await userEvent.click(saveIn("Firmen-SMTP"));
+    expect(await screen.findByText("Bitte ausfüllen.")).toBeVisible();
+    expect(callsTo(calls, "PATCH", SMTP_PATH)).toEqual([]);
+  });
+
+  it("a refusal of the service shows on its field, without a toast and without its text", async () => {
+    stubRoutes(
+      settingsStubs({
+        [`PATCH ${SMTP_PATH}`]: () =>
+          jsonResponse(HTTP_UNPROCESSABLE, {
+            detail: [
+              { type: "value_error", loc: ["body", "fields", "host"], msg: "host not public" },
+            ],
+          }),
+      }),
+    );
+    renderWithProviders(<SettingsPage />);
+    await click("Firmen-SMTP bearbeiten");
+    await userEvent.type(screen.getByLabelText("SMTP-Server"), "x");
+    await userEvent.click(saveIn("Firmen-SMTP"));
+    expect(
+      await screen.findByText("Der Benachrichtigungsdienst hat diesen Wert nicht angenommen."),
+    ).toBeVisible();
+    expect(screen.getByLabelText("SMTP-Server")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText(/host not public/)).toBeNull();
   });
 
   it("switching from a dirty form asks first; staying keeps the draft", async () => {
     stubRoutes(settingsStubs());
     renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    await userEvent.type(screen.getByLabelText("Benutzer"), "x");
-    await userEvent.click(screen.getByRole("button", { name: "Pushover ändern" }));
+    await click("Firmen-SMTP bearbeiten");
+    await userEvent.type(screen.getByLabelText("Benutzername"), "x");
+    await click("Mein Handy bearbeiten");
     const guard = await screen.findByRole("dialog");
     await userEvent.click(within(guard).getByRole("button", { name: "Weiter bearbeiten" }));
-    expect(screen.getByLabelText("Benutzer")).toHaveValue("smtp-userx");
-    expect(screen.queryByRole("form", { name: "Pushover" })).toBeNull();
+    expect(screen.getByLabelText("Benutzername")).toHaveValue("smtp-userx");
+    expect(screen.queryByRole("form", { name: "Mein Handy" })).toBeNull();
   });
+});
 
-  it("switching from a clean form opens the other channel at once", async () => {
+describe("adding a channel", () => {
+  it("offers the service's types and names the channel after the chosen one", async () => {
     stubRoutes(settingsStubs());
     renderWithProviders(<SettingsPage />);
-    await openChannel("SMTP ändern");
-    await userEvent.click(screen.getByRole("button", { name: "Pushover ändern" }));
-    expect(await screen.findByRole("form", { name: "Pushover" })).toBeVisible();
-    expect(screen.queryByRole("form", { name: "SMTP" })).toBeNull();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await click("Kanal hinzufügen");
+    const type = screen.getByLabelText("Art");
+    expect(
+      within(type)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Pushover", "E-Mail (Resend)", "E-Mail (Mailjet)", "E-Mail (SMTP)"]);
+    await userEvent.selectOptions(type, "E-Mail (Mailjet)");
+    expect(screen.getByLabelText("Name")).toHaveValue("E-Mail (Mailjet)");
+    expect(screen.getByLabelText("Secret Key")).toHaveAttribute("type", "password");
   });
 
-  it("the default recipient saves the trimmed address, and empty as null", async () => {
-    const calls = stubRoutes(settingsStubs({ "POST /notification-settings": SAVED }));
+  it("needs every required field, then creates and focuses the new row", async () => {
+    const created = {
+      ...SMTP_CHANNEL,
+      id: "6f1c2a10-0000-4000-8000-000000000004",
+      type: "pushover",
+      name: "Zweites Handy",
+      fields: {},
+      secrets: { api_token: "set", user_key: "set" },
+    };
+    const stored: unknown[] = [...CHANNELS];
+    const calls = stubRoutes(
+      settingsStubs({
+        "GET /notifications/channels": () => jsonResponse(200, listOf(stored)),
+        "POST /notifications/channels": () => {
+          stored.push(created);
+          return jsonResponse(HTTP_CREATED, created);
+        },
+      }),
+    );
     renderWithProviders(<SettingsPage />);
-    const field = within(
-      await screen.findByRole("form", { name: "Standard-Empfänger" }),
-    ).getByLabelText("E-Mail-Adresse");
-    await userEvent.clear(field);
-    await userEvent.type(field, "  neu@example.com ");
-    await userEvent.click(saveIn("Standard-Empfänger"));
-    await screen.findByText("Gespeichert.");
-    await userEvent.clear(field);
-    await userEvent.click(saveIn("Standard-Empfänger"));
-    await waitFor(() => expect(calls.filter(isPostTo(SAVE_PATH))).toHaveLength(2));
-    expect(calls.filter(isPostTo(SAVE_PATH)).map(bodyOf)).toEqual([
-      { email_global_recipient: "neu@example.com" },
-      { email_global_recipient: null },
-    ]);
+    await click("Kanal hinzufügen");
+    const name = screen.getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Zweites Handy");
+    await userEvent.click(saveIn("Neuer Kanal"));
+    expect(await screen.findAllByText("Bitte ausfüllen.")).toHaveLength(2);
+    expect(callsTo(calls, "POST", "/notifications/channels")).toEqual([]);
+    await userEvent.type(screen.getByLabelText("API-Token"), "tok");
+    await userEvent.type(screen.getByLabelText("User- oder Gruppen-Key"), "usr");
+    await userEvent.click(saveIn("Neuer Kanal"));
+    await screen.findByText("Kanal angelegt.");
+    expect(bodyOf(callsTo(calls, "POST", "/notifications/channels")[0])).toEqual({
+      type: "pushover",
+      name: "Zweites Handy",
+      fields: { api_token: "tok", user_key: "usr" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Zweites Handy bearbeiten" })).toHaveFocus(),
+    );
   });
 
-  it("the per-source overview links every notifying source to its drawer", async () => {
+  it("the channel limit of the service is one fixed sentence", async () => {
+    stubRoutes(
+      settingsStubs({
+        "POST /notifications/channels": () =>
+          jsonResponse(HTTP_CONFLICT, { detail: "channel_limit_reached" }),
+      }),
+    );
+    renderWithProviders(<SettingsPage />);
+    await click("Kanal hinzufügen");
+    await userEvent.type(screen.getByLabelText("API-Token"), "tok");
+    await userEvent.type(screen.getByLabelText("User- oder Gruppen-Key"), "usr");
+    await userEvent.click(saveIn("Neuer Kanal"));
+    expect(
+      await screen.findByText("Du hast schon 20 Kanäle. Lösche einen, um einen neuen anzulegen."),
+    ).toBeVisible();
+  });
+
+  it("at 20 channels Kanal hinzufügen is inactive and says why", async () => {
+    const full = Array.from({ length: CHANNEL_LIMIT }, (_, index) => ({
+      ...PUSHOVER_CHANNEL,
+      id: `6f1c2a10-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`,
+      name: `Handy ${index}`,
+    }));
+    stubRoutes(settingsStubs({ "GET /notifications/channels": listOf(full) }));
+    renderWithProviders(<SettingsPage />);
+    const add = await screen.findByRole("button", { name: "Kanal hinzufügen" });
+    expect(add).toHaveAttribute("aria-disabled", "true");
+    expect(add).toHaveAccessibleDescription(
+      "Höchstens 20 Kanäle. Lösche einen, um einen neuen anzulegen.",
+    );
+  });
+});
+
+describe("deleting and testing", () => {
+  it("Kanal löschen asks, deletes, refreshes the sources and focuses Kanal hinzufügen", async () => {
+    const calls = stubRoutes(
+      settingsStubs({
+        [`DELETE ${SMTP_PATH}`]: () => new Response(null, { status: HTTP_NO_CONTENT }),
+      }),
+    );
+    const { queryClient } = renderWithProviders(<SettingsPage />);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    await click("Firmen-SMTP bearbeiten");
+    await userEvent.click(
+      within(form("Firmen-SMTP")).getByRole("button", { name: "Kanal löschen" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Kanal „Firmen-SMTP“ löschen?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Kanal löschen" }));
+    await screen.findByText("Kanal gelöscht.");
+    expect(callsTo(calls, "DELETE", SMTP_PATH)).toHaveLength(1);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kanal hinzufügen" })).toHaveFocus(),
+    );
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual(
+      expect.arrayContaining([queryKeys.channels, queryKeys.platforms]),
+    );
+  });
+
+  it("Test senden waits while the form is dirty", async () => {
+    stubRoutes(settingsStubs());
+    renderWithProviders(<SettingsPage />);
+    await click("Firmen-SMTP bearbeiten");
+    await userEvent.type(screen.getByLabelText("Benutzername"), "x");
+    const test = screen.getByRole("button", { name: "Test über Firmen-SMTP senden" });
+    expect(test).toHaveAttribute("aria-disabled", "true");
+    expect(test).toHaveAccessibleDescription("Erst speichern.");
+  });
+
+  it("each test outcome is a fixed sentence", async () => {
+    const outcomes = [
+      { delivered: true, reason: null },
+      { delivered: false, reason: "tls_failed" },
+    ];
+    stubRoutes(
+      settingsStubs({
+        [`POST ${SMTP_PATH}/test`]: () =>
+          jsonResponse(200, { channel_id: SMTP_CHANNEL.id, ...outcomes.shift() }),
+      }),
+    );
+    renderWithProviders(<SettingsPage />);
+    await click("Test über Firmen-SMTP senden");
+    expect(await screen.findByText("Test über Firmen-SMTP gesendet.")).toBeVisible();
+    await click("Test über Firmen-SMTP senden");
+    expect(
+      await screen.findByText(
+        "Mit dem Server von Firmen-SMTP kam keine sichere Verbindung zustande.",
+      ),
+    ).toBeVisible();
+  });
+});
+
+describe("per source", () => {
+  it("links every notifying source to its drawer, with its channels' names", async () => {
     stubRoutes(settingsStubs({ "GET /platforms": PLATFORMS }));
     renderWithProviders(<SettingsPage />);
-    const link = await screen.findByRole("link", { name: "StepStone: Pushover, SMTP" });
+    const link = await screen.findByRole("link", { name: "StepStone: Mein Handy, Firmen-SMTP" });
     expect(link).toHaveAttribute("href", "/sources?quelle=7");
     expect(screen.queryByRole("link", { name: /Indeed/ })).toBeNull();
   });
 
-  it("the per-source overview says when no source notifies", async () => {
-    stubRoutes(settingsStubs());
+  it("says when no source notifies", async () => {
+    stubRoutes(settingsStubs({ "GET /notifications/channels": listOf(CHANNELS) }));
     renderWithProviders(<SettingsPage />);
     expect(await screen.findByText("Keine Quelle benachrichtigt.")).toBeVisible();
   });

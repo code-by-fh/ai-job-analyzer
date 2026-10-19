@@ -8,6 +8,7 @@ import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
 import { crawlCancelId, crawlStartId, useFocusHandoff, type CrawlPlace } from "./crawlFocus";
+import { PROFILE_REQUIRED_ID, useProfileMissing } from "../profileGate";
 import { useStartCrawl } from "./useCrawlActions";
 
 const WHY_NOT: Partial<Record<SourceState, MessageKey>> = {
@@ -54,7 +55,16 @@ export function CrawlButton({ platform, state, place = "row" }: CrawlButtonProps
 function useWhyNot(state: SourceState) {
   const { t } = useI18n();
   const id = useId();
+  const profileMissing = useProfileMissing();
   const reason = canCrawl(state) ? undefined : WHY_NOT[state];
+  if (!reason && profileMissing) {
+    // The page's visible notice is the description, so nothing is read twice.
+    const described = {
+      "aria-describedby": PROFILE_REQUIRED_ID,
+      title: t("sources.crawl.why.profile"),
+    };
+    return { blocked: true, described, note: null };
+  }
   if (!reason) return { blocked: false, described: {}, note: null };
   const note = (
     <span id={id} className="sr-only">

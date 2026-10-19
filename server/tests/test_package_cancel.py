@@ -7,8 +7,8 @@ from tests.factories import TEST_USER_ID, events_of_type, fetch, make_job, make_
 from workers.tasks.time_limits import GENERATION_FAILED_ERROR
 from workers.tasks.package import generate_application_package_task
 
-CV_RESULT = ("<p>Tailored CV</p>", b"%PDF-cv", {})
-LETTER_RESULT = ("Dear team", "<p>Dear team</p>", b"%PDF-letter")
+CV_RESULT = ("<p>Tailored CV</p>", {})
+LETTER_RESULT = ("Dear team", "<p>Dear team</p>")
 WITHOUT_PROFILE_DOCUMENTS = False
 WITH_PROFILE_DOCUMENTS = True
 AI_ERROR = "AI timeout"
@@ -17,8 +17,8 @@ AI_ERROR = "AI timeout"
 @pytest.fixture()
 def run_package(session_factory, seed, fake_redis):
     """Run the package task on the given job; the AI-plus-render builders are replaced by fakes."""
-    def _run(job, build_cv=None):
-        seed(make_user(), make_profile(), job)
+    def _run(job, build_cv=None, documents=()):
+        seed(make_user(), make_profile(), job, *documents)
         cv_fake = {"side_effect": build_cv} if build_cv else {"return_value": CV_RESULT}
         with patch("workers.tasks.package.SessionLocal", session_factory), \
              patch("workers.tasks.package.redis.from_url", return_value=fake_redis), \
@@ -72,11 +72,24 @@ def test_package_failure_after_cancel_neither_writes_nor_publishes(run_package, 
     assert events_of_type(fake_redis, "job_update") == []
 
 
-def test_package_results_stored_while_still_generating(run_package, session_factory):
+def test_package_results_stored_as_html_only_while_still_generating(run_package, session_factory):
     run_package(make_job(status="GENERATING"))
     job = fetch(session_factory, JobEntry, "job-1")
-    assert (job.status, job.cv_html) == ("DRAFTED", "<p>Tailored CV</p>")
-    assert _document_kinds(session_factory) == ["GENERATED_CV", "GENERATED_LETTER"]
+    assert (job.status, job.cv_html, job.cover_letter_html) == ("DRAFTED", "<p>Tailored CV</p>", "<p>Dear team</p>")
+    assert _document_kinds(session_factory) == []
+
+
+def _stored_pdf(doc_id, kind) -> JobDocument:
+    return JobDocument(
+        id=doc_id, job_id="job-1", user_id=TEST_USER_ID, filename="db://old.pdf",
+        original_filename="old.pdf", mime_type="application/pdf", content=b"%PDF", kind=kind,
+    )
+
+
+def test_package_regeneration_retires_the_pdfs_an_earlier_generation_stored(run_package, session_factory):
+    earlier = (_stored_pdf(1, "GENERATED_CV"), _stored_pdf(2, "GENERATED_LETTER"), _stored_pdf(3, "UPLOADED"))
+    run_package(make_job(status="GENERATING"), documents=earlier)
+    assert _document_kinds(session_factory) == ["UPLOADED"]
 
 
 def test_package_completion_restores_advanced_status(run_package, session_factory):

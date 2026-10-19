@@ -1,11 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import { api } from "./instance";
-import {
-  CHANNEL_STATUS_PATH,
-  NOTIFICATION_TEMPLATES_PATH,
-  type NotifyChannel,
-} from "./platformPaths";
+import { NOTIFICATION_TEMPLATES_PATH, type NotifyChannel } from "./platformPaths";
 import { queryKeys } from "./queryKeys";
 import {
   NOTIFICATION_PREVIEW_PATH,
@@ -14,16 +10,6 @@ import {
   type EditableTemplateType,
   type TemplateScope,
 } from "./settingsPaths";
-
-// Booleans only (backend Task 4): which channels have credentials; no secret is ever read here.
-const channelStatusSchema = z.object({
-  PUSHOVER: z.boolean().default(false),
-  RESEND: z.boolean().default(false),
-  MAILJET: z.boolean().default(false),
-  SMTP: z.boolean().default(false),
-});
-export type ChannelStatus = z.infer<typeof channelStatusSchema>;
-export type ChannelStatusBody = z.input<typeof channelStatusSchema>;
 
 const templateSchema = z.object({
   id: z.number().int(),
@@ -34,13 +20,6 @@ const templateSchema = z.object({
 });
 export type NotificationTemplate = z.infer<typeof templateSchema>;
 export type NotificationTemplateBody = z.input<typeof templateSchema>;
-
-export function channelStatusQueryOptions() {
-  return queryOptions({
-    queryKey: queryKeys.channelStatus,
-    queryFn: () => api.request(CHANNEL_STATUS_PATH, channelStatusSchema),
-  });
-}
 
 /** The user's and the global templates of every type; the drawer filters per channel. */
 export function notificationTemplatesQueryOptions() {

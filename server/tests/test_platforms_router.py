@@ -2,15 +2,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from main import app
-from database.core import Base, User, JobPlatform, JobEntry
+from database.core import Base, User, UserProfile, JobPlatform, JobEntry
 from core.auth import get_current_user, get_db
+from core.platform_rules import url_matches_pattern
 from routers.platforms import _infer_url_pattern
 
 pytestmark = pytest.mark.usefixtures("fresh_rate_limits")
@@ -46,6 +46,8 @@ def setup_db():
     db = TestingSessionLocal()
     # Add test user to database
     db.merge(test_user)
+    # Sources need a maintained profile (role and skills).
+    db.merge(UserProfile(user_id=test_user.id, role="Engineer", skills="Python"))
     db.commit()
     
     # Register overrides
@@ -63,8 +65,8 @@ def setup_db():
 
 
 def _matches(pattern, url):
-    """Mirror of the crawl filter's `pattern in url` test."""
-    return bool(pattern) and pattern in url
+    """The crawl filter's own test."""
+    return bool(pattern) and url_matches_pattern(url, pattern)
 
 
 def test_infer_pattern_single_segment_slug_recognises_siblings():
@@ -74,7 +76,6 @@ def test_infer_pattern_single_segment_slug_recognises_siblings():
     full path of the first job, so the pattern matched only that one URL and the
     first crawl found nothing. The inferred pattern must recognise every job.
     """
-    base = "https://www.stepstone.de/jobs/software"
     jobs = [
         "https://www.stepstone.de/stellenangebote--Software-Architekt-Oberkochen-HENSOLDT--14104364-inline.html",
         "https://www.stepstone.de/stellenangebote--Werkstudent-Software-Developer-Hamburg-CHECK24--14107253-inline.html",
@@ -88,7 +89,7 @@ def test_infer_pattern_single_segment_slug_recognises_siblings():
     ]
 
     # Infer from just the first two selected jobs (as the wizard would).
-    pattern = _infer_url_pattern(jobs[:2], base)
+    pattern = _infer_url_pattern(jobs[:2])
 
     assert pattern, "pattern must not be empty"
     # Every job — including ones not used to derive the pattern — must match.
@@ -100,41 +101,38 @@ def test_infer_pattern_single_segment_slug_recognises_siblings():
 
 
 def test_infer_pattern_multi_segment_paths():
-    base = "https://indeed.com/jobs"
     jobs = [
         "https://indeed.com/jobs/view/123",
         "https://indeed.com/jobs/view/456",
         "https://indeed.com/jobs/view/789",
     ]
-    pattern = _infer_url_pattern(jobs[:2], base)
+    pattern = _infer_url_pattern(jobs[:2])
     for job in jobs:
         assert _matches(pattern, job)
     assert not _matches(pattern, "https://indeed.com/about")
 
 
 def test_infer_pattern_query_param_jobs():
-    base = "https://de.indeed.com/jobs?q=python"
     jobs = [
         "https://de.indeed.com/rc/clk?jk=aaa111",
         "https://de.indeed.com/rc/clk?jk=bbb222",
     ]
-    pattern = _infer_url_pattern(jobs, base)
+    pattern = _infer_url_pattern(jobs)
     for job in jobs:
         assert _matches(pattern, job)
     assert not _matches(pattern, "https://de.indeed.com/about")
 
 
 def test_infer_pattern_single_url_recognises_siblings():
-    base = "https://www.stepstone.de/jobs/software"
     sibling_a = "https://www.stepstone.de/stellenangebote--Foo-Engineer-Berlin--14104364-inline.html"
     sibling_b = "https://www.stepstone.de/stellenangebote--Bar-Manager-Munich--14107253-inline.html"
-    pattern = _infer_url_pattern([sibling_a], base)
+    pattern = _infer_url_pattern([sibling_a])
     assert _matches(pattern, sibling_a)
     assert _matches(pattern, sibling_b)
 
 
 def test_infer_pattern_empty():
-    assert _infer_url_pattern([], "https://x.com") == ""
+    assert _infer_url_pattern([]) == ""
 
 
 def test_get_platforms_empty():
@@ -458,44 +456,3 @@ def test_setup_analyze_reports_scraper_error_status():
     response, _ = _setup("analyze", return_value={"status": "Error", "message": "x"})
     assert response.status_code == 200
     assert response.json()["initial_crawl_started"] is False
-
-
-@pytest.mark.parametrize("channel,sender", [
-    ("pushover", "_send_via_pushover"),
-    ("resend", "_send_via_resend_batch"),
-    ("mailjet", "_send_via_mailjet_batch"),
-    ("smtp", "_send_via_smtp_batch"),
-])
-def test_platform_notification_test_returns_fixed_reason(channel, sender):
-    from database.core import UserProfile
-
-    db = TestingSessionLocal()
-    db.add(JobPlatform(id=31, user_id=99, url="https://x.example", name="X", setup_status="active",
-                       resend_recipients=["me@x.de"], mailjet_recipients=["me@x.de"], smtp_recipients=["me@x.de"]))
-    db.add(UserProfile(
-        user_id=99, pushover_user_key="u", pushover_api_token="t", resend_api_key="r", resend_from_email="a@b.de",
-        mailjet_api_key="m", mailjet_secret_key="s", mailjet_from_email="a@b.de", smtp_host="h", smtp_user="u",
-        smtp_password="p",
-    ))
-    db.commit()
-    db.close()
-    with patch(f"routers.platforms.{sender}", side_effect=requests.Timeout("secret-internal-detail")):
-        response = client.post(f"/platforms/31/test-{channel}")
-    assert (response.status_code, response.json()) == (500, {"detail": "Zeitüberschreitung"})
-
-
-PLATFORM_TEST_RATE_LIMIT = 5
-
-
-def test_platform_notification_tests_are_rate_limited():
-    from database.core import UserProfile
-
-    db = TestingSessionLocal()
-    db.add(JobPlatform(id=32, user_id=99, url="https://x.example", name="X", setup_status="active"))
-    db.add(UserProfile(user_id=99, pushover_user_key="u", pushover_api_token="t"))
-    db.commit()
-    db.close()
-    with patch("routers.platforms._send_via_pushover", return_value=True):
-        answers = [client.post("/platforms/32/test-pushover").status_code for _ in range(PLATFORM_TEST_RATE_LIMIT + 1)]
-    assert answers[:PLATFORM_TEST_RATE_LIMIT] == [status.HTTP_200_OK] * PLATFORM_TEST_RATE_LIMIT
-    assert answers[PLATFORM_TEST_RATE_LIMIT] == status.HTTP_429_TOO_MANY_REQUESTS

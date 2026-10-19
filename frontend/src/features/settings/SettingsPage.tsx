@@ -2,10 +2,10 @@
 
 import { usePrefetchQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { channelStatusQueryOptions, notificationTemplatesQueryOptions } from "@/api/notifications";
-import { notificationSettingsQueryOptions } from "@/api/notificationSettings";
+import { channelsQueryOptions, channelTypesQueryOptions } from "@/api/notificationChannels";
+import { notificationTemplatesQueryOptions } from "@/api/notifications";
 import { platformsQueryOptions } from "@/api/platforms";
-import { profileTimezoneQueryOptions, storageStatusQueryOptions } from "@/api/settings";
+import { profileTimezoneQueryOptions } from "@/api/settings";
 import type { SettingsSection } from "@/domain/settings";
 import { SETTINGS_NUMBER } from "@/features/shell/navigation";
 import { ListLoading } from "@/features/inbox/InboxList";
@@ -42,10 +42,9 @@ const SECTION_BODY: Readonly<Record<SettingsSection, (props: SettingsSectionProp
  * admin sections fetch their own data, so a member never sends an admin request (ruling 18).
  */
 function usePrefetchSettings(): void {
-  usePrefetchQuery(notificationSettingsQueryOptions());
-  usePrefetchQuery(channelStatusQueryOptions());
+  usePrefetchQuery(channelTypesQueryOptions());
+  usePrefetchQuery(channelsQueryOptions());
   usePrefetchQuery(notificationTemplatesQueryOptions());
-  usePrefetchQuery(storageStatusQueryOptions());
   usePrefetchQuery(profileTimezoneQueryOptions());
   usePrefetchQuery(platformsQueryOptions());
 }

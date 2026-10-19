@@ -1,128 +1,126 @@
 "use client";
 
-import type { ReactNode } from "react";
 import type { JobDetail } from "@/api/jobs";
-import type { InterviewPrep } from "@/domain/interviewPrep";
+import {
+  gapsByWeight,
+  prepLinks,
+  prepSections,
+  type InterviewPrep,
+  type PrepGap,
+  type PrepSectionKey,
+} from "@/domain/interviewPrep";
+import { levelKey } from "@/domain/levels";
 import { resourceLinks, sourceTitle } from "@/domain/links";
 import { useI18n } from "@/i18n/useI18n";
+import { Disclosure } from "@/ui/Disclosure";
 import { InlineText, Markdown } from "@/ui/Markdown";
-import { Tag } from "@/ui/Tag";
 import { DeepDiveList } from "../company/DeepDiveList";
-import { useJobFormat } from "../format/useJobFormat";
-import { useLevelText } from "../levelText";
+import { GapWeight, PrepOverview } from "./PrepOverview";
+import { PREP_SECTION_TITLE, PrepSection, prepSectionId } from "./PrepSection";
 
-type Gap = NonNullable<InterviewPrep["structured_prep"]>["gap_analysis"][number];
+interface SectionProps {
+  job: JobDetail;
+  prep: InterviewPrep;
+}
 
-/** Inventory B.4 JobInterviewTab: every section of the prep JSON, in the prototype's prep-sec style. */
-export function InterviewPrepView({ job, prep }: { job: JobDetail; prep: InterviewPrep }) {
+/** Inventory B.4 JobInterviewTab: the overview first, then every section of the prep JSON that has content. */
+export function InterviewPrepView({ job, prep }: SectionProps) {
+  const sections = prepSections(prep);
   return (
     <div className="prep">
-      <Appointment job={job} />
-      <SummarySection prep={prep} />
-      <PitchSection prep={prep} />
-      <GapSection gaps={prep.structured_prep?.gap_analysis ?? []} />
-      <DepthSection prep={prep} />
-      <ContactsSection prep={prep} />
-      <ConfidenceSection prep={prep} />
-      <DeepDiveSection job={job} prep={prep} />
-      <SourcesSection prep={prep} />
+      <PrepOverview job={job} prep={prep} sections={sections} />
+      {sections.map(({ key }) => (
+        <TitledSection key={key} section={key} job={job} prep={prep} />
+      ))}
     </div>
   );
 }
 
-function SummarySection({ prep }: { prep: InterviewPrep }) {
+function TitledSection({ section, ...props }: SectionProps & { section: PrepSectionKey }) {
   const { t } = useI18n();
-  const summary = prep.report_output?.executive_summary;
-  if (!summary) return null;
   return (
-    <PrepSection title={t("prep.summary")}>
-      <Markdown source={summary} />
+    <PrepSection id={prepSectionId(section)} title={t(PREP_SECTION_TITLE[section])}>
+      <SectionBody section={section} {...props} />
     </PrepSection>
   );
 }
 
-function PitchSection({ prep }: { prep: InterviewPrep }) {
-  const { t } = useI18n();
-  const pitch = prep.structured_prep?.elevator_pitch;
-  if (!pitch) return null;
+function SectionBody({ section, job, prep }: SectionProps & { section: PrepSectionKey }) {
+  switch (section) {
+    case "pitch":
+      return <Pitch text={prep.structured_prep?.elevator_pitch ?? ""} />;
+    case "gaps":
+      return <GapCards gaps={gapsByWeight(prep)} />;
+    case "uncertainties":
+      return <TextList items={prep.confidence_assessment?.uncertainties ?? []} />;
+    case "depth":
+      return <Depth source={prep.report_output?.deep_dive_analysis ?? ""} />;
+    case "deepDives":
+      return <DeepDives job={job} prep={prep} />;
+    case "contacts":
+      return <Contacts prep={prep} />;
+    case "sources":
+      return <Sources prep={prep} />;
+  }
+}
+
+/** The pitch is said aloud, so it reads as a quote in a larger face. */
+function Pitch({ text }: { text: string }) {
   return (
-    <PrepSection title={t("prep.pitch")}>
-      <p className="prose">
-        <InlineText text={pitch} />
+    <blockquote className="prep-pitch">
+      <p>
+        <InlineText text={text} />
       </p>
-    </PrepSection>
+    </blockquote>
   );
 }
 
-function DepthSection({ prep }: { prep: InterviewPrep }) {
+function Depth({ source }: { source: string }) {
   const { t } = useI18n();
-  const depth = prep.report_output?.deep_dive_analysis;
-  if (!depth) return null;
   return (
-    <PrepSection title={t("prep.depth")}>
-      <Markdown source={depth} />
-    </PrepSection>
+    <Disclosure label={t("prep.readDepth")}>
+      <Markdown source={source} />
+    </Disclosure>
   );
 }
 
-function PrepSection({ title, children }: { title: string; children: ReactNode }) {
+/** One card per requirement: the requirement and where you stand at a glance, the strategy on demand. */
+function GapCard({ gap }: { gap: PrepGap }) {
   return (
-    <section className="prep-sec">
-      <h3 className="sec-title-sm">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Appointment({ job }: { job: JobDetail }) {
-  const { t } = useI18n();
-  const format = useJobFormat();
-  if (!job.interview_at) return null;
-  return (
-    <p className="prose num prep-when">
-      {t("prep.appointment", { date: format.dateTime(job.interview_at) })}
-    </p>
-  );
-}
-
-function AnswerLine({ text }: { text?: string | null }) {
-  if (!text) return null;
-  return (
-    <div className="prep-a">
-      <InlineText text={text} />
-    </div>
-  );
-}
-
-function GapItem({ gap }: { gap: Gap }) {
-  const levelText = useLevelText();
-  return (
-    <li>
-      <div className="prep-q">
-        <InlineText text={gap.requirement} />
+    <li className="prep-card" data-weight={levelKey(gap.gap_severity) ?? undefined}>
+      <div className="prep-card-head">
+        <h4 className="prep-card-title">
+          <InlineText text={gap.requirement} />
+        </h4>
+        <GapWeight gap={gap} />
       </div>
-      {gap.gap_severity ? (
-        <div className="tags">
-          <Tag>{levelText(gap.gap_severity, "prep.severity")}</Tag>
-        </div>
+      {gap.cv_status ? (
+        <p className="prep-card-status">
+          <InlineText text={gap.cv_status} />
+        </p>
       ) : null}
-      <AnswerLine text={gap.cv_status} />
-      <AnswerLine text={gap.interview_strategy} />
+      <GapStrategy text={gap.interview_strategy} />
     </li>
   );
 }
 
-function GapSection({ gaps }: { gaps: readonly Gap[] }) {
+function GapStrategy({ text }: { text?: string | null }) {
   const { t } = useI18n();
-  if (gaps.length === 0) return null;
+  if (!text) return null;
   return (
-    <PrepSection title={t("prep.gaps")}>
-      <ul role="list" className="prep-list">
-        {gaps.map((gap, index) => (
-          <GapItem key={index} gap={gap} />
-        ))}
-      </ul>
-    </PrepSection>
+    <Disclosure label={t("prep.strategy")}>
+      <InlineText text={text} />
+    </Disclosure>
+  );
+}
+
+function GapCards({ gaps }: { gaps: readonly PrepGap[] }) {
+  return (
+    <ol role="list" className="prep-cards">
+      {gaps.map((gap, index) => (
+        <GapCard key={index} gap={gap} />
+      ))}
+    </ol>
   );
 }
 
@@ -138,35 +136,17 @@ function TextList({ items }: { items: readonly string[] }) {
   );
 }
 
-function ContactsSection({ prep }: { prep: InterviewPrep }) {
+function Contacts({ prep }: { prep: InterviewPrep }) {
   const { t } = useI18n();
   const social = prep.social_intelligence_research;
   const contacts = (social?.potential_contacts ?? []).map(
     (name) => name || t("prep.contactFallback"),
   );
-  const items = [...contacts, ...(social?.insights_from_contacts ?? [])];
-  if (items.length === 0) return null;
   return (
-    <PrepSection title={t("prep.contacts")}>
+    <>
       <p className="meta">{t("prep.contactsCaveat")}</p>
-      <TextList items={items} />
-    </PrepSection>
-  );
-}
-
-function ConfidenceSection({ prep }: { prep: InterviewPrep }) {
-  const { t } = useI18n();
-  const levelText = useLevelText();
-  const confidence = prep.confidence_assessment;
-  if (!confidence) return null;
-  if (!confidence.overall_confidence && confidence.uncertainties.length === 0) return null;
-  return (
-    <PrepSection title={t("prep.uncertainties")}>
-      {confidence.overall_confidence ? (
-        <p className="meta">{levelText(confidence.overall_confidence, "prep.confidence")}</p>
-      ) : null}
-      <TextList items={confidence.uncertainties} />
-    </PrepSection>
+      <TextList items={[...contacts, ...(social?.insights_from_contacts ?? [])]} />
+    </>
   );
 }
 
@@ -197,15 +177,10 @@ function SourceItem({ source }: { source: string }) {
   );
 }
 
-function SourcesSection({ prep }: { prep: InterviewPrep }) {
-  const { t } = useI18n();
-  const sources = prep.social_intelligence_research?.research_sources ?? [];
-  // Dedupe by URL: a titled source already links what online_resources repeats bare.
-  const sourceLinks = resourceLinks(sources);
-  const links = resourceLinks(prep.online_resources).filter((link) => !sourceLinks.includes(link));
-  if (sources.length === 0 && links.length === 0) return null;
+function Sources({ prep }: { prep: InterviewPrep }) {
+  const { sources, links } = prepLinks(prep);
   return (
-    <PrepSection title={t("prep.sources")}>
+    <>
       <ul role="list" className="prep-list">
         {sources.map((source, index) => (
           <li key={index}>
@@ -214,23 +189,19 @@ function SourcesSection({ prep }: { prep: InterviewPrep }) {
         ))}
       </ul>
       <ResourceLinks links={links} />
-    </PrepSection>
+    </>
   );
 }
 
-function DeepDiveSection({ job, prep }: { job: JobDetail; prep: InterviewPrep }) {
-  const { t } = useI18n();
+function DeepDives({ job, prep }: SectionProps) {
   // The deep-dive endpoint only uses the path value as a label; fall back to the company name.
   const domain = job.company_domain ?? job.company ?? job.id;
-  if (prep.deep_dive_buttons.length === 0) return null;
   return (
-    <PrepSection title={t("company.deepDives")}>
-      <DeepDiveList
-        domain={domain}
-        companyName={job.company ?? domain}
-        jobTitle={job.title ?? ""}
-        items={prep.deep_dive_buttons}
-      />
-    </PrepSection>
+    <DeepDiveList
+      domain={domain}
+      companyName={job.company ?? domain}
+      jobTitle={job.title ?? ""}
+      items={prep.deep_dive_buttons}
+    />
   );
 }

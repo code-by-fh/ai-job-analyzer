@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { api } from "./instance";
+import { crawlProgressSchema } from "./crawlProgress";
 import { CANCEL_CRAWL_PATH } from "./platformPaths";
 
 // The scraper omits counters before the first progress event.
@@ -11,6 +12,9 @@ const crawlJobSchema = z.object({
   status: z.string(),
   total: z.number().default(0),
   scraping_completed: z.number().default(0),
+  // When the crawl was queued, epoch milliseconds as a string; empty for very old hashes.
+  started_at: z.string().nullish(),
+  progress: crawlProgressSchema.optional(),
 });
 export type CrawlJob = z.infer<typeof crawlJobSchema>;
 

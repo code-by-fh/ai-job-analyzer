@@ -3,14 +3,17 @@ import type { JobDetail } from "@/api/jobs";
 import { queryKeys } from "@/api/queryKeys";
 
 /**
- * One mutation scope for every optimistic write of a job (checklist, to-dos, notes): they run
+ * One mutation scope for every optimistic write of a job (checklists, to-dos, notes, start date): they run
  * strictly one after the other, so a settle refetch never lands while another write of the same job
  * is still waiting, and its stale answer cannot overwrite that write's optimistic value.
  */
 export const jobWriteScope = (jobId: string) => ({ id: `job-${jobId}` });
 
-/** Every key lies under ["job", id], so isLastJobWrite counts the writes of all three fields. */
-export const jobWriteKey = (jobId: string, field: "checklist" | "todos" | "notes") =>
+export type JobWriteField =
+  "checklist" | "first_day_checklist" | "todos" | "notes" | "outcome_notes" | "start_date";
+
+/** Every key lies under ["job", id], so isLastJobWrite counts the writes of every field. */
+export const jobWriteKey = (jobId: string, field: JobWriteField) =>
   [...queryKeys.job(jobId), `${field}-write`] as const;
 
 /** True while settling the last pending write of the job (the settling one still counts). */

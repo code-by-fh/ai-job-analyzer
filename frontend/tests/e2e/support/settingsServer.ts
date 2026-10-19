@@ -1,42 +1,27 @@
 // Runtime imports only from modules without the API client (it needs the app's env at load).
 import type { Request } from "@playwright/test";
-import {
-  CHANNEL_STATUS_PATH,
-  NOTIFICATION_TEMPLATES_PATH,
-  NOTIFY_CHANNELS,
-  type NotifyChannel,
-} from "../../../src/api/platformPaths";
+import { NOTIFICATION_TEMPLATES_PATH, NOTIFY_CHANNELS } from "../../../src/api/platformPaths";
 import { SECRET_MASK, SETTINGS_PATH } from "../../../src/api/profilePaths";
 import {
   CHANGE_PASSWORD_PATH,
-  EMAIL_FIELDS,
   FACTORY_RESET_PATH,
   JOBS_PATH,
   NOTIFICATION_LIMITS,
   NOTIFICATION_PREVIEW_PATH,
-  NOTIFICATION_SETTINGS_PATH,
   notificationTemplatePath,
   notificationTemplatesWritePath,
-  notificationTestPath,
   PASSWORD_LIMITS,
-  PLAIN_FIELDS,
   PROFILE_RESET_PATH,
-  REQUIRED_FIELDS,
-  SECRET_FIELDS,
-  STORAGE_DISCONNECT_PATH,
-  STORAGE_SERVICES,
-  STORAGE_STATUS_PATH,
-  STORAGE_TOGGLE_PATH,
   TEMPLATE_SCOPES,
   TIMEZONE_PATH,
-  type StorageService,
   type TemplateScope,
 } from "../../../src/api/settingsPaths";
 import { DEFAULT_TIMEZONE } from "../../../src/domain/settings";
 import type { NotificationTemplateBody } from "../../../src/api/notifications";
-import type { StorageStatusBody } from "../../../src/api/settings";
 import { AUTHENTICATED_ROUTES } from "./fixtures";
 import { live, reply, type MockRoutes, type MutableRoutes, type Reply } from "./mockApi";
+import { NotificationServer, notificationRoutes } from "./notificationServer";
+import { E2E_SECRETS } from "./profileFixtures";
 import {
   NOTIFICATION_TEMPLATES,
   PASSWORD,
@@ -46,28 +31,13 @@ import {
   type SettingsRow,
 } from "./settingsFixtures";
 
-// routers/deps.py _SECRET_FIELDS: masked on read; a sent mask keeps the stored value.
-const MASKED_KEYS: readonly string[] = [...SECRET_FIELDS, "google_drive_refresh_token"];
-// core.py NotificationSettingsData: every other key of a body is ignored.
-const NOTIFICATION_KEYS: readonly string[] = [...PLAIN_FIELDS, ...SECRET_FIELDS];
-const STRIPPED_KEYS: readonly string[] = [...EMAIL_FIELDS, "smtp_host"];
+// routers/deps.py _SECRET_FIELDS: masked on read.
+const MASKED_KEYS: readonly string[] = Object.keys(E2E_SECRETS);
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CONFLICT = 409;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_UNPROCESSABLE = 422;
-const HTTP_TOO_MANY_REQUESTS = 429;
-// deps.NOTIFICATION_TEST_RATE: 5/minute per endpoint and user (preflight ruling 35).
-const TESTS_PER_MINUTE = 5;
-const CHANNEL_NAME: Readonly<Record<NotifyChannel, string>> = {
-  PUSHOVER: "Pushover",
-  RESEND: "Resend",
-  MAILJET: "Mailjet",
-  SMTP: "SMTP",
-};
-const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const STORAGE_NONE: StorageService = "NONE";
-const STORAGE_DRIVE: StorageService = "GOOGLE_DRIVE";
 const LANGUAGE_PATH = "/language-preference";
 const DEFAULT_LANGUAGE = "de";
 const KNOWN_LANGUAGES: readonly unknown[] = ["de", "en"];
@@ -148,39 +118,6 @@ const textWithin =
     const length = lengthOf(strip ? value.trim() : value);
     return length >= 1 && length <= max;
   };
-const isEmail: FieldRule = (value) =>
-  textWithin(NOTIFICATION_LIMITS.email, true)(value) && EMAIL_SHAPE.test(String(value).trim());
-const isPort: FieldRule = (value) => {
-  const port = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  return (
-    Number.isInteger(port) &&
-    Number(port) >= NOTIFICATION_LIMITS.portMin &&
-    Number(port) <= NOTIFICATION_LIMITS.portMax
-  );
-};
-
-/** core.py: EmailAddress, HostName and Port by name, every other notification field a Credential. */
-function ruleOf(key: string): FieldRule {
-  if (EMAIL_FIELDS.some((field) => field === key)) return isEmail;
-  if (key === "smtp_host") return textWithin(NOTIFICATION_LIMITS.host, true);
-  if (key === "smtp_port") return isPort;
-  return textWithin(NOTIFICATION_LIMITS.credential, false);
-}
-
-/** Every notification key pydantic refuses (null always clears), in body order. */
-function refusedKeys(body: SettingsRow): string[] {
-  return Object.keys(body).filter(
-    (key) => NOTIFICATION_KEYS.includes(key) && body[key] !== null && !ruleOf(key)(body[key]),
-  );
-}
-
-/** What pydantic hands the router: stripped addresses and host, the port as a number. */
-function storedValue(key: string, value: unknown): unknown {
-  if (value === null) return null;
-  if (key === "smtp_port") return Number(value);
-  return STRIPPED_KEYS.includes(key) ? String(value).trim() : value;
-}
-
 /** routers/auth.py NewPassword: 8-128 code points and at most 72 UTF-8 bytes. */
 function isNewPassword(value: unknown): boolean {
   if (typeof value !== "string") return false;
@@ -204,19 +141,6 @@ const refusal = (locations: readonly (readonly string[])[]): Reply =>
 
 const isObject = (value: unknown): value is SettingsRow =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** One call of a channel test that passed the rate limit; Pushover has no recipient. */
-export interface SettingsTestCall {
-  channel: NotifyChannel;
-  recipient: string | null;
-}
-
-/** settings.py TestEmailBody: "" (the stored default) or an address, stripped by pydantic. */
-function testRecipient(sent: unknown): string | null {
-  const recipient = isObject(sent) ? (sent.recipient ?? "") : "";
-  if (recipient === "") return "";
-  return isEmail(recipient) ? String(recipient).trim() : null;
-}
 
 /** Each job variable replaced by the sample job's value, as the senders do (single pass per name). */
 function withSampleJob(text: string): string {
@@ -256,20 +180,15 @@ function templateRefusals(body: SettingsRow, required: boolean): string[] {
 }
 
 /**
- * The settings endpoints by the rules of routers/settings.py and storage.py: answers come from
+ * The settings endpoints by the rules of routers/settings.py: answers come from
  * this state, never from the request body. Pass ProfileServer's `profile` as `row`, and both
  * fakes read and write one user_profiles row (preflight ruling 16).
  */
 export class SettingsServer {
   readonly profile: SettingsRow;
   templates: NotificationTemplateBody[] = structuredClone(NOTIFICATION_TEMPLATES);
-  /** GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set on the server. */
-  driveAvailable = true;
-  /** Every POST /notification-settings body, for "sends only its own fields" assertions. */
-  readonly saved: SettingsRow[] = [];
-  /** Every channel test that passed the rate limit, in order (preflight ruling 36). */
-  readonly tests: SettingsTestCall[] = [];
-  private readonly testCounts = new Map<NotifyChannel, number>();
+  /** The user's notification channels in the service (routers/notifications.py). */
+  readonly notifications: NotificationServer;
   /** The signed-in user may use the admin endpoints (fixtures.ts: the admin; a spec unsets it). */
   isAdmin = true;
   /** Preflight ruling 43: the preview answers HOSTILE_PREVIEW_BODY instead of a render. */
@@ -286,8 +205,9 @@ export class SettingsServer {
   /** How many factory resets went through. */
   factoryResets = 0;
 
-  constructor(row: SettingsRow = settingsRow()) {
+  constructor(row: SettingsRow = settingsRow(), notifications = new NotificationServer()) {
     this.profile = row;
+    this.notifications = notifications;
   }
 
   /** GET /settings: the whole row with secrets masked (deps._mask_profile). */
@@ -299,20 +219,6 @@ export class SettingsServer {
     };
     for (const key of MASKED_KEYS) if (masked[key]) masked[key] = SECRET_MASK;
     return masked;
-  }
-
-  /** POST /notification-settings: writes only the keys sent (B2); a refused key writes nothing. */
-  saveNotifications(sent: unknown): Reply | { status: string } {
-    this.saved.push(structuredClone(sent as SettingsRow));
-    if (!isObject(sent)) return refusal([["body"]]);
-    const body = sent;
-    const refused = refusedKeys(body);
-    if (refused.length > 0) return refusal(refused.map((key) => ["body", key]));
-    for (const key of Object.keys(body).filter((name) => NOTIFICATION_KEYS.includes(name))) {
-      if (MASKED_KEYS.includes(key) && body[key] === SECRET_MASK) continue;
-      this.profile[key] = storedValue(key, body[key]);
-    }
-    return { status: "saved" };
   }
 
   /** POST /timezone-preference: an unknown zone is stored as Europe/Berlin; the answer is the stored one. */
@@ -329,44 +235,6 @@ export class SettingsServer {
     const language = KNOWN_LANGUAGES.includes(choice) ? String(choice) : DEFAULT_LANGUAGE;
     this.profile.language = language;
     return { status: "saved", language };
-  }
-
-  /** GET /notification-settings/channels: _channel_status's predicates. */
-  channels(): Record<string, boolean> {
-    return Object.fromEntries(
-      NOTIFY_CHANNELS.map((channel) => [
-        channel,
-        REQUIRED_FIELDS[channel].every((field) => Boolean(this.profile[field])),
-      ]),
-    );
-  }
-
-  /**
-   * POST /notification-settings/test-{channel}: 422 for a recipient that is no address, 429 from
-   * the sixth call of that channel, 400 without credentials or (email) without any recipient.
-   */
-  test(channel: NotifyChannel, sent: unknown): Reply | { ok: boolean } {
-    const recipient = channel === "PUSHOVER" ? "" : testRecipient(sent);
-    if (recipient === null) return refusal([["body", "recipient"]]);
-    const count = (this.testCounts.get(channel) ?? 0) + 1;
-    this.testCounts.set(channel, count);
-    if (count > TESTS_PER_MINUTE) {
-      return reply(HTTP_TOO_MANY_REQUESTS, { error: "Rate limit exceeded: 5 per 1 minute" });
-    }
-    this.tests.push({ channel, recipient: channel === "PUSHOVER" ? null : recipient });
-    return this.testOutcome(channel, recipient);
-  }
-
-  private testOutcome(channel: NotifyChannel, recipient: string): Reply | { ok: boolean } {
-    if (!this.channels()[channel]) {
-      return reply(HTTP_BAD_REQUEST, {
-        detail: `${CHANNEL_NAME[channel]} credentials not configured`,
-      });
-    }
-    if (channel !== "PUSHOVER" && !recipient && !this.profile.email_global_recipient) {
-      return reply(HTTP_BAD_REQUEST, { detail: "No recipient provided" });
-    }
-    return { ok: true };
   }
 
   /** POST /notification-templates (own) or /admin/notification-templates (global, admins only). */
@@ -472,7 +340,7 @@ export class SettingsServer {
     return { status: "archived", count: archived.length };
   }
 
-  /** DELETE /settings: empties Ziel and Lebenslauf; channels, storage and templates stay. */
+  /** DELETE /settings: empties Ziel and Lebenslauf; channels and templates stay. */
   resetProfile(): { status: string } {
     Object.assign(this.profile, structuredClone(GOAL_AND_CV));
     return { status: "deleted" };
@@ -499,45 +367,6 @@ export class SettingsServer {
       profile_deleted: true,
     };
   }
-
-  /** GET /storage/status: derived from the row, as routers/storage.py does; never the token. */
-  storageStatus(): StorageStatusBody {
-    return {
-      available: this.driveAvailable,
-      connected: Boolean(this.profile.google_drive_refresh_token),
-      active:
-        (this.profile.active_storage_service as StorageService | null | undefined) || STORAGE_NONE,
-      email: (this.profile.google_drive_email as string | null | undefined) ?? null,
-    };
-  }
-
-  /** POST /storage/toggle: 400 for an unknown service and for Drive without a connection. */
-  toggleStorage(sent: unknown): Reply | { status: string; service: StorageService } {
-    const service = STORAGE_SERVICES.find((known) => isObject(sent) && sent.service === known);
-    if (!service) return reply(HTTP_BAD_REQUEST, { detail: "Invalid storage service" });
-    if (service === STORAGE_DRIVE && !this.profile.google_drive_refresh_token) {
-      return reply(HTTP_BAD_REQUEST, { detail: "Google Drive not connected" });
-    }
-    this.profile.active_storage_service = service;
-    return { status: "success", service };
-  }
-
-  /** POST /storage/google/disconnect: drops the link and falls back to the database. */
-  disconnect(): { status: string } {
-    this.profile.active_storage_service = STORAGE_NONE;
-    this.profile.google_drive_refresh_token = null;
-    this.profile.google_drive_email = null;
-    return { status: "disconnected" };
-  }
-}
-
-function testRoutes(server: SettingsServer): MockRoutes {
-  return Object.fromEntries(
-    NOTIFY_CHANNELS.map((channel) => [
-      `POST ${notificationTestPath(channel)}`,
-      live((sent) => server.test(channel, sent)),
-    ]),
-  );
 }
 
 /** The template writes under both scopes; PUT and DELETE for every id a spec can reach. */
@@ -579,19 +408,14 @@ export function settingsRoutes(
   return {
     ...base,
     [`GET ${SETTINGS_PATH}`]: live(() => server.settings()),
-    [`POST ${NOTIFICATION_SETTINGS_PATH}`]: live((sent) => server.saveNotifications(sent)),
-    [`GET ${CHANNEL_STATUS_PATH}`]: live(() => server.channels()),
     [`GET ${NOTIFICATION_TEMPLATES_PATH}`]: live(() => structuredClone(server.templates)),
-    [`GET ${STORAGE_STATUS_PATH}`]: live(() => server.storageStatus()),
-    [`POST ${STORAGE_TOGGLE_PATH}`]: live((sent) => server.toggleStorage(sent)),
-    [`POST ${STORAGE_DISCONNECT_PATH}`]: live(() => server.disconnect()),
     [`POST ${TIMEZONE_PATH}`]: live((sent) => server.saveTimezone(sent)),
     [`POST ${LANGUAGE_PATH}`]: live((sent) => server.saveLanguage(sent)),
     [`POST ${CHANGE_PASSWORD_PATH}`]: live((sent) => server.changePassword(sent)),
     [`DELETE ${JOBS_PATH}`]: live((_sent, request) => server.archiveAll(request)),
     [`DELETE ${PROFILE_RESET_PATH}`]: live(() => server.resetProfile()),
     [`DELETE ${FACTORY_RESET_PATH}`]: live((sent) => server.factoryReset(sent)),
-    ...testRoutes(server),
+    ...notificationRoutes(server.notifications),
     ...templateRoutes(server),
     ...extra,
   };

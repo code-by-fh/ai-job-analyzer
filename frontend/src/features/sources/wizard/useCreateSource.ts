@@ -15,23 +15,22 @@ import type { Translate } from "@/i18n/translate";
 import { useI18n } from "@/i18n/useI18n";
 import type { ToastTone } from "@/ui/toast";
 import { useToast } from "@/ui/ToastProvider";
-import { schedulePatch } from "../drawer/ScheduleFields";
+import { isProfileRequired } from "../profileGate";
+import { scheduleRequest } from "../drawer/ScheduleFields";
 import { sectionFieldErrors } from "../drawer/useSectionSave";
 import type { WizardAction, WizardState } from "./wizardState";
 
-/** D10: optional name and pattern are left out, so the server proposes and infers them (G8). */
+/** D10: an empty name is left out, so the server proposes one (G8); the pattern is the confirmed one. */
 export function setupRequestOf(state: WizardState): PlatformSetupRequest {
   const name = state.name.trim();
-  const pattern = state.pattern.trim();
-  const schedule = schedulePatch(state.schedule);
   return {
     url: state.url.trim(),
     selected_urls: state.selected,
     initial_run: state.initialRun,
     ...(name ? { name } : {}),
-    schedule_time: schedule.schedule_time ?? null,
-    schedule_days: schedule.schedule_days ?? null,
-    ...(pattern ? { url_pattern: pattern } : {}),
+    ...scheduleRequest(state.schedule),
+    url_pattern: state.pattern,
+    ...(state.channelIds.length > 0 ? { notification_channel_ids: state.channelIds } : {}),
   };
 }
 
@@ -87,6 +86,11 @@ interface CreateSourceOptions {
   dispatch: Dispatch<WizardAction>;
 }
 
+function failureMessage(error: unknown, t: Translate): string {
+  if (isProfileRequired(error)) return t("sources.profileRequired.error");
+  return describeError(error, t, { BAD_REQUEST: "sources.wizard.duplicate" });
+}
+
 /** A 422 lands on its fields (the reducer jumps to their step); anything else is one toast. */
 function useCreateFailure(dispatch: Dispatch<WizardAction>) {
   const toast = useToast();
@@ -94,11 +98,7 @@ function useCreateFailure(dispatch: Dispatch<WizardAction>) {
   return (error: unknown) => {
     const fields = sectionFieldErrors(error);
     if (fields.length > 0) dispatch({ type: "serverErrors", fields });
-    else
-      toast.show({
-        message: describeError(error, t, { BAD_REQUEST: "sources.wizard.duplicate" }),
-        tone: "error",
-      });
+    else toast.show({ message: failureMessage(error, t), tone: "error" });
   };
 }
 

@@ -93,6 +93,7 @@ function ProfileBody({ profile, domain, name }: ProfileBodyProps) {
           companyName={name}
           jobTitle=""
           items={profile.deep_dive_buttons}
+          runs={profile.deep_dive_runs}
         />
       </section>
       <ResearchStamp profile={profile} domain={domain} name={name} />
@@ -104,11 +105,12 @@ function ProfileBody({ profile, domain, name }: ProfileBodyProps) {
 function ResearchStamp({ profile, domain, name }: ProfileBodyProps) {
   const { t } = useI18n();
   const format = useJobFormat();
+  const refresh = useResearch(domain, true);
   const when = profile.analyzed_at ? format.dateTime(profile.analyzed_at) : null;
   return (
     <div className="ai-stamp">
       {when ? <span>{t("company.stamp", { date: when, domain })}</span> : null}
-      <RefreshControl domain={domain} />
+      <RefreshControl research={refresh} />
       <CompanyAdminActions domain={domain} name={name} />
     </div>
   );

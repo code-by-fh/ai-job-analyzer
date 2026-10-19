@@ -5,6 +5,7 @@ import { companiesPath, companyJobsPath, type CompanyScope } from "./adminPaths"
 import { ApiError } from "./errors";
 import { api } from "./instance";
 import { fetchJobPage } from "./jobList";
+import { jobPath } from "./jobs";
 import { queryKeys } from "./queryKeys";
 
 // The profile is AI output stored as JSON: every field is optional and an odd shape degrades to
@@ -24,6 +25,16 @@ export const deepDiveSchema = z.object({
   linked_findings: textList,
 });
 export type DeepDive = z.infer<typeof deepDiveSchema>;
+
+// One stored run of a deep dive; the error is a fixed code (domain/deepDive.ts), never shown.
+const deepDiveRunSchema = z.object({
+  focus: z.string(),
+  deep_dive_running: z.boolean().default(false),
+  deep_dive_started_at: z.string().nullish(),
+  deep_dive_error: z.string().nullish(),
+  deep_dive_result: z.string().nullish(),
+});
+export type DeepDiveRun = z.infer<typeof deepDiveRunSchema>;
 
 const analysisSchema = z.object({
   area: z.string(),
@@ -72,6 +83,8 @@ const companyProfileSchema = z.object({
     .nullish()
     .catch(null),
   deep_dive_buttons: z.array(deepDiveSchema).catch([]),
+  // The requesting user's runs, keyed by focus (core/deep_dive_state.py): they survive a reload.
+  deep_dive_runs: z.array(deepDiveRunSchema).default([]).catch([]),
   online_resources: z.unknown(),
   analyzed_at: z.string().nullish(),
 });
@@ -96,6 +109,9 @@ export interface DeepDiveRequest {
 export const DEEP_DIVE_LIMITS = { text: 2000, companyName: 200, title: 300 } as const;
 
 const clip = (text: string, limit: number) => Array.from(text).slice(0, limit).join("");
+
+/** The focus as sent, and so as the server keys its run. */
+export const deepDiveFocus = (focus: string) => clip(focus, DEEP_DIVE_LIMITS.text);
 
 const companyPath = (domain: string) => `/companies/${encodeURIComponent(domain)}`;
 
@@ -122,10 +138,31 @@ export async function startCompanyResearch(
   return started.status;
 }
 
-/** Synchronous AI call (can take tens of seconds); the result is not stored by the server. */
+/**
+ * Researches the company of a job; ends with company_profile_ready carrying the job id. The typed
+ * domain replaces the stored one as is, null lets the server's AI identify it. "exists" links a
+ * stored profile and starts nothing.
+ */
+export async function startJobCompanyResearch(
+  jobId: string,
+  domain: string | null,
+  forceRefresh: boolean,
+): Promise<ResearchStart> {
+  const json = { company_domain: domain, force_refresh: forceRefresh };
+  const started = await api.request(`${jobPath(jobId)}/company-research`, researchStartSchema, {
+    method: "POST",
+    json,
+  });
+  return started.status;
+}
+
+/**
+ * Synchronous AI call (can take tens of seconds). The server also stores the run per user and
+ * focus (deep_dive_runs of the profile), so a reload shows it; 409 `deep_dive_running` while it runs.
+ */
 export async function runDeepDive(domain: string, request: DeepDiveRequest): Promise<string> {
   const json = {
-    focus: clip(request.focus, DEEP_DIVE_LIMITS.text),
+    focus: deepDiveFocus(request.focus),
     how_to_proceed: clip(request.howToProceed, DEEP_DIVE_LIMITS.text),
     company_name: clip(request.companyName, DEEP_DIVE_LIMITS.companyName),
     title: clip(request.title, DEEP_DIVE_LIMITS.title),

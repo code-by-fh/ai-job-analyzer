@@ -69,7 +69,7 @@ export function TemplateCardView(props: TemplateCardViewProps) {
     >
       <Thumb kind={kind} />
       <CardTitle card={card} name={name} />
-      <TemplateStateLine state={card.state} />
+      <TemplateStateLine state={card.state} createdAt={card.createdAt} />
       <DefaultControl card={card} kind={kind} name={name} isDefault={isDefault} />
       <div className="row tpl-actions">
         <PreviewButton card={card} kind={kind} name={name} onPreview={props.onPreview} />

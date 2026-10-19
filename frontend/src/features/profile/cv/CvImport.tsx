@@ -12,7 +12,8 @@ import { Dialog } from "@/ui/Dialog";
 import { closeThenFocus } from "@/ui/focus";
 import { Notice } from "@/ui/Notice";
 import { PanelHeader } from "@/ui/PanelHeader";
-import { useCvImport, useCvImportRunning, useCvPicker } from "./useCvImport";
+import { RunningNotice } from "@/ui/RunningNotice";
+import { useCvImport, useCvImportPhase, useCvImportStart, useCvPicker } from "./useCvImport";
 
 const INPUT_ID = "pf-cv-import-file";
 const BUTTON_ID = "pf-cv-import";
@@ -50,20 +51,29 @@ export function CvImport(props: CvImportProps) {
 function ImportControl({ profile, dirty }: CvImportProps) {
   const { t } = useI18n();
   const run = useCvImport();
-  const busy = useCvImportRunning();
+  const phase = useCvImportPhase(profile);
+  const busy = phase === "running";
   const picker = useCvPicker({ profile, start: (file) => run.mutate(file) });
   // Constraint "long background states are static text plus aria-busy" (preflight ruling 27).
   return (
     <div className="cv-import" aria-busy={busy || undefined}>
       <ImportButton busy={busy} dirty={dirty} />
       <FileInput onChange={picker.pick} />
-      {busy ? <Notice tone="info">{t("profile.cv.import.reading")}</Notice> : null}
+      {busy ? <ImportRunning profile={profile} /> : null}
+      {phase === "failed" ? <Notice tone="error">{t("profile.cv.import.failed")}</Notice> : null}
       <ConfirmImport
         open={picker.pending !== null}
         onCancel={thenRefocus(picker.cancel)}
         onConfirm={thenRefocus(picker.confirm)}
       />
     </div>
+  );
+}
+
+function ImportRunning({ profile }: { profile: Profile }) {
+  const { t } = useI18n();
+  return (
+    <RunningNotice text={t("profile.cv.import.reading")} startedAt={useCvImportStart(profile)} />
   );
 }
 

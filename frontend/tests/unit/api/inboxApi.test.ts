@@ -163,7 +163,7 @@ describe("platforms for the run line", () => {
           id: 1,
           name: "StepStone",
           url: "https://www.stepstone.de/jobs/kotlin",
-          schedule_time: "07:00",
+          schedule_times: ["07:00"],
           schedule_days: [0, 1, 2],
           last_run: { finished_at: "2026-10-08T06:00:00+00:00", found: 12, new: 5, matched: 3 },
         },
@@ -173,7 +173,7 @@ describe("platforms for the run line", () => {
     const [stepstone, indeed] = await fetchPlatforms();
     expect(stepstone).toMatchObject({
       is_active: true,
-      schedule_time: "07:00",
+      schedule_times: ["07:00"],
       last_run: { found: 12, new: 5, matched: 3 },
     });
     expect(indeed?.last_run).toBeNull();

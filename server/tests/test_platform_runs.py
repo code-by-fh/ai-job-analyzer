@@ -91,7 +91,7 @@ def test_record_platform_run_never_raises(platform_db, fake_redis):
 
 def test_completed_crawl_records_last_run(platform_db, fake_redis):
     fake_redis.hgetall.return_value = CRAWL_HASH
-    with patch("workers.tasks.crawl_status.flush_all_digests"):
+    with patch("workers.tasks.crawl_status.flush_digest"):
         maybe_complete_crawl(CRAWL_ID, TEST_USER_ID, None, fake_redis)
     assert fetch(platform_db, JobPlatform, TEST_PLATFORM_ID).last_run["matched"] == 2
 
@@ -119,7 +119,7 @@ def test_cancelled_run_stores_cancelled_code(platform_db, fake_redis):
 
 def test_first_recorded_run_wins(platform_db, stateful_redis):
     record_platform_run(stateful_redis, CRAWL_ID, error=ERROR_UNREACHABLE)
-    with patch("workers.tasks.crawl_status.flush_all_digests"):
+    with patch("workers.tasks.crawl_status.flush_digest"):
         maybe_complete_crawl(CRAWL_ID, TEST_USER_ID, None, stateful_redis)
     assert fetch(platform_db, JobPlatform, TEST_PLATFORM_ID).last_run["error"] == ERROR_UNREACHABLE
 

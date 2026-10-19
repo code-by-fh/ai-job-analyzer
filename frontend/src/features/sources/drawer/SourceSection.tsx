@@ -3,12 +3,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, type ApiErrorCode } from "@/api/errors";
 import type { Platform, PlatformPatch } from "@/api/platforms";
-import { isName, MAX_NAME_LENGTH } from "@/domain/sources";
+import { isName, isPattern } from "@/domain/sources";
 import { parseImportUrl } from "@/features/inbox/import/importUrl";
 import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
-import { Disclosure } from "@/ui/Disclosure";
-import { CheckField, TextField } from "@/ui/Field";
+import { TextField } from "@/ui/Field";
+import { SourceNameField, UrlPatternField } from "../SourceFields";
 import { DrawerSection, type SectionProps } from "./DrawerSection";
 import { SuggestName } from "./SuggestName";
 import { useSectionForm, type SectionForm } from "./useSectionForm";
@@ -16,7 +16,6 @@ import { sectionFieldErrors, useSectionSave } from "./useSectionSave";
 
 const SECTION = "source";
 const ID_PREFIX = "src-source";
-const MAX_PATTERN_LENGTH = 300;
 // Another site or an address that is a source already: the server's 400 belongs to the URL field.
 const URL_REFUSED: readonly ApiErrorCode[] = ["BAD_REQUEST"];
 
@@ -24,7 +23,6 @@ interface SourceDraft {
   name: string;
   url: string;
   url_pattern: string;
-  is_active: boolean;
 }
 
 interface SourceErrors {
@@ -38,14 +36,7 @@ function sourceDraftOf(platform: Platform): SourceDraft {
     name: platform.name,
     url: platform.url,
     url_pattern: platform.url_pattern ?? "",
-    is_active: platform.is_active,
   };
-}
-
-/** The server's pattern rule: "/" alone would match every link of the site. */
-function isPattern(text: string): boolean {
-  const pattern = text.trim();
-  return pattern.replaceAll("/", "") !== "" && pattern.length <= MAX_PATTERN_LENGTH;
 }
 
 /**
@@ -92,36 +83,28 @@ function serverErrors(error: unknown): SourceErrors {
   };
 }
 
-/** Errors per field; a pattern error opens "Erweitert", so the message is never hidden. */
-function useSourceErrors() {
-  const [errors, setErrors] = useState<SourceErrors>({});
-  const [advanced, setAdvanced] = useState(false);
-  const show = (found: SourceErrors) => {
-    setErrors(found);
-    if (found.pattern) setAdvanced(true);
-  };
-  return { errors, show, advanced, setAdvanced };
-}
-
 function useSourceSubmit(form: SectionForm<SourceDraft>, platformId: number) {
   const save = useSectionSave(platformId, URL_REFUSED);
-  const shown = useSourceErrors();
+  const [errors, setErrors] = useState<SourceErrors>({});
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const changed = form.changed();
     const found = sourceErrors(form.draft, changed);
-    shown.show(found);
+    setErrors(found);
     if (hasSourceErrors(found) || Object.keys(changed).length === 0) return;
     save.mutate(sourcePatch(changed), {
       // The stored form (trimmed name, canonical address) replaces what was typed.
       onSuccess: (saved) => form.commit(sourceDraftOf(saved)),
-      onError: (error) => shown.show(serverErrors(error)),
+      onError: (error) => setErrors(serverErrors(error)),
     });
   };
-  return { ...shown, submit, busy: save.isPending };
+  return { errors, submit, busy: save.isPending };
 }
 
-/** D5: Quelle (name, address, pattern under "Erweitert", active), saved on its own. */
+/**
+ * D5: Quelle (name, address, pattern), saved on its own. The pattern is in plain view, as in the
+ * wizard, and on/off lives in Zeitplan's one switch (feedback 1, T5).
+ */
 export function SourceSection({ platform, report }: SectionProps) {
   const { t } = useI18n();
   const form = useSectionForm(sourceDraftOf(platform));
@@ -135,7 +118,7 @@ export function SourceSection({ platform, report }: SectionProps) {
       busy={section.busy}
       dirty={form.dirty}
     >
-      <SourceFields platformId={platform.id} form={form} section={section} />
+      <SourceFields platformId={platform.id} form={form} errors={section.errors} />
     </DrawerSection>
   );
 }
@@ -143,21 +126,20 @@ export function SourceSection({ platform, report }: SectionProps) {
 interface SourceFieldsProps {
   platformId: number;
   form: SectionForm<SourceDraft>;
-  section: Pick<ReturnType<typeof useSourceSubmit>, "errors" | "advanced" | "setAdvanced">;
+  errors: SourceErrors;
 }
 
-function SourceFields({ platformId, form, section }: SourceFieldsProps) {
+function SourceFields({ platformId, form, errors }: SourceFieldsProps) {
   return (
     <>
-      <NameField platformId={platformId} form={form} error={section.errors.name} />
-      <UrlField form={form} error={section.errors.url} />
-      <AdvancedFields
-        form={form}
-        error={section.errors.pattern}
-        open={section.advanced}
-        onOpenChange={section.setAdvanced}
+      <NameField platformId={platformId} form={form} error={errors.name} />
+      <UrlField form={form} error={errors.url} />
+      <UrlPatternField
+        id={`${ID_PREFIX}-pattern`}
+        value={form.draft.url_pattern}
+        onChange={(pattern) => form.set({ url_pattern: pattern })}
+        error={errors.pattern}
       />
-      <ActiveField form={form} />
     </>
   );
 }
@@ -168,49 +150,15 @@ interface FieldPartProps {
 }
 
 function NameField({ platformId, form, error }: FieldPartProps & { platformId: number }) {
-  const { t } = useI18n();
   return (
-    <div className="src-name-field">
-      <TextField
-        id={`${ID_PREFIX}-name`}
-        label={t("sources.field.name")}
-        maxLength={MAX_NAME_LENGTH}
-        value={form.draft.name}
-        onChange={(event) => form.set({ name: event.target.value })}
-        error={error ? t(error) : undefined}
-      />
+    <SourceNameField
+      id={`${ID_PREFIX}-name`}
+      value={form.draft.name}
+      onChange={(name) => form.set({ name })}
+      error={error}
+    >
       <SuggestName platformId={platformId} onStored={(name) => form.rebase({ name })} />
-    </div>
-  );
-}
-
-interface AdvancedProps extends FieldPartProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-/** Preflight R-3: controlled, so a pattern error can open it. */
-function AdvancedFields({ open, onOpenChange, ...field }: AdvancedProps) {
-  const { t } = useI18n();
-  return (
-    <Disclosure label={t("sources.field.advanced")} open={open} onOpenChange={onOpenChange}>
-      <PatternField {...field} />
-    </Disclosure>
-  );
-}
-
-function PatternField({ form, error }: FieldPartProps) {
-  const { t } = useI18n();
-  return (
-    <TextField
-      id={`${ID_PREFIX}-pattern`}
-      className="code"
-      label={t("sources.field.pattern")}
-      hint={t("sources.field.patternHint")}
-      value={form.draft.url_pattern}
-      onChange={(event) => form.set({ url_pattern: event.target.value })}
-      error={error ? t(error) : undefined}
-    />
+    </SourceNameField>
   );
 }
 
@@ -225,18 +173,6 @@ function UrlField({ form, error }: FieldPartProps) {
       value={form.draft.url}
       onChange={(event) => form.set({ url: event.target.value })}
       error={error ? t(error) : undefined}
-    />
-  );
-}
-
-function ActiveField({ form }: Pick<FieldPartProps, "form">) {
-  const { t } = useI18n();
-  return (
-    <CheckField
-      id={`${ID_PREFIX}-active`}
-      label={t("sources.field.active")}
-      checked={form.draft.is_active}
-      onChange={(isActive) => form.set({ is_active: isActive })}
     />
   );
 }

@@ -6,7 +6,9 @@ from urllib.parse import urlparse
 import redis
 
 from core.celery_config import celery_app
+from core.crawl_progress import LINKS_MATCHED_FIELD
 from core.logger import get_logger
+from core.platform_rules import url_matches_pattern
 from core.url_safety import host_for_log
 from database.core import SessionLocal, JobEntry, JobPlatform
 from workers.crawl_control import INTERNAL_FAILURE, fail_crawl_job
@@ -64,8 +66,11 @@ def filter_urls_task(args):
             logger.warning(f"No url_pattern set for platform {platform_id}, skipping all URLs")
             return [[], user_id, job_id, platform_id]
 
-        filtered_urls = [url for url in urls_list if url_pattern in url]
+        filtered_urls = [url for url in urls_list if url_matches_pattern(url, url_pattern)]
         logger.info(f"Pattern '{url_pattern}' matched {len(filtered_urls)} of {len(urls_list)} URLs")
+        # hset would recreate the hash of a crawl cancelled meanwhile.
+        if job_id and r_check.exists(f"crawl_job:{job_id}"):
+            r_check.hset(f"crawl_job:{job_id}", LINKS_MATCHED_FIELD, len(filtered_urls))
 
         # Deduplicate against already-scraped URLs for this user
         if filtered_urls and user_id:

@@ -5,9 +5,11 @@ import { useRef } from "react";
 import { LoaderCircle, RotateCcw } from "lucide-react";
 import { describeError } from "@/api/describeError";
 import type { TaskPhase } from "@/domain/pendingTasks";
+import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
 import { markTaskStarted } from "@/realtime/usePendingTasks";
 import { Button } from "@/ui/Button";
+import { Elapsed } from "@/ui/Elapsed";
 import { Icon } from "@/ui/Icon";
 import { Notice } from "@/ui/Notice";
 import { useToast } from "@/ui/ToastProvider";
@@ -18,6 +20,10 @@ export interface TaskStateProps {
   onRetry: () => void;
   /** The restart request runs: the retry is blocked so it cannot start a second task. */
   busy?: boolean;
+  /** Epoch ms of the run's start; while running, the elapsed time shows next to the text. */
+  startedAt?: number | null;
+  /** The text of a failed run when the cause is known; the generic "task.failed" otherwise. */
+  failureKey?: MessageKey | null;
 }
 
 /**
@@ -26,9 +32,13 @@ export interface TaskStateProps {
  * is announced instead of replacing the live node.
  */
 export function TaskState(props: TaskStateProps) {
+  // The elapsed time sits beside the live region, never in it, so its ticks are not announced.
   return (
-    <div className="task-state" role="status">
-      <TaskContent {...props} />
+    <div className="task-run">
+      <div className="task-state" role="status">
+        <TaskContent {...props} />
+      </div>
+      {props.phase === "running" ? <Elapsed startedAt={props.startedAt ?? null} /> : null}
     </div>
   );
 }
@@ -46,14 +56,14 @@ function TaskContent(props: TaskStateProps) {
   return <TaskProblem {...props} />;
 }
 
-function TaskProblem({ phase, onRetry, busy }: TaskStateProps) {
+function TaskProblem({ phase, onRetry, busy, failureKey }: TaskStateProps) {
   const { t } = useI18n();
   // A stall may still finish (amber); a reported failure is an error (crimson, spec 5).
   const failed = phase === "failed";
   return (
     // The wrapper is the live region; a nested alert would announce the failure twice.
     <Notice tone={failed ? "error" : "warn"} announce={false}>
-      {t(failed ? "task.failed" : "task.stalled")}{" "}
+      {t(failed ? (failureKey ?? "task.failed") : "task.stalled")}{" "}
       <Button size="sm" icon={RotateCcw} busy={busy} onClick={onRetry}>
         {t("error.retry")}
       </Button>
@@ -66,16 +76,28 @@ export interface StartedTask {
   phase: TaskPhase;
   run: () => void;
   pending: boolean;
+  /** Epoch ms of the run's start: the server stamp, else this tab's own start; null when unknown. */
+  startedAt: number | null;
 }
 
 /** TaskState of a started task: retry restarts it and is blocked while that request runs. */
-export function TaskProgress({ task, runningText }: { task: StartedTask; runningText: string }) {
+export function TaskProgress({
+  task,
+  runningText,
+  failureKey,
+}: {
+  task: StartedTask;
+  runningText: string;
+  failureKey?: MessageKey | null;
+}) {
   return (
     <TaskState
       phase={task.phase}
       runningText={runningText}
       onRetry={task.run}
       busy={task.pending}
+      startedAt={task.startedAt}
+      failureKey={failureKey}
     />
   );
 }

@@ -2,7 +2,8 @@
 
 import { usePrefetchQuery, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { channelStatusQueryOptions, notificationTemplatesQueryOptions } from "@/api/notifications";
+import { channelsQueryOptions, channelTypesQueryOptions } from "@/api/notificationChannels";
+import { notificationTemplatesQueryOptions } from "@/api/notifications";
 import { platformsQueryOptions, type Platform } from "@/api/platforms";
 import { profileTimezoneQueryOptions } from "@/api/settings";
 import { activityQueryOptions } from "@/realtime/useActivity";
@@ -10,6 +11,7 @@ import { SourcesLiveStatus } from "./crawl/SourcesLiveStatus";
 import { SourceDrawer } from "./drawer/SourceDrawer";
 import { FailingBanner } from "./FailingBanner";
 import { SourceList } from "./SourceList";
+import { ProfileRequiredNotice, useProfileMissing } from "./profileGate";
 import { SourcesHeader } from "./SourcesHeader";
 import { useSourcesUrl, type SourcesUrl } from "./useSourcesUrl";
 import { AddSourceWizard } from "./wizard/AddSourceWizard";
@@ -21,7 +23,8 @@ import { AddSourceWizard } from "./wizard/AddSourceWizard";
 function usePrefetchSources(): void {
   usePrefetchQuery(platformsQueryOptions());
   usePrefetchQuery(activityQueryOptions());
-  usePrefetchQuery(channelStatusQueryOptions());
+  usePrefetchQuery(channelsQueryOptions());
+  usePrefetchQuery(channelTypesQueryOptions());
   usePrefetchQuery(notificationTemplatesQueryOptions());
   usePrefetchQuery(profileTimezoneQueryOptions());
 }
@@ -36,6 +39,15 @@ function useDropUnknownSource(url: SourcesUrl, platforms: readonly Platform[] | 
   useEffect(() => {
     if (unknown) close();
   }, [unknown, close]);
+}
+
+/** The profile gate holds for a deep link too: `?add=1` without a profile leaves the URL, the notice says why. */
+function useDropBlockedWizard(url: SourcesUrl, blocked: boolean): void {
+  const drop = url.adding && blocked;
+  const { close } = url;
+  useEffect(() => {
+    if (drop) close();
+  }, [drop, close]);
 }
 
 /** D1: the source whose drawer is open; none while the wizard is. */
@@ -54,33 +66,46 @@ export function SourcesPage() {
   const url = useSourcesUrl();
   const platforms = useQuery(platformsQueryOptions());
   useDropUnknownSource(url, platforms.data);
+  const profileMissing = useProfileMissing();
+  useDropBlockedWizard(url, profileMissing);
   const list = platforms.data ?? [];
   return (
     <div className="page sources">
       <SourcesHeader platforms={platforms.data} onAdd={url.openWizard} />
+      <ProfileRequiredNotice />
       <FailingBanner platforms={list} onOpen={url.openSource} />
-      <SourceList query={platforms} onAdd={url.openWizard} />
+      <SourceList query={platforms} onAdd={url.openWizard} onEdit={url.openSource} />
       <SourcesLiveStatus platforms={list} muted={drawerSource(url, list) !== undefined} />
-      <SourcesOverlay url={url} platforms={list} />
+      <SourcesOverlay url={url} platforms={list} wizardBlocked={profileMissing} />
     </div>
   );
 }
 
-/** D1: one overlay at a time, the wizard (`add`) or the drawer of a listed source. */
-function SourcesOverlay({ url, platforms }: { url: SourcesUrl; platforms: readonly Platform[] }) {
+/** D1: one overlay at a time, the wizard (`add`, never without a profile) or the drawer of a listed source. */
+function SourcesOverlay({
+  url,
+  platforms,
+  wizardBlocked,
+}: {
+  url: SourcesUrl;
+  platforms: readonly Platform[];
+  wizardBlocked: boolean;
+}) {
   const open = drawerSource(url, platforms);
-  if (url.adding) {
-    return (
-      <AddSourceWizard
-        platforms={platforms}
-        onClose={url.close}
-        onOpenSource={url.openSource}
-        // The wizard puts focus on the new row from its own unmount (preflight ruling 15).
-        onCreated={url.close}
-      />
-    );
-  }
+  if (url.adding) return wizardBlocked ? null : <Wizard url={url} platforms={platforms} />;
   return open ? (
     <SourceDrawer key={open.id} platform={open} onClose={url.close} onDeleted={url.close} />
   ) : null;
+}
+
+function Wizard({ url, platforms }: { url: SourcesUrl; platforms: readonly Platform[] }) {
+  return (
+    <AddSourceWizard
+      platforms={platforms}
+      onClose={url.close}
+      onOpenSource={url.openSource}
+      // The wizard puts focus on the new row from its own unmount (preflight ruling 15).
+      onCreated={url.close}
+    />
+  );
 }

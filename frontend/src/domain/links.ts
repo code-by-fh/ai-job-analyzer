@@ -56,6 +56,13 @@ export function safeHref(url?: string | null): string | null {
   return url && isHttpUrl(url) && URL.canParse(url) ? url : null;
 }
 
+const MAILTO_ADDRESS = /^[^\s@<>?&#%,;:"']+@[^\s@<>?&#%,;:"']+\.[^\s@<>?&#%,;:"']+$/;
+
+/** A mailto: href for an address from AI or user data; null unless it is a plain address (no mailto parameters). */
+export function mailtoHref(email?: string | null): string | null {
+  return email && MAILTO_ADDRESS.test(email) ? `mailto:${email}` : null;
+}
+
 export function hostOf(url?: string | null): string | null {
   const href = safeHref(url);
   return href ? new URL(href).host.replace(WWW_PREFIX, "") : null;

@@ -28,6 +28,11 @@ export default defineConfig([
     rules: { "@next/next/no-img-element": "off" },
   },
   {
+    // Favicons come from arbitrary remote hosts; next/image would fetch them through the Next server.
+    files: ["src/features/sources/SourceIcon.tsx"],
+    rules: { "@next/next/no-img-element": "off" },
+  },
+  {
     // Next.js resolves route files by their default export.
     files: ["app/**/{page,layout,not-found}.tsx"],
     rules: { "import/no-default-export": "off" },

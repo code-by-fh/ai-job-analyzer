@@ -360,6 +360,37 @@
     transition: width 300ms var(--ease);
   }
 
+  /* Crawl progress (source rows, activity popover, crawl indicator): a native <progress>. */
+  .crawl-bar {
+    width: 100%;
+    height: 6px;
+    appearance: none;
+    border: 0;
+    border-radius: 3px;
+    background: var(--sunken);
+  }
+  .crawl-bar::-webkit-progress-bar {
+    background: var(--sunken);
+    border-radius: 3px;
+  }
+  /* Ink, not vermilion: progress is not "your next move" (usability #16). The value glides to each
+     new step; reduced motion cuts the transition to 1 ms (base.css). */
+  .crawl-bar::-webkit-progress-value {
+    background: var(--text);
+    border-radius: 3px;
+    transition: width 600ms var(--ease);
+  }
+  .crawl-bar::-moz-progress-bar {
+    background: var(--text);
+    border-radius: 3px;
+  }
+  /* base.css's reduced-motion rule does not reach this pseudo-element. */
+  @media (prefers-reduced-motion: reduce) {
+    .crawl-bar::-webkit-progress-value {
+      transition: none;
+    }
+  }
+
   .notice {
     display: flex;
     gap: 10px;

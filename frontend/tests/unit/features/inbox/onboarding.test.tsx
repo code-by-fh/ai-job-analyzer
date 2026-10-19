@@ -90,7 +90,10 @@ describe("onboarding", () => {
     const profile = await screen.findByRole("link", { name: "Profil öffnen" });
     expect(profile).toHaveAttribute("href", "/profile");
     expect(profile).toHaveClass("btn-primary");
-    expect(screen.getByRole("link", { name: "Quelle hinzufügen" })).not.toHaveClass("btn-primary");
+    const source = screen.getByRole("button", { name: "Quelle hinzufügen" });
+    expect(source).toHaveAttribute("aria-disabled", "true");
+    expect(source).toHaveAccessibleDescription("Zuerst das Profil ausfüllen.");
+    expect(screen.queryByRole("link", { name: "Quelle hinzufügen" })).not.toBeInTheDocument();
   });
 
   it("asks a non-admin to contact the administration", async () => {
@@ -123,14 +126,11 @@ describe("onboarding", () => {
     expect(screen.queryByRole("link", { name: "KI-Anbieter einrichten" })).not.toBeInTheDocument();
   });
 
-  it("shows the inbox once everything is set up, with a way to the setup view", async () => {
+  it("shows the inbox once everything is set up, without a setup link", async () => {
     const calls = open(SETUP_DONE);
     renderWithProviders(<InboxPage />);
     expect(await screen.findByRole("link", { name: "Senior Kotlin Engineer" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ersteinrichtung ansehen" })).toHaveAttribute(
-      "href",
-      "/inbox?view=setup",
-    );
+    expect(screen.queryByRole("link", { name: "Ersteinrichtung ansehen" })).not.toBeInTheDocument();
     expect(screen.queryByText(AI_MISSING)).not.toBeInTheDocument();
     // Ruling 4: the user is only loaded where a branch needs it.
     expect(calls.some((call) => new URL(call.url).pathname === "/me")).toBe(false);
@@ -154,12 +154,22 @@ describe("onboarding", () => {
     expect(screen.queryByRole("link", { name: "Zum Eingang" })).not.toBeInTheDocument();
   });
 
+  it("offers 'Alle Stellen archivieren' in the inbox header, not in the onboarding", async () => {
+    open(SETUP_DONE);
+    const { unmount } = renderWithProviders(<InboxPage />);
+    expect(await screen.findByRole("button", { name: "Alle Stellen archivieren" })).toBeVisible();
+    unmount();
+    open(FIRST_RUN);
+    renderWithProviders(<InboxPage />);
+    await screen.findByRole("heading", { level: 1, name: "Willkommen, fhamann" });
+    expect(screen.queryByRole("button", { name: "Alle Stellen archivieren" })).toBeNull();
+  });
+
   it("shows the inbox when the setup status cannot be loaded", async () => {
     open(jsonResponse(HTTP_SERVER_ERROR, { detail: "boom" }));
     renderWithProviders(<InboxPage />);
     expect(await screen.findByRole("heading", { level: 1, name: "Eingang" })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Senior Kotlin Engineer" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Ersteinrichtung ansehen" })).not.toBeInTheDocument();
   });
 
   it("ignores ?view=setup when the setup status cannot be loaded", async () => {
@@ -194,15 +204,8 @@ describe("onboarding", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Eingang" })).toBeInTheDocument();
   });
 
-  it("offers the import by URL when an AI provider can score the job", async () => {
+  it("never offers the import by URL in the onboarding", async () => {
     open({ ...FIRST_RUN, ai_configured: true });
-    renderWithProviders(<InboxPage />);
-    await screen.findByRole("heading", { level: 1, name: "Willkommen, fhamann" });
-    expect(screen.getByRole("button", { name: OPEN_IMPORT })).toBeInTheDocument();
-  });
-
-  it("hides the import by URL without an AI provider", async () => {
-    open(FIRST_RUN);
     renderWithProviders(<InboxPage />);
     await screen.findByRole("heading", { level: 1, name: "Willkommen, fhamann" });
     expect(screen.queryByRole("button", { name: OPEN_IMPORT })).not.toBeInTheDocument();

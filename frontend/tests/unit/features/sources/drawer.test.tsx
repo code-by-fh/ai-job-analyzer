@@ -49,7 +49,7 @@ describe("source drawer", () => {
     expect(within(panel).getByRole("heading", { name: "Quelle" })).toBeInTheDocument();
     expect(within(panel).getByRole("heading", { name: "Zeitplan" })).toBeInTheDocument();
     expect(
-      await within(panel).findByText("Uhrzeit in deiner Zeitzone (Europe/Berlin)."),
+      await within(panel).findByText("Uhrzeiten in deiner Zeitzone (Europe/Berlin)."),
     ).toBeInTheDocument();
     expect(within(panel).getByText("stepstone.de")).toBeInTheDocument();
     expect(within(panel).getByRole("group", { name: "Wochentage" })).toBeInTheDocument();
@@ -124,7 +124,9 @@ describe("source drawer", () => {
     await userEvent.click(within(panel).getByLabelText("Automatisch durchsuchen"));
     await userEvent.click(saveButtons(panel)[1]!);
     await waitFor(() =>
-      expect(patches(calls)).toEqual([{ schedule_time: null, schedule_days: null }]),
+      expect(patches(calls)).toEqual([
+        { schedule_times: null, schedule_days: null, is_active: true },
+      ]),
     );
   });
 
@@ -134,15 +136,53 @@ describe("source drawer", () => {
     renderWithProviders(<SourcesPage />);
     const panel = await screen.findByRole("dialog", { name: "Quelle Indeed" });
     await userEvent.click(within(panel).getByLabelText("Automatisch durchsuchen"));
-    expect(within(panel).getByLabelText("Uhrzeit")).toHaveValue("08:00");
+    expect(within(panel).getByLabelText("Uhrzeit 1")).toHaveValue("08:00");
     await userEvent.click(saveButtons(panel)[1]!);
     await waitFor(() =>
-      expect(patches(calls)).toEqual([{ schedule_time: "08:00", schedule_days: [0, 1, 2, 3, 4] }]),
+      expect(patches(calls)).toEqual([
+        { schedule_times: ["08:00"], schedule_days: [0, 1, 2, 3, 4], is_active: true },
+      ]),
     );
   });
 
-  it("maps a 422 on schedule_time to the time field and never shows the server text", async () => {
-    sourcesStubs(undefined, { "PATCH /platforms/1": invalid("schedule_time") });
+  it("has no separate active switch: Automatisch durchsuchen is the one on/off", async () => {
+    sourcesStubs();
+    renderWithProviders(<SourcesPage />);
+    const panel = await drawer();
+    expect(within(panel).getByLabelText("Automatisch durchsuchen")).toBeChecked();
+    expect(within(panel).queryByLabelText(/Aktiv/)).toBeNull();
+  });
+
+  it("a paused source with a schedule reads as off, and switching it on activates it", async () => {
+    const paused = { ...SOURCE_A, is_active: false };
+    const calls = sourcesStubs([paused], { "PATCH /platforms/1": SOURCE_A });
+    renderWithProviders(<SourcesPage />);
+    const panel = await drawer();
+    const auto = within(panel).getByLabelText("Automatisch durchsuchen");
+    expect(auto).not.toBeChecked();
+    await userEvent.click(auto);
+    await userEvent.click(saveButtons(panel)[1]!);
+    await waitFor(() =>
+      expect(patches(calls)).toEqual([expect.objectContaining({ is_active: true })]),
+    );
+  });
+
+  it("edits and sends several times of a day", async () => {
+    const calls = sourcesStubs(undefined, { "PATCH /platforms/1": SOURCE_A });
+    renderWithProviders(<SourcesPage />);
+    const panel = await drawer();
+    await userEvent.click(within(panel).getByRole("button", { name: "Uhrzeit hinzufügen" }));
+    fireEvent.change(within(panel).getByLabelText("Uhrzeit 2"), { target: { value: "06:15" } });
+    await userEvent.click(saveButtons(panel)[1]!);
+    await waitFor(() =>
+      expect(patches(calls)).toEqual([
+        expect.objectContaining({ schedule_times: ["06:15", "14:00"] }),
+      ]),
+    );
+  });
+
+  it("maps a 422 on schedule_times to the time field and never shows the server text", async () => {
+    sourcesStubs(undefined, { "PATCH /platforms/1": invalid("schedule_times") });
     renderWithProviders(<SourcesPage />);
     const panel = await drawer();
     await userEvent.click(within(panel).getByRole("button", { name: "Sa" }));
@@ -179,25 +219,20 @@ describe("source drawer", () => {
     expect(screen.queryByText(/Domain change/)).toBeNull();
   });
 
-  it("checks name, address and pattern before sending and opens Erweitert for the pattern", async () => {
+  it("checks name, address and pattern (in plain view, as in the wizard) before sending", async () => {
     const calls = sourcesStubs();
     renderWithProviders(<SourcesPage />);
     const panel = await drawer();
     await userEvent.clear(within(panel).getByLabelText("Name"));
     await userEvent.clear(within(panel).getByLabelText("Adresse der Suchergebnisseite"));
     await userEvent.type(within(panel).getByLabelText("Adresse der Suchergebnisseite"), "jobs");
-    await userEvent.click(within(panel).getByRole("button", { name: "Erweitert" }));
     await userEvent.clear(within(panel).getByLabelText("URL-Muster"));
     await userEvent.type(within(panel).getByLabelText("URL-Muster"), "/");
-    await userEvent.click(within(panel).getByRole("button", { name: "Erweitert" }));
     await userEvent.click(saveButtons(panel)[0]!);
     expect(within(panel).getByText(/Gib einen Namen/)).toBeInTheDocument();
     expect(within(panel).getByText("Diese Adresse kann nicht geprüft werden.")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "Erweitert" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
     expect(within(panel).getByText(/Gib ein Muster/)).toBeVisible();
+    expect(within(panel).queryByRole("button", { name: "Erweitert" })).toBeNull();
     expect(patches(calls)).toEqual([]);
   });
 
@@ -234,9 +269,9 @@ describe("source drawer", () => {
     const panel = await drawer();
     await userEvent.type(within(panel).getByLabelText("Name"), " neu");
     queryClient.setQueryData<Platform[]>(queryKeys.platforms, (list) =>
-      list!.map((p) => (p.id === 1 ? { ...p, name: "Anders", schedule_time: "09:30" } : p)),
+      list!.map((p) => (p.id === 1 ? { ...p, name: "Anders", schedule_times: ["09:30"] } : p)),
     );
-    await waitFor(() => expect(within(panel).getByLabelText("Uhrzeit")).toHaveValue("09:30"));
+    await waitFor(() => expect(within(panel).getByLabelText("Uhrzeit 1")).toHaveValue("09:30"));
     expect(within(panel).getByLabelText("Name")).toHaveValue("StepStone neu");
   });
 
@@ -302,17 +337,14 @@ describe("source drawer", () => {
     expect(saveButtons(panel)[1]).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("a legacy source with an unreadable stored address can still be renamed and paused", async () => {
+  it("a legacy source with an unreadable stored address can still be renamed", async () => {
     const legacy = { ...SOURCE_A, url: "stepstone-alt" };
     const calls = sourcesStubs([legacy], { "PATCH /platforms/1": legacy });
     renderWithProviders(<SourcesPage />);
     const panel = await drawer();
     await userEvent.type(within(panel).getByLabelText("Name"), " alt");
-    await userEvent.click(within(panel).getByLabelText("Aktiv (wird durchsucht)"));
     await userEvent.click(saveButtons(panel)[0]!);
-    await waitFor(() =>
-      expect(patches(calls)).toEqual([{ name: "StepStone alt", is_active: false }]),
-    );
+    await waitFor(() => expect(patches(calls)).toEqual([{ name: "StepStone alt" }]));
     expect(within(panel).queryByText("Diese Adresse kann nicht geprüft werden.")).toBeNull();
   });
 
@@ -322,7 +354,7 @@ describe("source drawer", () => {
     renderWithProviders(<SourcesPage />);
     const panel = await screen.findByRole("dialog", { name: "Quelle Indeed" });
     await userEvent.click(within(panel).getByLabelText("Automatisch durchsuchen"));
-    fireEvent.change(within(panel).getByLabelText("Uhrzeit"), { target: { value: "07:30" } });
+    fireEvent.change(within(panel).getByLabelText("Uhrzeit 1"), { target: { value: "07:30" } });
     await userEvent.click(within(panel).getByRole("button", { name: "Sa" }));
     await userEvent.click(within(panel).getByLabelText("Automatisch durchsuchen"));
     expect(saveButtons(panel)[1]).toHaveAttribute("aria-disabled", "true");

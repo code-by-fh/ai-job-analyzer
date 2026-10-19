@@ -12,6 +12,7 @@ export function scopedJobId(event: RealtimeEvent): string | null {
       return event.job.id;
     case "job_update":
     case "interview_prep_ready":
+    case "posting_details_ended":
       return event.job_id;
     default:
       return null;

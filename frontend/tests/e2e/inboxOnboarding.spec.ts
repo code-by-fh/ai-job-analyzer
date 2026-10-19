@@ -14,7 +14,6 @@ const FIRST_RUN: SetupStatusBody = {
 };
 const AI_MISSING = "Kein KI-Anbieter eingerichtet: Neue Stellen werden nicht bewertet.";
 const OPEN_IMPORT = "Per URL importieren: eine einzelne Stelle";
-const OPEN_IMPORT_SHORT = "Per URL importieren";
 const setupRoute = (status: SetupStatusBody) => ({ "GET /setup-status": { body: status } });
 // A first run has no source, so the shell's platform list (and its error badge) is empty too.
 const firstRunRoutes = (status: SetupStatusBody) =>
@@ -38,10 +37,11 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
         page.getByRole("heading", { level: 1, name: "Willkommen, admin" }),
       ).toBeVisible();
       await expect(page.getByRole("link", { name: "Profil öffnen" })).toHaveClass(/btn-primary/);
-      await expect(page.getByRole("link", { name: "Quelle hinzufügen" })).toHaveAttribute(
-        "href",
-        "/sources?add=1",
+      await expect(page.getByRole("button", { name: "Quelle hinzufügen" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
       );
+      await expect(page.getByText("Zuerst das Profil ausfüllen.")).toBeVisible();
       await expect(page.getByRole("link", { name: "KI-Anbieter einrichten" })).toHaveAttribute(
         "href",
         "/settings?section=ai",
@@ -72,36 +72,42 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
 }
 
 for (const [size, viewport] of SCREENSHOT_SIZES) {
-  test(`with an AI provider the onboarding offers the import by URL at ${size}px`, async ({
+  test(`with an AI provider the onboarding has no import by URL at ${size}px`, async ({
     page,
     mockApi,
   }) => {
-    await mockApi(firstRunRoutes({ ...FIRST_RUN, ai_configured: true }));
+    await mockApi(firstRunRoutes({ ...FIRST_RUN, profile_complete: true, ai_configured: true }));
     await page.setViewportSize(viewport);
     await page.goto("/inbox");
-    await expect(page.getByRole("button", { name: OPEN_IMPORT })).toBeVisible();
-    // M2: the onboarding has room for the words at every width, unlike the inbox masthead.
-    await expect(
-      page.getByRole("button", { name: OPEN_IMPORT }).getByText(OPEN_IMPORT_SHORT),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: OPEN_IMPORT })).toHaveCount(0);
+    // Feedback 1 T9: the step's button is centred in its row.
+    const item = page.locator(".ob-item").nth(1);
+    const row = (await item.boundingBox())!;
+    const button = (await item.getByRole("link", { name: "Quelle hinzufügen" }).boundingBox())!;
+    if (size === "1440") {
+      expect(Math.abs(button.y + button.height / 2 - (row.y + row.height / 2))).toBeLessThanOrEqual(
+        1,
+      );
+    }
     expect(await horizontalOverflow(page)).toBe(0);
     await saveScreenshot(page, `inbox-onboarding-ai-${size}-light`);
   });
 }
 
-test("the setup view can be opened from the inbox and left again", async ({ page, mockApi }) => {
+test("the setup view opens on request for a finished setup and can be left again", async ({
+  page,
+  mockApi,
+}) => {
   await mockApi(inboxRoutes());
   await page.setViewportSize(VIEWPORTS.desktop);
   await page.goto("/inbox");
+  await expect(page.getByRole("link", { name: "Ersteinrichtung ansehen" })).toHaveCount(0);
+  await page.goto("/inbox?view=setup");
+  await expect(page.getByText("3 von 3 erledigt", { exact: false })).toBeVisible();
+  await saveScreenshot(page, "inbox-onboarding-done-1440-light");
   const entries = () => page.evaluate(() => window.history.length);
   const before = await entries();
-  await page.getByRole("link", { name: "Ersteinrichtung ansehen" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/inbox\?view=setup$/);
-  await expect(page.getByText("3 von 3 erledigt", { exact: false })).toBeVisible();
-  // Spec 4.3 #5: the link left with the view, so focus lands on the new view's title.
-  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
-  await saveScreenshot(page, "inbox-onboarding-done-1440-light");
   await page.getByRole("link", { name: "Zum Eingang" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { level: 1, name: "Eingang" })).toBeVisible();

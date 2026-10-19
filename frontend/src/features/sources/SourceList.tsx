@@ -1,7 +1,7 @@
 "use client";
 
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Globe, Plus } from "lucide-react";
+import { Globe, Pencil } from "lucide-react";
 import type { Platform } from "@/api/platforms";
 import { listPhase } from "@/domain/inbox";
 import { sortSources, sourceState } from "@/domain/sources";
@@ -14,11 +14,14 @@ import { EmptyState } from "@/ui/EmptyState";
 import { CrawlButton } from "./crawl/CrawlButton";
 import { CrawlProgress } from "./crawl/CrawlProgress";
 import { SourceRow } from "./SourceRow";
+import { AddButton } from "./SourcesHeader";
 import { SOURCES_LIST_ID } from "./useFocusFallback";
 
 interface SourceListProps {
   query: UseQueryResult<Platform[]>;
   onAdd: () => void;
+  /** Opens a source's drawer (Bearbeiten). */
+  onEdit: (id: number) => void;
 }
 
 /** The running crawl of a source (D2: from the activity cache, no polling). */
@@ -27,7 +30,7 @@ export function runningTaskOf(activity: ActivityState, platformId: number): Acti
 }
 
 /** Loading, stalled, error, empty and filled states of the list (constraint "States"). */
-export function SourceList({ query, onAdd }: SourceListProps) {
+export function SourceList({ query, onAdd, onEdit }: SourceListProps) {
   const phase = listPhase({
     hasData: query.data !== undefined,
     isError: query.isError,
@@ -40,10 +43,15 @@ export function SourceList({ query, onAdd }: SourceListProps) {
   if (phase === "error")
     return <ListError error={query.error} onRetry={() => void query.refetch()} />;
   if (phase === "empty") return <SourcesEmpty onAdd={onAdd} />;
-  return <SourceRows platforms={query.data ?? []} />;
+  return <SourceRows platforms={query.data ?? []} onEdit={onEdit} />;
 }
 
-function SourceRows({ platforms }: { platforms: readonly Platform[] }) {
+interface SourceRowsProps {
+  platforms: readonly Platform[];
+  onEdit: (id: number) => void;
+}
+
+function SourceRows({ platforms, onEdit }: SourceRowsProps) {
   const { t } = useI18n();
   const activity = useActivity(true);
   return (
@@ -51,22 +59,56 @@ function SourceRows({ platforms }: { platforms: readonly Platform[] }) {
       <ColumnHead />
       <ul role="list" id={SOURCES_LIST_ID} className="src-rows" aria-label={t("sources.list")}>
         {sortSources(platforms).map((platform) => (
-          <SourceListItem key={platform.id} platform={platform} activity={activity} />
+          <SourceListItem
+            key={platform.id}
+            platform={platform}
+            activity={activity}
+            onEdit={onEdit}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
+interface SourceListItemProps {
+  platform: Platform;
+  activity: ActivityState;
+  onEdit: (id: number) => void;
+}
+
 /** D4: while the source runs, its last-run cell shows the live progress with Abbrechen. */
-function SourceListItem({ platform, activity }: { platform: Platform; activity: ActivityState }) {
+function SourceListItem({ platform, activity, onEdit }: SourceListItemProps) {
   const task = runningTaskOf(activity, platform.id);
+  const action = (
+    <>
+      <EditButton platform={platform} onEdit={onEdit} />
+      <CrawlButton platform={platform} state={sourceState(platform, task !== null)} />
+    </>
+  );
   return (
     <SourceRow
       platform={platform}
       task={task}
       progress={task ? <CrawlProgress platform={platform} task={task} /> : undefined}
-      action={<CrawlButton platform={platform} state={sourceState(platform, task !== null)} />}
+      action={action}
+    />
+  );
+}
+
+/** Feedback 1, T5: an explicit pencil beside Durchsuchen; it opens the same drawer as the name. */
+function EditButton({ platform, onEdit }: { platform: Platform; onEdit: (id: number) => void }) {
+  const { t } = useI18n();
+  const label = t("sources.edit", { name: platform.name });
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={Pencil}
+      iconOnly
+      aria-label={label}
+      title={label}
+      onClick={() => onEdit(platform.id)}
     />
   );
 }
@@ -86,13 +128,12 @@ function ColumnHead() {
 
 function SourcesEmpty({ onAdd }: { onAdd: () => void }) {
   const { t } = useI18n();
-  const action = (
-    <Button variant="primary" icon={Plus} onClick={onAdd}>
-      {t("onboard.source.action")}
-    </Button>
-  );
   return (
-    <EmptyState icon={Globe} title={t("onboard.source.title")} actions={action}>
+    <EmptyState
+      icon={Globe}
+      title={t("onboard.source.title")}
+      actions={<AddButton onAdd={onAdd} />}
+    >
       {t("onboard.source.text")}
     </EmptyState>
   );

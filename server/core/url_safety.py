@@ -16,8 +16,9 @@ Two layers use it:
 Any port is accepted on a public host: only public addresses are reachable, so a port reaches no
 internal service.
 
-Known residuals (not closable here): the render service follows redirects and resolves the name again
-itself (DNS rebinding), and page JavaScript in the render browser can request internal hosts.
+Redirects, DNS rebinding and page JavaScript in the render browser are outside this module: the render
+service (services/page_rendering) must guard its own egress; page-render-service does so through its
+egress proxy (not yet verified in a running stack).
 """
 
 import ipaddress

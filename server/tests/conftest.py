@@ -8,6 +8,12 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 # Modules that open a Redis client at import time fail fast on a closed local
 # port instead of waiting for the compose hostname to time out in DNS.
 os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://127.0.0.1:1/0")
+# The notification client fails fast without these; tests replace the client with tests/notify_fake.py.
+# The key is generated per run, so it is usable nowhere else.
+import secrets as _secrets
+
+os.environ.setdefault("NOTIFY_API_URL", "http://notify.invalid:8000")
+os.environ.setdefault("NOTIFY_API_KEY", _secrets.token_urlsafe(32))
 
 from unittest.mock import MagicMock
 
@@ -19,6 +25,7 @@ from sqlalchemy.pool import StaticPool
 
 from database.core import Base
 from tests.factories import PUBLIC_TEST_ADDRESS, make_user
+from tests.notify_fake import FakeNotifications
 
 _MODULES_WITH_OWN_SESSIONS = ("routers.jobs", "routers.dashboard", "routers.templates")
 
@@ -27,6 +34,14 @@ _MODULES_WITH_OWN_SESSIONS = ("routers.jobs", "routers.dashboard", "routers.temp
 def public_dns(monkeypatch):
     """No test reaches real DNS: host names resolve to one public address unless a test patches _resolve."""
     monkeypatch.setattr("core.url_safety._resolve", lambda host: [PUBLIC_TEST_ADDRESS])
+
+
+@pytest.fixture(autouse=True)
+def notify(monkeypatch):
+    """No test reaches the notification service: every caller of get_client() gets the in-memory fake."""
+    fake = FakeNotifications()
+    monkeypatch.setattr("services.notifications_client.get_client", lambda: fake)
+    return fake
 
 
 @pytest.fixture()

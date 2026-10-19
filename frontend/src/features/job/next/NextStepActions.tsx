@@ -19,6 +19,7 @@ import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/ui/Button";
 import { TaskProgress } from "../TaskState";
+import { useOpenDates } from "../dates/DatesDrawerProvider";
 import { useAttachChoice } from "../documents/useAttachChoice";
 import {
   generationProblem,
@@ -147,16 +148,16 @@ function FollowUpAction({ job }: ActionProps) {
   );
 }
 
+/** Feedback 1 T13: the invitation moves to Interview, then "Termine & Daten" asks for its date. */
 function InviteAction({ job }: ActionProps) {
   const { t } = useI18n();
   const { changeStatus, isPending } = useChangeStatus(job);
+  const openDates = useOpenDates();
+  const invite = async () => {
+    if (await changeStatus({ to: "INTERVIEW" })) openDates("interviewAt");
+  };
   return (
-    <Button
-      variant="primary"
-      icon={CalendarPlus}
-      busy={isPending}
-      onClick={() => void changeStatus({ to: "INTERVIEW" })}
-    >
+    <Button variant="primary" icon={CalendarPlus} busy={isPending} onClick={() => void invite()}>
       {t("next.invite")}
     </Button>
   );

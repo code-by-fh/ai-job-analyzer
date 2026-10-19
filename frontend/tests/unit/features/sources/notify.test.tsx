@@ -6,6 +6,11 @@ import { SourcesPage } from "@/features/sources/SourcesPage";
 import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
 import { liveNavigation } from "../../support/liveNavigation";
 import { renderWithProviders } from "../../support/render";
+import {
+  CHANNELS,
+  PUSHOVER_CHANNEL,
+  SMTP_CHANNEL,
+} from "../../../e2e/support/notificationFixtures";
 import { SOURCE_A, sourcesStubs, TEMPLATES } from "../../support/sourcesRoutes";
 
 vi.mock("next/navigation", async () =>
@@ -13,8 +18,8 @@ vi.mock("next/navigation", async () =>
 );
 
 const NOW = new Date("2026-10-08T10:00:00+02:00");
-const BAD_REQUEST = 400;
 const SERVER_ERROR = 500;
+const BAD_GATEWAY = 502;
 const TOO_MANY_REQUESTS = 429;
 // Long enough that the retry never fires during a test: only the first failure is seen.
 const RETRY_DELAY_MS = 60_000;
@@ -27,6 +32,10 @@ const notify = async () => {
 const patches = (calls: readonly RecordedCall[]) =>
   calls.filter((call) => call.method === "PATCH").map((call) => JSON.parse(call.body!));
 const saveOf = (form: HTMLElement) => within(form).getByRole("button", { name: "Speichern" });
+const PUSHOVER_TEST = `POST /notifications/channels/${PUSHOVER_CHANNEL.id}/test`;
+const RECIPIENTS_SMTP = "Empfänger für E-Mail (SMTP)";
+const INVALID_RECIPIENTS = "Gib nur gültige E-Mail-Adressen ein.";
+const listOf = (items: unknown[]) => ({ items, total: items.length });
 
 beforeEach(async () => {
   // A drawer closed by the previous test schedules its focus fallback for the next frame.
@@ -40,55 +49,63 @@ afterEach(() => {
 });
 
 describe("notifications of a source", () => {
-  it("an unconfigured channel cannot be switched on and points to the settings", async () => {
-    sourcesStubs();
+  it("without channels it points to the settings", async () => {
+    sourcesStubs(undefined, { "GET /notifications/channels": listOf([]) });
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    expect(await within(form).findByLabelText("Mailjet benachrichtigen")).toBeDisabled();
+    expect(await within(form).findByText(/Noch kein Kanal eingerichtet/)).toBeInTheDocument();
     expect(
-      within(form).getAllByRole("link", { name: "In den Einstellungen einrichten" })[0],
+      within(form).getByRole("link", { name: "In den Einstellungen einrichten" }),
     ).toHaveAttribute("href", "/settings?section=notifications");
   });
 
-  it("an active channel without credentials can still be switched off", async () => {
-    sourcesStubs([{ ...SOURCE_A, notification_adapters: ["PUSHOVER", "MAILJET"] }]);
+  it("offers each of the user's channels with the service's type label", async () => {
+    sourcesStubs();
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    const mailjet = await within(form).findByLabelText("Mailjet benachrichtigen");
-    expect(mailjet).toBeEnabled();
-    await userEvent.click(mailjet);
-    expect(mailjet).not.toBeChecked();
-    expect(mailjet).toBeDisabled();
+    expect(await within(form).findByLabelText("Mein Handy benachrichtigen")).toBeChecked();
+    expect(within(form).getByLabelText("Firmen-SMTP benachrichtigen")).not.toBeChecked();
+    expect(within(form).getByText("E-Mail (SMTP)")).toBeInTheDocument();
+    // Only the chosen channel offers a test, and only its type has options.
+    expect(within(form).getAllByRole("button", { name: /^Test über/ })).toHaveLength(1);
+    expect(within(form).queryByLabelText("Vorlage für E-Mail (SMTP)")).toBeNull();
   });
 
-  it("an email channel needs a valid recipient", async () => {
+  it("explains in the drawer that a channel's test skips the source's recipients", async () => {
+    sourcesStubs();
+    renderWithProviders(<SourcesPage />);
+    const form = await notify();
+    expect(
+      await within(form).findByText(/nicht an die Empfänger dieser Quelle/),
+    ).toBeInTheDocument();
+  });
+
+  it("refuses recipients that are no addresses", async () => {
     const calls = sourcesStubs();
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    await userEvent.click(await within(form).findByLabelText("SMTP benachrichtigen"));
-    await userEvent.type(within(form).getByLabelText("Empfänger"), "ich@example.com, kaputt");
+    await userEvent.click(await within(form).findByLabelText("Firmen-SMTP benachrichtigen"));
+    await userEvent.type(within(form).getByLabelText(RECIPIENTS_SMTP), "ich@example.com, kaputt");
     await userEvent.click(saveOf(form));
-    expect(
-      await within(form).findByText("Gib mindestens eine gültige E-Mail-Adresse ein."),
-    ).toBeInTheDocument();
+    expect(await within(form).findByText(INVALID_RECIPIENTS)).toBeInTheDocument();
     expect(patches(calls)).toEqual([]);
   });
 
-  it("saves all notification fields, a chosen template as its content", async () => {
+  it("saves the chosen channels by id, a chosen template as its content", async () => {
     const calls = sourcesStubs(undefined, { "PATCH /platforms/1": SOURCE_A });
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    await userEvent.click(await within(form).findByLabelText("SMTP benachrichtigen"));
-    await userEvent.type(within(form).getByLabelText("Empfänger"), "ich@example.com");
+    await userEvent.click(await within(form).findByLabelText("Firmen-SMTP benachrichtigen"));
+    await userEvent.type(within(form).getByLabelText(RECIPIENTS_SMTP), "ich@example.com");
     await userEvent.selectOptions(
-      within(form).getByLabelText("Vorlage für SMTP"),
+      within(form).getByLabelText("Vorlage für E-Mail (SMTP)"),
       "Wochenmail (global)",
     );
     await userEvent.click(saveOf(form));
     await waitFor(() =>
       expect(patches(calls)).toEqual([
         {
-          notification_adapters: ["PUSHOVER", "SMTP"],
+          notification_channel_ids: [PUSHOVER_CHANNEL.id, SMTP_CHANNEL.id],
           pushover_template: null,
           resend_template: null,
           mailjet_template: null,
@@ -101,11 +118,36 @@ describe("notifications of a source", () => {
     );
   });
 
+  it("empty recipients are saved as none, so the channel's own recipients get the mail", async () => {
+    const calls = sourcesStubs(undefined, { "PATCH /platforms/1": SOURCE_A });
+    renderWithProviders(<SourcesPage />);
+    const form = await notify();
+    await userEvent.click(await within(form).findByLabelText("Firmen-SMTP benachrichtigen"));
+    await userEvent.click(saveOf(form));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]).toMatchObject({ smtp_recipients: null });
+  });
+
+  it("two channels of one type share one template and one recipient list", async () => {
+    const second = {
+      ...SMTP_CHANNEL,
+      id: "6f1c2a10-0000-4000-8000-000000000009",
+      name: "Zweit-SMTP",
+    };
+    sourcesStubs(undefined, { "GET /notifications/channels": listOf([...CHANNELS, second]) });
+    renderWithProviders(<SourcesPage />);
+    const form = await notify();
+    await userEvent.click(await within(form).findByLabelText("Firmen-SMTP benachrichtigen"));
+    await userEvent.click(within(form).getByLabelText("Zweit-SMTP benachrichtigen"));
+    expect(within(form).getAllByLabelText("Vorlage für E-Mail (SMTP)")).toHaveLength(1);
+    expect(within(form).getAllByLabelText(RECIPIENTS_SMTP)).toHaveLength(1);
+  });
+
   it("saving notifications keeps the schedule draft", async () => {
     const calls = sourcesStubs(undefined, { "PATCH /platforms/1": SOURCE_A });
     renderWithProviders(<SourcesPage />);
     const panel = await screen.findByRole("dialog", { name: "Quelle StepStone" });
-    fireEvent.change(within(panel).getByLabelText("Uhrzeit"), { target: { value: "07:30" } });
+    fireEvent.change(within(panel).getByLabelText("Uhrzeit 1"), { target: { value: "07:30" } });
     const form = await notify();
     await userEvent.selectOptions(
       await within(form).findByLabelText("Vorlage für Pushover"),
@@ -113,69 +155,63 @@ describe("notifications of a source", () => {
     );
     await userEvent.click(saveOf(form));
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]).not.toHaveProperty("schedule_time");
+    expect(patches(calls)[0]).not.toHaveProperty("schedule_times");
     await waitFor(() => expect(saveOf(form)).toHaveAttribute("aria-disabled", "true"));
-    expect(within(panel).getByLabelText("Uhrzeit")).toHaveValue("07:30");
+    expect(within(panel).getByLabelText("Uhrzeit 1")).toHaveValue("07:30");
   });
 
-  it("a test send waits for a save and names a missing setup", async () => {
-    sourcesStubs(undefined, {
-      "PATCH /platforms/1": SOURCE_A,
-      "POST /platforms/1/test-pushover": () =>
-        jsonResponse(BAD_REQUEST, { detail: "Pushover credentials not configured" }),
+  it("a test sends the channel's test message at once, also with unsaved edits", async () => {
+    const calls = sourcesStubs(undefined, {
+      [PUSHOVER_TEST]: { channel_id: PUSHOVER_CHANNEL.id, delivered: true, reason: null },
     });
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    const test = await within(form).findByRole("button", { name: "Test über Pushover senden" });
-    await userEvent.selectOptions(within(form).getByLabelText("Vorlage für Pushover"), "Kurz");
-    expect(test).toHaveAttribute("aria-disabled", "true");
-    expect(test).toHaveAccessibleDescription("Erst speichern.");
-    await userEvent.click(saveOf(form));
-    await waitFor(() => expect(test).not.toHaveAttribute("aria-disabled", "true"));
+    await userEvent.selectOptions(
+      await within(form).findByLabelText("Vorlage für Pushover"),
+      "Kurz",
+    );
+    const test = within(form).getByRole("button", { name: "Test über Mein Handy senden" });
+    expect(test).not.toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(test);
+    expect(await screen.findByText("Test über Mein Handy gesendet.")).toBeInTheDocument();
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  });
+
+  it("a test that was not delivered names the reason in a fixed sentence", async () => {
+    sourcesStubs(undefined, {
+      [PUSHOVER_TEST]: {
+        channel_id: PUSHOVER_CHANNEL.id,
+        delivered: false,
+        reason: "auth_rejected",
+      },
+    });
+    renderWithProviders(<SourcesPage />);
+    const form = await notify();
+    await userEvent.click(
+      await within(form).findByRole("button", { name: "Test über Mein Handy senden" }),
+    );
+    expect(
+      await screen.findByText("Der Anbieter von Mein Handy hat die Zugangsdaten abgelehnt."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/auth_rejected/)).toBeNull();
+  });
+
+  it("a rate-limited test asks to wait, a down service says so, never the server's text", async () => {
+    let answer = TOO_MANY_REQUESTS;
+    sourcesStubs(undefined, {
+      [PUSHOVER_TEST]: () => jsonResponse(answer, { detail: "notification_service_unavailable" }),
+    });
+    renderWithProviders(<SourcesPage />);
+    const form = await notify();
+    const test = await within(form).findByRole("button", { name: "Test über Mein Handy senden" });
+    await userEvent.click(test);
+    expect(await screen.findByText("Zu viele Anfragen, bitte kurz warten.")).toBeInTheDocument();
+    answer = BAD_GATEWAY;
     await userEvent.click(test);
     expect(
-      await screen.findByText("Für Pushover fehlen Zugangsdaten oder Empfänger."),
+      await screen.findByText(/Der Benachrichtigungsdienst ist gerade nicht erreichbar/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/credentials not configured/)).toBeNull();
-  });
-
-  it("a sent test says so and only active channels offer one", async () => {
-    const calls = sourcesStubs(undefined, { "POST /platforms/1/test-pushover": { ok: true } });
-    renderWithProviders(<SourcesPage />);
-    const form = await notify();
-    await userEvent.click(
-      await within(form).findByRole("button", { name: "Test über Pushover senden" }),
-    );
-    expect(await screen.findByText("Test über Pushover gesendet.")).toBeInTheDocument();
-    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
-    expect(within(form).queryByRole("button", { name: "Test über SMTP senden" })).toBeNull();
-  });
-
-  it("a failed test send names the channel, not the server's reason", async () => {
-    sourcesStubs([{ ...SOURCE_A, notification_adapters: ["SMTP"], smtp_recipients: ["a@b.de"] }], {
-      "POST /platforms/1/test-smtp": () => jsonResponse(SERVER_ERROR, { detail: "SMTP boom" }),
-    });
-    renderWithProviders(<SourcesPage />);
-    const form = await notify();
-    await userEvent.click(
-      await within(form).findByRole("button", { name: "Test über SMTP senden" }),
-    );
-    expect(await screen.findByText("Senden über SMTP hat nicht geklappt.")).toBeInTheDocument();
-    expect(screen.queryByText(/boom/)).toBeNull();
-  });
-
-  it("a rate-limited test send asks to wait, without the server's text", async () => {
-    sourcesStubs([{ ...SOURCE_A, notification_adapters: ["PUSHOVER"] }], {
-      "POST /platforms/1/test-pushover": () =>
-        jsonResponse(TOO_MANY_REQUESTS, { error: "Rate limit exceeded: 5 per 1 minute" }),
-    });
-    renderWithProviders(<SourcesPage />);
-    const form = await notify();
-    await userEvent.click(
-      await within(form).findByRole("button", { name: "Test über Pushover senden" }),
-    );
-    expect(await screen.findByText("Zu viele Anfragen, bitte kurz warten.")).toBeInTheDocument();
-    expect(screen.queryByText(/Rate limit exceeded|hat nicht geklappt/)).toBeNull();
+    expect(screen.queryByText(/notification_service_unavailable/)).toBeNull();
   });
 
   it("keeps a stored text that matches no template", async () => {
@@ -202,26 +238,26 @@ describe("notifications of a source", () => {
     await waitFor(() => expect(patches(calls)[0]).toMatchObject({ pushover_template: null }));
   });
 
-  it("edits of a channel switched off again are no unsaved change and raise no hidden error", async () => {
+  it("edits of a type switched off again are no unsaved change and raise no hidden error", async () => {
     const calls = sourcesStubs(undefined, { "PATCH /platforms/1": SOURCE_A });
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    const smtp = await within(form).findByLabelText("SMTP benachrichtigen");
+    const smtp = await within(form).findByLabelText("Firmen-SMTP benachrichtigen");
     await userEvent.click(smtp);
-    await userEvent.type(within(form).getByLabelText("Empfänger"), "kaputt");
+    await userEvent.type(within(form).getByLabelText(RECIPIENTS_SMTP), "kaputt");
     await userEvent.click(smtp);
     expect(saveOf(form)).toHaveAttribute("aria-disabled", "true");
-    await userEvent.click(within(form).getByLabelText("Pushover benachrichtigen"));
+    await userEvent.click(within(form).getByLabelText("Mein Handy benachrichtigen"));
     await userEvent.click(saveOf(form));
     await waitFor(() =>
       expect(patches(calls)[0]).toMatchObject({
-        notification_adapters: [],
+        notification_channel_ids: [],
         smtp_recipients: null,
       }),
     );
   });
 
-  it("an off channel's stored recipients are neither checked nor rewritten", async () => {
+  it("an unused type's stored recipients are neither checked nor rewritten", async () => {
     const legacy = ["admin@localhost", "ops@example.com ; extra"];
     const calls = sourcesStubs([{ ...SOURCE_A, mailjet_recipients: legacy }], {
       "PATCH /platforms/1": SOURCE_A,
@@ -242,21 +278,17 @@ describe("notifications of a source", () => {
     sourcesStubs();
     renderWithProviders(<SourcesPage />);
     const form = await notify();
-    await userEvent.click(await within(form).findByLabelText("SMTP benachrichtigen"));
-    await userEvent.type(within(form).getByLabelText("Empfänger"), "kaputt");
+    await userEvent.click(await within(form).findByLabelText("Firmen-SMTP benachrichtigen"));
+    await userEvent.type(within(form).getByLabelText(RECIPIENTS_SMTP), "kaputt");
     await userEvent.click(saveOf(form));
-    const message = "Gib mindestens eine gültige E-Mail-Adresse ein.";
-    expect(await within(form).findByText(message)).toBeInTheDocument();
-    await userEvent.type(within(form).getByLabelText("Empfänger"), "@example.com");
-    expect(within(form).queryByText(message)).toBeNull();
-    await userEvent.click(within(form).getByLabelText("SMTP benachrichtigen"));
-    await userEvent.click(within(form).getByLabelText("SMTP benachrichtigen"));
-    expect(within(form).queryByText(message)).toBeNull();
+    expect(await within(form).findByText(INVALID_RECIPIENTS)).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText(RECIPIENTS_SMTP), "@example.com");
+    expect(within(form).queryByText(INVALID_RECIPIENTS)).toBeNull();
   });
 
-  it("a channel status that keeps failing shows the error with a retry, not a skeleton", async () => {
+  it("a channel list that keeps failing shows the error with a retry, not a skeleton", async () => {
     sourcesStubs(undefined, {
-      "GET /notification-settings/channels": () => jsonResponse(SERVER_ERROR, {}),
+      "GET /notifications/channels": () => jsonResponse(SERVER_ERROR, {}),
     });
     const retrying = new QueryClient({
       defaultOptions: { queries: { retry: RETRIES, retryDelay: RETRY_DELAY_MS } },
@@ -269,7 +301,7 @@ describe("notifications of a source", () => {
       ),
     ).toBeInTheDocument();
     expect(within(form).getByRole("button", { name: "Erneut versuchen" })).toBeInTheDocument();
-    expect(within(form).queryByLabelText("Pushover benachrichtigen")).toBeNull();
+    expect(within(form).queryByLabelText("Mein Handy benachrichtigen")).toBeNull();
     retrying.clear();
   });
 
@@ -284,6 +316,6 @@ describe("notifications of a source", () => {
     const retry = await within(form).findByRole("button", { name: "Erneut versuchen" });
     fail = false;
     await userEvent.click(retry);
-    expect(await within(form).findByLabelText("Pushover benachrichtigen")).toBeChecked();
+    expect(await within(form).findByLabelText("Mein Handy benachrichtigen")).toBeChecked();
   });
 });

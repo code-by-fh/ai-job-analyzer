@@ -1,12 +1,9 @@
 "use client";
 
-import { Maximize2 } from "lucide-react";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useI18n } from "@/i18n/useI18n";
-import { Button } from "./Button";
-import { ModalLayer } from "./ModalLayer";
-import { PanelHeader } from "./PanelHeader";
+import { cx } from "./cx";
+import { useFitZoom } from "./useFitZoom";
 
 export interface A4PreviewProps {
   /** Accessible name of the document, e.g. "Lebenslauf". */
@@ -18,8 +15,10 @@ export interface A4PreviewProps {
   slug: ReactNode;
   emptyText?: string;
   busy?: boolean;
-  /** Replaces the PDF on the sheet, e.g. the HTML editor. */
+  /** Replaces the PDF on the sheet, e.g. the HTML editor; laid out on a true A4 page and zoomed. */
   children?: ReactNode;
+  /** "page" fits the whole page into a desk of fixed height (the viewer); default: the width. */
+  fit?: "width" | "page";
 }
 
 // Fit the page width inside the sheet; ignored by viewers that do not support it.
@@ -39,23 +38,22 @@ function useInlinePdfSupport(): boolean {
 }
 
 /** The printed proof: an A4 sheet on the desk with crop marks and a slug line. */
-export function A4Preview(props: A4PreviewProps) {
-  const [expanded, setExpanded] = useState(false);
+export function A4Preview({ fit = "width", ...props }: A4PreviewProps) {
   const inline = useInlinePdfSupport();
-  const canExpand = props.pdfUrl !== null && !props.children && inline;
+  const desk = useRef<HTMLDivElement>(null);
+  const proof = useRef<HTMLDivElement>(null);
+  const slug = useRef<HTMLDivElement>(null);
+  const zoom = useFitZoom({ desk, proof, slug }, fit === "page");
   return (
-    <div className="desk">
-      <Sheet {...props} inline={inline} />
-      <div className="proof-slug">{props.slug}</div>
-      {canExpand ? <ExpandButton onOpen={() => setExpanded(true)} /> : null}
-      {expanded && props.pdfUrl ? (
-        <FullPreview
-          title={props.title}
-          pdfUrl={props.pdfUrl}
-          downloadName={props.downloadName}
-          onClose={() => setExpanded(false)}
-        />
-      ) : null}
+    <div ref={desk} className="desk">
+      <div className="proof-frame">
+        <div ref={proof} className="proof">
+          <Sheet {...props} inline={inline} zoom={zoom} />
+        </div>
+        <div ref={slug} className="proof-slug">
+          {props.slug}
+        </div>
+      </div>
     </div>
   );
 }
@@ -65,20 +63,19 @@ type PaperContentProps = Pick<
   "title" | "pdfUrl" | "downloadName" | "emptyText" | "children"
 > & { inline: boolean };
 
-function Sheet(props: PaperContentProps & { busy?: boolean }) {
+function Sheet({ busy, zoom, ...content }: PaperContentProps & { busy?: boolean; zoom: number }) {
   return (
-    <div className="proof">
-      <div className="paper" aria-busy={props.busy || undefined}>
-        <PaperContent {...props} />
-        <BusyNote busy={props.busy ?? false} />
-      </div>
+    <div className={cx("paper", `zoom-${zoom}`)} aria-busy={busy || undefined}>
+      <PaperContent {...content} />
+      <BusyNote busy={busy ?? false} />
     </div>
   );
 }
 
 function PaperContent(props: PaperContentProps) {
   const { title, pdfUrl, downloadName, emptyText, children, inline } = props;
-  if (children) return children;
+  // The HTML lays out on the PDF's page size and is zoomed as a whole, so it wraps like the PDF.
+  if (children) return <div className="paper-page">{children}</div>;
   if (!pdfUrl) return <BlankPaper text={emptyText} />;
   const fallback = <PdfFallback pdfUrl={pdfUrl} downloadName={downloadName} />;
   if (!inline) return fallback;
@@ -88,6 +85,11 @@ function PaperContent(props: PaperContentProps) {
       {fallback}
     </object>
   );
+}
+
+/** The bare PDF (inline viewer or open/download fallback) for a viewer that has no sheet around it. */
+export function PdfView(props: Pick<A4PreviewProps, "title" | "pdfUrl" | "downloadName">) {
+  return <PaperContent {...props} inline={useInlinePdfSupport()} />;
 }
 
 function BlankPaper({ text }: { text?: string }) {
@@ -121,34 +123,6 @@ function PdfFallback({ pdfUrl, downloadName }: { pdfUrl: string; downloadName?: 
         </a>
       </div>
     </div>
-  );
-}
-
-function ExpandButton({ onOpen }: { onOpen: () => void }) {
-  const { t } = useI18n();
-  return (
-    <Button size="sm" variant="ghost" className="a4-expand" icon={Maximize2} onClick={onOpen}>
-      {t("preview.expand")}
-    </Button>
-  );
-}
-
-interface FullPreviewProps {
-  title: string;
-  pdfUrl: string;
-  downloadName?: string;
-  onClose: () => void;
-}
-
-function FullPreview({ title, pdfUrl, downloadName, onClose }: FullPreviewProps) {
-  return createPortal(
-    <ModalLayer className="a4-full anim-pop" label={title} onClose={onClose}>
-      <PanelHeader title={title} onClose={onClose} />
-      <div className="a4-full-body">
-        <PaperContent title={title} pdfUrl={pdfUrl} downloadName={downloadName} inline />
-      </div>
-    </ModalLayer>,
-    document.body,
   );
 }
 

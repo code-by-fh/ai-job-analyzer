@@ -195,21 +195,23 @@
       display: none;
     }
   }
+  /* Feedback 1 T13: "Phase ändern" is a full-size button on the track's own row, not a small
+     control under the score. */
   .jd-phase {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 16px;
-    align-items: end;
+    gap: 8px 24px;
+    align-items: center;
+    margin-top: 34px;
   }
   .jd-phase .stepper {
-    margin-top: 34px;
+    margin-top: 0;
   }
   .jd-phase-menu {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
-    padding-bottom: 6px;
   }
   .jd-phase-menu .meta {
     max-width: 28ch;
@@ -218,6 +220,17 @@
   .panel-actions {
     margin-top: 18px;
     flex-wrap: wrap;
+  }
+  /* Phase dialog: interview day and time side by side, the stored-date hint under the day. */
+  .phase-interview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 9.5rem);
+    gap: 12px;
+    align-items: start;
+    margin: var(--s4) 0;
+  }
+  .phase-interview .field + .field {
+    margin-top: 0;
   }
   @media (max-width: 767px) {
     .jd-phase {
@@ -265,6 +278,12 @@
     color: var(--text-2);
     margin-top: 8px;
     font-size: 15px;
+  }
+  .next-elapsed {
+    margin-top: 8px;
+  }
+  .next-elapsed:empty {
+    display: none;
   }
   .next-hint {
     margin-top: 10px;
@@ -384,6 +403,17 @@
   .kv dt {
     font-weight: 650;
   }
+  .posting-hint {
+    display: block;
+    color: var(--text-2);
+    font-size: var(--fs-12);
+  }
+  .posting-action {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+    justify-items: start;
+  }
   .kv-compact {
     grid-template-columns: 120px minmax(0, 1fr);
     gap: 0 12px;
@@ -499,13 +529,21 @@
 
   .mappe {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
     gap: 28px;
   }
-  @container (min-width: 760px) {
-    .mappe {
-      grid-template-columns: minmax(0, 1fr) minmax(300px, 440px);
+  .docrows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 20px;
+  }
+  /* Create buttons of CV and letter side by side; they stack on a narrow column. */
+  @container (min-width: 480px) {
+    .docrows {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       align-items: start;
+    }
+    .docrows .docrow:last-of-type {
+      border-bottom: 0;
     }
   }
   .mappe-head {
@@ -583,15 +621,6 @@
     gap: 8px;
     padding-top: 10px;
     border-top: 2px solid var(--rule);
-  }
-  .edit-bar {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-top: 12px;
-    font-size: var(--fs-13);
-    color: var(--text-2);
-    flex-wrap: wrap;
   }
   .paper iframe {
     background: var(--paper);
@@ -679,22 +708,176 @@
   .prep-list li:first-child {
     border-top: 0;
   }
-  .prep-when {
-    padding-top: 10px;
-    border-top: 2px solid var(--rule);
-    margin: 0 0 4px;
-    max-width: none;
-  }
-  .prep-when + .prep-sec > h3 {
-    padding-top: 0;
-    border-top: 0;
-  }
   .prep-q {
     font-weight: 600;
   }
   .prep-a {
     color: var(--text-2);
     margin-top: 3px;
+  }
+
+  /* Interview prep (feedback 2 T4): overview first, then one rule-headed section per topic. */
+  .prep > .prep-sec {
+    scroll-margin-top: 16px;
+  }
+  .prep-overview {
+    display: grid;
+    gap: 22px;
+  }
+  .prep-overview-main {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    min-width: 0;
+  }
+  .prep-overview .md {
+    max-width: 60ch;
+    color: var(--text);
+    font-size: var(--fs-16);
+    line-height: 1.55;
+  }
+  .prep-when {
+    margin: 0;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .prep-confidence {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+  }
+  .prep-meter {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .prep-meter > span {
+    width: 16px;
+    height: 6px;
+    border-radius: 1px;
+    background: var(--rule);
+  }
+  .prep-meter[data-level="low"] > span:nth-child(n + 2),
+  .prep-meter[data-level="medium"] > span:nth-child(3) {
+    background: var(--line-strong);
+  }
+  .prep-sub {
+    margin: 0 0 4px;
+    font-size: var(--fs-13);
+    font-weight: 600;
+  }
+  .prep-top {
+    margin-top: 6px;
+  }
+  .prep-top-list,
+  .prep-toc ul,
+  .prep-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .prep-top-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+    font-size: var(--fs-14);
+  }
+  .prep-top-req {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .prep-top-list .tag,
+  .prep-card-head .tag {
+    flex-shrink: 0;
+  }
+  .prep-toc a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    border-top: 1px solid var(--line);
+    color: var(--text);
+    font-size: var(--fs-14);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .prep-toc a:hover > span:first-child {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .prep-toc-n {
+    font: 600 15px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+  }
+  @container (min-width: 600px) {
+    .prep-overview {
+      grid-template-columns: minmax(0, 1fr) 200px;
+      gap: 36px;
+    }
+  }
+  .prep-pitch {
+    margin: 4px 0 0;
+    padding: 2px 0 2px 18px;
+    border-left: var(--rule-w) solid var(--rule);
+  }
+  .prep-pitch p {
+    max-width: 56ch;
+    margin: 0;
+    font: 500 19px/1.45 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .prep-cards {
+    display: grid;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  /* The left rule carries the weight for the eye (ink heavy, grey medium, hairline light); the tag says it. */
+  .prep-card {
+    padding: 12px 16px 10px;
+    border: 1px solid var(--line);
+    border-left: var(--rule-w) solid var(--line);
+    border-radius: var(--r-panel);
+    background: var(--surface);
+  }
+  .prep-card[data-weight="high"] {
+    border-left-color: var(--rule);
+  }
+  .prep-card[data-weight="medium"] {
+    border-left-color: var(--line-strong);
+  }
+  .prep-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .prep-card-title {
+    margin: 0;
+    min-width: 0;
+    font: 650 16px/1.35 var(--font-display);
+    font-optical-sizing: auto;
+    overflow-wrap: anywhere;
+  }
+  .prep-card-status {
+    margin: 4px 0 0;
+    max-width: 66ch;
+    color: var(--text-2);
+    font-size: var(--fs-14);
+  }
+  .prep-card .disclosure-block {
+    margin-top: 4px;
+  }
+  .prep-card .disclosure-body {
+    margin-top: 2px;
+    color: var(--text);
   }
   .kv-row {
     display: contents;
@@ -826,6 +1009,73 @@
   @media (max-width: 767px) {
     .timeline li {
       grid-template-columns: 76px 14px minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 767px) {
+    .prep-pitch p {
+      font-size: 17px;
+    }
+    .prep-card {
+      padding: 12px 14px 8px;
+    }
+  }
+
+  /* Printing the prep: the job head and the prep only, light paper colours also in dark mode, every
+     disclosure open (Disclosure renders them shown while printing). */
+  @media print {
+    body:has(.prep) {
+      --bg: var(--paper);
+      --surface: var(--paper);
+      --text: var(--paper-ink);
+      --text-2: var(--paper-muted);
+      --text-3: var(--paper-muted);
+      --rule: var(--paper-ink);
+      --line: var(--paper-rule);
+      --line-strong: var(--paper-muted);
+      --accent-text: var(--paper-ink);
+      color-scheme: light;
+    }
+    body:has(.prep)
+      :is(
+        .sidebar,
+        .bottombar,
+        .crawl-dock,
+        .toasts,
+        .crumbs,
+        .jd-phase,
+        .jd-side,
+        .tabs,
+        .ai-stamp,
+        .prep-toc,
+        .prep .btn,
+        .disclosure .ico
+      ) {
+      display: none;
+    }
+    body:has(.prep) .app,
+    body:has(.prep) .jd-grid,
+    .prep-overview {
+      display: block;
+    }
+    body:has(.prep) .page {
+      max-width: none;
+      padding: 0;
+    }
+    body:has(.prep) .jd-grid {
+      margin-top: 16px;
+    }
+    .prep .disclosure {
+      min-height: 0;
+      padding: 0;
+    }
+    .prep-card,
+    .prep-pitch,
+    .prep-top-list li {
+      break-inside: avoid;
+    }
+    .prep-sec > h3 {
+      break-after: avoid;
     }
   }
 }

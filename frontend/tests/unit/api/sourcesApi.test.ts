@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cancelCrawl, fetchCrawlJobs } from "@/api/crawl";
 import { ApiError } from "@/api/errors";
-import { channelStatusQueryOptions } from "@/api/notifications";
-import { platformRunsPath, platformTestPath } from "@/api/platformPaths";
+import { platformRunsPath } from "@/api/platformPaths";
 import {
   deletePlatform,
+  deriveUrlPattern,
   fetchPlatforms,
   patchPlatform,
   platformRunsQueryOptions,
   previewSourceLinks,
-  sendPlatformTest,
   setupPlatform,
   startPlatformCrawl,
 } from "@/api/platforms";
@@ -29,7 +28,7 @@ describe("platforms api", () => {
       "GET /platforms": [
         {
           ...PLATFORM,
-          notification_adapters: "PUSHOVER",
+          notification_channel_ids: "6f1c2a10-0000-4000-8000-000000000001",
           resend_recipients: [1],
           last_run: { seeded: true },
         },
@@ -37,11 +36,30 @@ describe("platforms api", () => {
     });
     const [platform] = await fetchPlatforms();
     expect([
-      platform!.notification_adapters,
+      platform!.notification_channel_ids,
       platform!.resend_recipients,
       platform!.setup_status,
       platform!.last_run?.seeded,
     ]).toEqual([null, null, "active", true]);
+  });
+
+  it("reads the favicon and treats a missing one as absent", async () => {
+    const icon = "https://www.google.com/s2/favicons?sz=64&domain=www.stepstone.de";
+    stubRoutes({
+      "GET /platforms": [
+        { ...PLATFORM, favicon_url: icon },
+        { ...PLATFORM, id: 2 },
+      ],
+    });
+    const platforms = await fetchPlatforms();
+    expect(platforms.map((platform) => platform.favicon_url ?? null)).toEqual([icon, null]);
+  });
+
+  it("derives the pattern from the chosen links", async () => {
+    const calls = stubRoutes({ "POST /platforms/url-pattern": { url_pattern: "/job/" } });
+    const selected = [`${PLATFORM.url}/job/1`, `${PLATFORM.url}/job/2`];
+    await expect(deriveUrlPattern(selected)).resolves.toBe("/job/");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ selected_urls: selected });
   });
 
   it("starts a crawl and answers its id", async () => {
@@ -59,8 +77,8 @@ describe("platforms api", () => {
 
   it("sends exactly the patch it is given", async () => {
     const calls = stubRoutes({ "PATCH /platforms/1": PLATFORM });
-    await patchPlatform({ id: 1, patch: { schedule_time: null, schedule_days: null } });
-    expect(JSON.parse(calls[0]!.body!)).toEqual({ schedule_time: null, schedule_days: null });
+    await patchPlatform({ id: 1, patch: { schedule_times: null, schedule_days: null } });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ schedule_times: null, schedule_days: null });
   });
 
   it("reports how many jobs a delete kept", async () => {
@@ -79,12 +97,6 @@ describe("platforms api", () => {
     expect(platformRunsQueryOptions(1).queryKey).toEqual(queryKeys.platformRuns(1));
   });
 
-  it("sends a test through the channel's own path", async () => {
-    const calls = stubRoutes({ "POST /platforms/1/test-smtp": { ok: true } });
-    await sendPlatformTest({ id: 1, channel: "SMTP" });
-    expect(calls[0]!.url.endsWith(platformTestPath(1, "SMTP"))).toBe(true);
-  });
-
   it("reads found links and gives a link without text an empty one", async () => {
     stubRoutes({ "POST /platforms/preview-links": { links: [{ url: "https://x.de/job/1" }] } });
     await expect(previewSourceLinks({ url: "https://x.de/jobs" })).resolves.toEqual([
@@ -98,8 +110,9 @@ describe("platforms api", () => {
       url: PLATFORM.url,
       selected_urls: [`${PLATFORM.url}/1`],
       initial_run: "analyze",
-      schedule_time: null,
+      schedule_times: null,
       schedule_days: null,
+      url_pattern: "/job/",
     });
     expect(result.initial_crawl_started).toBe(true);
   });
@@ -121,13 +134,5 @@ describe("crawl api", () => {
     const error = await cancelCrawl("c1").catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).code).toBe("UPSTREAM_ERROR");
-  });
-});
-
-describe("notification channels", () => {
-  it("reads missing channels as not configured", async () => {
-    stubRoutes({ "GET /notification-settings/channels": { PUSHOVER: true } });
-    const status = await createTestQueryClient().fetchQuery(channelStatusQueryOptions());
-    expect(status).toEqual({ PUSHOVER: true, RESEND: false, MAILJET: false, SMTP: false });
   });
 });

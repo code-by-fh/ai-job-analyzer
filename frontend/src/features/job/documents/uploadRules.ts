@@ -60,8 +60,10 @@ export function previewKind(mimeType?: string | null): "pdf" | "image" | null {
   return mimeType?.startsWith("image/") ? "image" : null;
 }
 
+export type ViewKind = "pdf" | "image" | "text";
+
 /** What the viewer can show inline; Word files have no viewer and are download-only. */
-export function viewKind(mimeType?: string | null): "pdf" | "image" | "text" | null {
+export function viewKind(mimeType?: string | null): ViewKind | null {
   if (mimeType === TEXT_TYPE) return "text";
   return previewKind(mimeType);
 }

@@ -8,6 +8,7 @@ import {
   failingSources,
   firstErrorStep,
   isName,
+  isPattern,
   linkPath,
   matchingCount,
   MAX_NAME_LENGTH,
@@ -17,7 +18,6 @@ import {
   sourceIdFromParam,
   sourcesHref,
   sourceState,
-  suggestJobLinks,
   templateChoice,
   toSourceField,
 } from "@/domain/sources";
@@ -142,13 +142,18 @@ describe("nextSourceId", () => {
 
 describe("schedule", () => {
   it("parses only HH:MM in range with real weekdays", () => {
-    expect(scheduleOf({ schedule_time: "08:00", schedule_days: [4, 0, 0, 9] })).toEqual({
-      time: "08:00",
+    expect(scheduleOf({ schedule_times: ["08:00"], schedule_days: [4, 0, 0, 9] })).toEqual({
+      times: ["08:00"],
       days: [0, 4],
     });
-    expect(scheduleOf({ schedule_time: "24:00", schedule_days: [0] })).toBeNull();
-    expect(scheduleOf({ schedule_time: "08:00", schedule_days: [] })).toBeNull();
-    expect(scheduleOf({ schedule_time: null, schedule_days: null })).toBeNull();
+    expect(scheduleOf({ schedule_times: ["24:00"], schedule_days: [0] })).toBeNull();
+    expect(scheduleOf({ schedule_times: ["08:00"], schedule_days: [] })).toBeNull();
+    expect(scheduleOf({ schedule_times: null, schedule_days: null })).toBeNull();
+  });
+
+  it("keeps every valid time once, sorted", () => {
+    const stored = { schedule_times: ["18:00", "07:30", "18:00", "8:00\n"], schedule_days: [0] };
+    expect(scheduleOf(stored)).toEqual({ times: ["07:30", "18:00"], days: [0] });
   });
 
   it("groups consecutive days", () => {
@@ -161,10 +166,21 @@ describe("schedule", () => {
   });
 
   it("formats ranges and single days", () => {
-    expect(scheduleText({ time: "08:00", days: [0, 1, 2, 3, 4] }, t)).toBe("Mo–Fr 08:00");
-    expect(scheduleText({ time: "07:30", days: [0, 2] }, t)).toBe("Mo, Mi 07:30");
-    expect(scheduleText({ time: "07:30", days: [5, 6] }, t)).toBe("Sa, So 07:30");
-    expect(scheduleText({ time: "06:00", days: [0, 1, 2, 3, 4, 5, 6] }, t)).toBe("täglich 06:00");
+    expect(scheduleText({ times: ["08:00"], days: [0, 1, 2, 3, 4] }, t)).toBe("Mo–Fr 08:00");
+    expect(scheduleText({ times: ["07:30"], days: [0, 2] }, t)).toBe("Mo, Mi 07:30");
+    expect(scheduleText({ times: ["07:30"], days: [5, 6] }, t)).toBe("Sa, So 07:30");
+    expect(scheduleText({ times: ["06:00"], days: [0, 1, 2, 3, 4, 5, 6] }, t)).toBe(
+      "täglich 06:00",
+    );
+  });
+
+  it("lists several times of a day", () => {
+    expect(scheduleText({ times: ["07:30", "18:00"], days: [0, 1, 2, 3, 4] }, t)).toBe(
+      "Mo–Fr 07:30, 18:00",
+    );
+    expect(scheduleText({ times: ["06:00", "12:00"], days: [0, 1, 2, 3, 4, 5, 6] }, t)).toBe(
+      "täglich 06:00, 12:00",
+    );
     expect(scheduleText(null, t)).toBe("Nur manuell");
   });
 });
@@ -178,31 +194,32 @@ describe("wizard links", () => {
     { url: "https://x.de/impressum", text: "Impressum" },
   ];
 
-  it("preselects the largest group of similar links", () => {
-    expect(suggestJobLinks(links)).toEqual(links.slice(0, 3).map((link) => link.url));
-  });
-
-  it("groups one-segment slugs by their first word (StepStone)", () => {
-    const slugs = ["a--1-inline.html", "b--2-inline.html"].map((slug) => ({
-      url: `https://www.stepstone.de/stellenangebote--${slug}`,
-      text: slug,
-    }));
-    expect(
-      suggestJobLinks([...slugs, { url: "https://www.stepstone.de/impressum", text: "" }]),
-    ).toEqual(slugs.map((link) => link.url));
-  });
-
-  it("falls back to deep links when no group has two", () => {
-    const lonely = [
-      { url: "https://x.de/a/b/c", text: "" },
-      { url: "https://x.de/d", text: "" },
-    ];
-    expect(suggestJobLinks(lonely)).toEqual(["https://x.de/a/b/c"]);
+  it("accepts a pattern with more than slashes, up to 300 characters", () => {
+    expect([isPattern(" /job/ "), isPattern("/"), isPattern("//"), isPattern("")]).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect([isPattern(`/${"a".repeat(299)}`), isPattern(`/${"a".repeat(300)}`)]).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it("counts links containing the pattern and shows paths", () => {
     expect([matchingCount(links, " /jobsuche/p/ "), matchingCount(links, "")]).toEqual([3, 0]);
     expect(linkPath("https://x.de/jobs?q=1")).toBe("/jobs?q=1");
+  });
+
+  it("matches a slash pattern at the start of path and query, an old pattern anywhere", () => {
+    const some = [
+      { url: "https://x.de/jobs/1", text: "" },
+      { url: "https://x.de/about/jobs/2", text: "" },
+      { url: "https://x.de/jobs?id=3", text: "" },
+    ];
+    expect([matchingCount(some, "/jobs"), matchingCount(some, "jobs/")]).toEqual([2, 2]);
+    expect(matchingCount(some, "/jobs?id=")).toBe(1);
   });
 });
 

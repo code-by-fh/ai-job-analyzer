@@ -9,6 +9,7 @@ import { expect, test } from "./support/test";
 // Initech has no profile yet: the API answers 404 and Chromium logs that response.
 const MISSING_PROFILE = /status of 404/;
 const RUNNING = /Firmenrecherche läuft/;
+const DEEP_DIVE_RUNNING = /Die Tiefenrecherche läuft/;
 const MIN_HIT_TARGET_PX = 44;
 
 const title = (page: Page, name: string) => page.getByRole("heading", { level: 1, name });
@@ -63,6 +64,35 @@ test.describe("company research", () => {
         .filter({ has: page.getByRole("link", { name: "Initech AG", exact: true }) }),
     ).toContainText("initech.de · Recherchiert am 09.10.2026 · 1 Stelle");
   });
+});
+
+test("a reload during a deep dive shows it running and its result on its end event", async ({
+  page,
+  mockApi,
+}) => {
+  const companies = new CompaniesServer();
+  const run = {
+    focus: "Gehalt Senior Backend",
+    deep_dive_running: true,
+    deep_dive_started_at: "2026-10-16T09:30:00+00:00",
+    deep_dive_error: null,
+    deep_dive_result: null as string | null,
+  };
+  companies.profiles["acme.de"]!.deep_dive_runs = [run];
+  const log = await mockApi(companiesRoutes(companies));
+  await openDetail(page, "acme.de", "ACME GmbH");
+  await expect(page.getByText(DEEP_DIVE_RUNNING)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Jetzt recherchieren" })).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  // The server's request thread stores the result and ends the run; its end event reaches the page.
+  Object.assign(run, { deep_dive_running: false, deep_dive_started_at: null });
+  run.deep_dive_result = "Band 75-90 Tsd. laut Portalen.";
+  await connected(log);
+  pushEvent(log, { type: "deep_dive_ended", domain: "acme.de" });
+  await expect(page.getByText("Band 75-90 Tsd. laut Portalen.")).toBeVisible();
+  await expect(page.getByText(DEEP_DIVE_RUNNING)).toHaveCount(0);
 });
 
 test("the detail lists the own jobs, active first, the archived one marked", async ({

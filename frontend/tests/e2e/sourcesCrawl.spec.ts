@@ -46,8 +46,23 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
         platform: INDEED.url,
         total: 8,
         scraping_completed: 3,
+        progress: {
+          stage: "fetching_pages",
+          links_found: 40,
+          links_matched: 10,
+          links_new: 8,
+          pages_fetched: 3,
+          pages_failed: 0,
+          jobs_analysed: 0,
+          jobs_skipped: 0,
+          work_done: 3,
+          work_total: 16,
+        },
       });
-      await expect(row(page, "Indeed")).toContainText("Links sammeln: 3 von 8");
+      // The stage text of the global activity view, from the same progress numbers.
+      await expect(row(page, "Indeed")).toContainText("Lädt Seiten: 3 von 8");
+      // 3 of 16 steps (fetch and analyse 8 new links), not 3 of 8 links.
+      await expect(row(page, "Indeed").getByRole("progressbar")).toHaveAttribute("value", "19");
       expect(await horizontalOverflow(page)).toBe(0);
       await page.mouse.move(0, 0);
       await saveScreenshot(page, `sources-crawl-${size}-${scheme}`);
@@ -147,7 +162,12 @@ test.describe("a start the server refuses", () => {
     const log = await mockApi(sourcesRoutes(server));
     await openWithSocket(page, log);
     // Started elsewhere (another tab) after this page loaded its running crawls.
-    server.running.set(INDEED.id, { id: "ghost", total: 0, done: 0 });
+    server.running.set(INDEED.id, {
+      id: "ghost",
+      total: 0,
+      done: 0,
+      startedAt: String(Date.now()),
+    });
     await startButton(page, "Indeed").click();
     await expect(page.getByText("Indeed wird schon durchsucht.")).toBeVisible();
     expect(log.requests.filter((key) => key === `POST /platforms/${INDEED.id}/crawl`)).toHaveLength(

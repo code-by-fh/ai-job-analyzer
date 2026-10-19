@@ -29,7 +29,7 @@ export function MoreSheet({ open, onClose, signedIn }: MoreSheetProps) {
       <div className="panel-in">
         <PanelHeader title={t("nav.more")} onClose={onClose} />
         <MoreLinks onNavigate={onClose} />
-        <MoreBody signedIn={signedIn} />
+        <MoreBody signedIn={signedIn} onNavigate={onClose} />
       </div>
     </Drawer>
   );
@@ -77,14 +77,14 @@ function openSearch(closeSheet: () => void): void {
   requestSearch();
 }
 
-function MoreBody({ signedIn }: { signedIn: boolean }) {
+function MoreBody({ signedIn, onNavigate }: { signedIn: boolean; onNavigate: () => void }) {
   const { t } = useI18n();
   const activity = useActivity(signedIn);
   const logout = useLogout();
   return (
     <>
       <hr className="div" />
-      <ActivityPanel activity={activity} />
+      <ActivityPanel activity={activity} onNavigate={onNavigate} />
       <hr className="div" />
       <PreferenceSegs />
       <hr className="div" />

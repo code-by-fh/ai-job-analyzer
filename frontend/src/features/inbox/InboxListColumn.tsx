@@ -1,10 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 import type { JobListItem } from "@/api/jobList";
 import type { SetupStatus } from "@/api/setup";
-import { inboxHref } from "@/domain/inbox";
 import { useI18n } from "@/i18n/useI18n";
 import { TabPanel } from "@/ui/Tabs";
 import { DueCard } from "./DueCard";
@@ -54,28 +52,13 @@ function ListArea({ gate, ...panel }: ListPanelProps & { gate: DueGate }) {
   return <ListPanel {...panel} />;
 }
 
-function ListPanel({ url, setup, renderRow, onShowBelow }: ListPanelProps) {
+function ListPanel({ url, renderRow, onShowBelow }: ListPanelProps) {
   return (
     <>
       <TabPanel idPrefix={INBOX_TABS_ID} selected={url.tab}>
         {url.tab === "below" ? <ThresholdPanel /> : null}
         <InboxList tab={url.tab} renderRow={renderRow} onShowBelow={onShowBelow} />
       </TabPanel>
-      {/* Without a status the setup view could not open: no dead link. */}
-      {setup ? <SetupLink /> : null}
     </>
-  );
-}
-
-/** Decision D6: the onboarding stays reachable once the inbox has taken its place. */
-function SetupLink() {
-  const { t } = useI18n();
-  return (
-    <p className="list-foot">
-      {/* replace (decision D1): Back leaves the inbox instead of walking through its views. */}
-      <Link className="link" href={inboxHref({ tab: "new", setup: true })} replace>
-        {t("inbox.setupLink")}
-      </Link>
-    </p>
   );
 }

@@ -46,3 +46,23 @@ export async function isDimmedByScrim(panel: Locator): Promise<boolean> {
       [x, y],
     );
 }
+
+/**
+ * Clicks an element inside a frame on the zoomed A4 page (ui/A4Preview). Playwright maps a frame's
+ * element box without an ancestor's CSS zoom, so its own click lands off the page; this scales
+ * the element's frame coordinates by the frame's displayed size, as the browser does for a user.
+ */
+export async function clickInZoomedFrame(
+  page: Page,
+  frameSelector: string,
+  element: Locator,
+): Promise<void> {
+  const frame = await page.locator(frameSelector).boundingBox();
+  if (!frame) throw new Error(`frame ${frameSelector} is not visible`);
+  const spot = await element.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, inner: window.innerWidth };
+  });
+  const scale = frame.width / spot.inner;
+  await page.mouse.click(frame.x + spot.x * scale, frame.y + spot.y * scale);
+}

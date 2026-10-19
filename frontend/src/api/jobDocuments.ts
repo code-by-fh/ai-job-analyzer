@@ -72,10 +72,12 @@ export async function saveDocumentHtml(
   await api.request(htmlPath(jobId, kind), anyBodySchema, { method: "PUT", json: { html } });
 }
 
-/** Queues the PDF re-render; it ends with job_update {rendered_kind}. */
-export async function renderDocument(jobId: string, kind: DocumentKind): Promise<void> {
-  const path = `${documentsPath(jobId)}/render${kindQuery(kind)}`;
-  await api.request(path, anyBodySchema, { method: "POST" });
+/** The PDF rendered by the server from the current HTML; nothing is stored (Task 12). */
+export async function downloadDocumentPdf(
+  jobId: string,
+  kind: DocumentKind,
+): Promise<DownloadedFile> {
+  return fetchFile(`${documentsPath(jobId)}/pdf${kindQuery(kind)}`);
 }
 
 export async function generatePackage(jobId: string, request: PackageRequest): Promise<void> {

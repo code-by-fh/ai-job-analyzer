@@ -53,8 +53,7 @@ function show(job: JobDetail, seedCache = false, overrides: Record<string, unkno
   const calls = stubRoutes({
     "GET /jobs/job-1/history": [],
     "GET /jobs/job-1/documents": DOCUMENTS,
-    "GET /jobs/job-1/documents/4/download": pdf,
-    "GET /jobs/job-1/documents/5/download": pdf,
+    "GET /jobs/job-1/documents/pdf": pdf,
     "PATCH /jobs/job-1": { status: "updated" },
     "POST /jobs/job-1/status": (call: RecordedCall) =>
       jsonResponse(200, { ...job, status: JSON.parse(call.body ?? "").to }),
@@ -145,7 +144,14 @@ describe("ApplyChecklist", () => {
         { checklist: { posting_opened: false, documents_checked: true, sent: false } },
       ]),
     );
-    expect(calls.filter((call) => call.url.endsWith("/download"))).toHaveLength(2);
+    // Rendered from the current HTML; the stored PDFs of the fixture are not used.
+    expect(
+      calls.filter((call) => call.url.includes("/documents/pdf?kind=")).map((call) => call.url),
+    ).toEqual([
+      "http://api.test/jobs/job-1/documents/pdf?kind=cv",
+      "http://api.test/jobs/job-1/documents/pdf?kind=cover_letter",
+    ]);
+    expect(calls.some((call) => call.url.endsWith("/download"))).toBe(false);
   });
 
   it("marks as applied today and suggests a follow-up date", async () => {
@@ -339,20 +345,23 @@ describe("download step", () => {
     await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:file"));
   });
 
-  it("shows the Drive message and does not tick when a file is not downloadable", async () => {
+  it("explains a PDF the server could not render and does not tick", async () => {
     const calls = show(buildJob(READY), false, {
-      "GET /jobs/job-1/documents/4/download": () => jsonResponse(400, { detail: "drive" }),
+      "GET /jobs/job-1/documents/pdf": () => jsonResponse(422, { detail: "pdf_render_failed" }),
     });
     await userEvent.click(screen.getByRole("button", { name: "Beide PDFs herunterladen" }));
     expect(
-      await screen.findByText("Dateien aus Google Drive lassen sich hier noch nicht öffnen."),
+      await screen.findByText(
+        "Das PDF ließ sich nicht erzeugen. Das Dokument ist vermutlich zu groß.",
+      ),
     ).toBeInTheDocument();
     expect(patches(calls)).toEqual([]);
   });
 
   it("does not tick when the second download fails", async () => {
     const calls = show(buildJob(READY), false, {
-      "GET /jobs/job-1/documents/5/download": () => jsonResponse(500, { detail: "x" }),
+      "GET /jobs/job-1/documents/pdf": (call: RecordedCall) =>
+        call.url.endsWith("kind=cover_letter") ? jsonResponse(500, { detail: "x" }) : pdf(),
     });
     await userEvent.click(screen.getByRole("button", { name: "Beide PDFs herunterladen" }));
     await waitFor(() =>
@@ -360,15 +369,6 @@ describe("download step", () => {
         "aria-busy",
       ),
     );
-    expect(patches(calls)).toEqual([]);
-  });
-
-  it("does not tick when there is nothing to download", async () => {
-    const calls = show(buildJob(READY), false, { "GET /jobs/job-1/documents": [] });
-    await userEvent.click(screen.getByRole("button", { name: "Beide PDFs herunterladen" }));
-    expect(
-      await screen.findByText("Es gibt noch keine Unterlagen zum Herunterladen."),
-    ).toBeInTheDocument();
     expect(patches(calls)).toEqual([]);
   });
 });

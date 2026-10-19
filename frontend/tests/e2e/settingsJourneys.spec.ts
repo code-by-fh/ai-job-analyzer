@@ -1,12 +1,15 @@
 import type { Locator, Page } from "@playwright/test";
+import { CHANNELS_PATH, channelPath } from "../../src/api/notificationPaths";
 import { NOTIFICATION_TEMPLATES_PATH, platformPath } from "../../src/api/platformPaths";
 import { SECRET_MASK } from "../../src/api/profilePaths";
 import { fixNow } from "./support/jobFixtures";
 import type { ApiLog } from "./support/mockApi";
+import { CHANNEL_SECRETS, SMTP_CHANNEL } from "./support/notificationFixtures";
+import { NotificationServer } from "./support/notificationServer";
 import { STEPSTONE } from "./support/platformFixtures";
 import { E2E_SECRETS } from "./support/profileFixtures";
 import { ProfileServer, profileRoutes } from "./support/profileServer";
-import { settingsRow, type SettingsRow } from "./support/settingsFixtures";
+import type { SettingsRow } from "./support/settingsFixtures";
 import { SettingsServer, settingsRoutes } from "./support/settingsServer";
 import { SourcesServer, sourcesRoutes } from "./support/sourcesServer";
 import { expect, SANDBOX_PROBE, test } from "./support/test";
@@ -20,18 +23,22 @@ const SOURCE_URL = `/sources?quelle=${STEPSTONE.id}`;
 const SMTP_HOST = "mail.example.org";
 const GOAL_KEYS = ["location", "min_salary", "preferences", "role", "skills", "spoken_languages"];
 // What neither page may change in the shared row (ruling 34).
-const KEPT_KEYS = [
-  ...Object.keys(E2E_SECRETS),
-  "active_storage_service",
-  "google_drive_email",
-  "email_global_recipient",
+const KEPT_KEYS = [...Object.keys(E2E_SECRETS), "email_global_recipient"];
+const LEAKS = [
+  SECRET_MASK,
+  ...Object.values(E2E_SECRETS),
+  ...Object.values(CHANNEL_SECRETS).flatMap(Object.values),
 ];
-const LEAKS = [SECRET_MASK, ...Object.values(E2E_SECRETS)];
-const NO_MAILJET = { mailjet_api_key: null, mailjet_secret_key: null, mailjet_from_email: null };
+const SMTP_PATCH_KEY = `PATCH ${channelPath(SMTP_CHANNEL.id)}`;
 const MAILJET = {
-  mailjet_api_key: "mj-key-typed",
-  mailjet_secret_key: "mj-secret-typed",
-  mailjet_from_email: "mj@example.com",
+  type: "mailjet",
+  name: "Mailjet Jobs",
+  fields: {
+    api_key: "mj-key-typed",
+    secret_key: "mj-secret-typed",
+    from_email: "mj@example.com",
+    recipients: ["mj@example.com"],
+  },
 };
 const WEEKLY = { name: "Wochenmail", content: "{{#jobs}}$title{{/jobs}}" };
 const WEEKLY_EDITED = "{{#jobs}}$title bei $company{{/jobs}}";
@@ -39,7 +46,7 @@ const RECIPIENT = "ich@example.com";
 const COPY_HINT =
   "Quellen behalten ihre Kopie. Wähle die Vorlage in der Quelle erneut, damit sie den geänderten Text verwendet.";
 const KEPT_COPY = "Eigene Vorlage (beibehalten)";
-// Ruling 34: the Tab walk to "SMTP ändern" is bounded.
+// Ruling 34: the Tab walk to "Firmen-SMTP bearbeiten" is bounded.
 const MAX_TABS = 15;
 
 const heading = (page: Page) => page.getByRole("heading", { level: 2, name: "Benachrichtigungen" });
@@ -53,7 +60,7 @@ const bodiesOf = (log: ApiLog, key: string) =>
 async function openNotifications(page: Page): Promise<void> {
   await page.goto(NOTIFICATIONS_URL);
   await expect(heading(page)).toBeVisible();
-  await expect(button(page, "SMTP ändern")).toBeVisible();
+  await expect(button(page, "Firmen-SMTP bearbeiten")).toBeVisible();
 }
 
 /** No channel form is open here: a typed secret would sit in an input's value until close. */
@@ -67,19 +74,25 @@ async function expectNoSecret(page: Page, log: ApiLog): Promise<void> {
 }
 
 async function changeSmtpHost(page: Page): Promise<void> {
-  await button(page, "SMTP ändern").click();
-  await form(page, "SMTP").getByLabel("Server").fill(SMTP_HOST);
-  await form(page, "SMTP").getByRole("button", { name: "Speichern" }).click();
-  await expect(page.getByText(`Eingerichtet · ${SMTP_HOST}`)).toBeVisible();
+  await button(page, "Firmen-SMTP bearbeiten").click();
+  await form(page, "Firmen-SMTP").getByLabel("SMTP-Server").fill(SMTP_HOST);
+  await form(page, "Firmen-SMTP").getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Gespeichert.")).toBeVisible();
+}
+
+async function expectSmtpHost(page: Page): Promise<void> {
+  await button(page, "Firmen-SMTP bearbeiten").click();
+  await expect(form(page, "Firmen-SMTP").getByLabel("SMTP-Server")).toHaveValue(SMTP_HOST);
+  await button(page, "Firmen-SMTP schließen").click();
 }
 
 /** Opened without typing: nothing to save, so nothing is sent. */
 async function openPushoverUntouched(page: Page): Promise<void> {
-  await button(page, "Pushover ändern").click();
-  const save = form(page, "Pushover").getByRole("button", { name: "Speichern" });
+  await button(page, "Mein Handy bearbeiten").click();
+  const save = form(page, "Mein Handy").getByRole("button", { name: "Speichern" });
   await expect(save).toHaveAttribute("aria-disabled", "true");
-  await button(page, "Pushover schließen").click();
-  await expect(button(page, "Pushover ändern")).toHaveAttribute("aria-expanded", "false");
+  await button(page, "Mein Handy schließen").click();
+  await expect(button(page, "Mein Handy bearbeiten")).toHaveAttribute("aria-expanded", "false");
 }
 
 async function saveGoalAndDefault(page: Page, profile: ProfileServer): Promise<void> {
@@ -120,32 +133,31 @@ test("profile save (notification credentials survive): SMTP host, Ziel and a def
   await expectNoSecret(page, log);
   await openNotifications(page);
   await page.reload();
-  await expect(page.getByText(`Eingerichtet · ${SMTP_HOST}`)).toBeVisible();
+  await expectSmtpHost(page);
   await expectNoSecret(page, log);
-  expect(settings.saved).toEqual([{ smtp_host: SMTP_HOST }]);
+  expect(bodiesOf(log, SMTP_PATCH_KEY)).toEqual([{ fields: { host: SMTP_HOST } }]);
   expect(profile.saved.map((body) => Object.keys(body).sort())).toEqual([GOAL_KEYS]);
   expectRowKept(profile.profile, before);
 });
 
 async function setUpMailjet(page: Page, log: ApiLog): Promise<void> {
-  await button(page, "Mailjet einrichten").click();
-  const mailjet = form(page, "Mailjet");
-  await mailjet.getByLabel("API-Schlüssel").fill(MAILJET.mailjet_api_key);
-  await mailjet.getByLabel("Secret Key").fill(MAILJET.mailjet_secret_key);
-  await mailjet.getByLabel("Absender").fill(MAILJET.mailjet_from_email);
+  await button(page, "Kanal hinzufügen").click();
+  const mailjet = form(page, "Neuer Kanal");
+  await mailjet.getByLabel("Art").selectOption({ label: "E-Mail (Mailjet)" });
+  await mailjet.getByLabel("Name").fill(MAILJET.name);
+  await mailjet.getByLabel("API-Schlüssel").fill(MAILJET.fields.api_key);
+  await mailjet.getByLabel("Secret Key").fill(MAILJET.fields.secret_key);
+  await mailjet.getByLabel("Absender-Adresse").fill(MAILJET.fields.from_email);
+  await mailjet.getByLabel("Empfänger").fill(MAILJET.fields.recipients[0]!);
   await mailjet.getByRole("button", { name: "Speichern" }).click();
-  await expect(page.getByText("Eingerichtet · mj@example.com")).toBeVisible();
-  expect(bodiesOf(log, "POST /notification-settings")).toEqual([MAILJET]);
+  await expect(page.getByText("Kanal angelegt.")).toBeVisible();
+  expect(bodiesOf(log, `POST ${CHANNELS_PATH}`)).toEqual([MAILJET]);
 }
 
 async function testMailjet(page: Page, settings: SettingsServer): Promise<void> {
-  await button(page, "Test über Mailjet senden").click();
-  const dialog = page.getByRole("dialog", { name: "Test-E-Mail senden" });
-  await expect(dialog.getByLabel("Empfänger")).toHaveValue("me@example.com");
-  await dialog.getByRole("button", { name: "Senden" }).click();
-  await expect(page.getByText("Test über Mailjet gesendet.")).toBeVisible();
-  // Ruling 36: the fake records {channel, recipient}.
-  expect(settings.tests.map((call) => call.channel)).toEqual(["MAILJET"]);
+  await button(page, `Test über ${MAILJET.name} senden`).click();
+  await expect(page.getByText(`Test über ${MAILJET.name} gesendet.`)).toBeVisible();
+  expect(settings.notifications.tests).toHaveLength(1);
 }
 
 test("settings channels: set up Mailjet from a source, test it, then the source can use it", async ({
@@ -153,17 +165,20 @@ test("settings channels: set up Mailjet from a source, test it, then the source 
   mockApi,
 }) => {
   await fixNow(page);
-  const settings = new SettingsServer(settingsRow(NO_MAILJET));
-  const log = await mockApi(sourcesRoutes(new SourcesServer(), settingsRoutes(settings, {}, {})));
+  const settings = new SettingsServer(undefined, new NotificationServer([]));
+  const sources = new SourcesServer();
+  const log = await mockApi(sourcesRoutes(sources, settingsRoutes(settings, {}, {})));
   await page.goto(SOURCE_URL);
-  await expect(notify(page).getByLabel("Mailjet benachrichtigen")).toBeDisabled();
+  await expect(notify(page).getByText(/Noch kein Kanal eingerichtet/)).toBeVisible();
   await drawer(page).getByRole("link", { name: "In den Einstellungen einrichten" }).click();
   await expect(heading(page)).toBeVisible();
   await setUpMailjet(page, log);
   await testMailjet(page, settings);
   await page.goBack();
-  await expect(notify(page).getByLabel("Mailjet benachrichtigen")).toBeEnabled();
-  await expect(drawer(page).getByText("Noch nicht eingerichtet.")).toHaveCount(0);
+  await notify(page).getByLabel(`${MAILJET.name} benachrichtigen`).check();
+  await notify(page).getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Gespeichert.")).toBeVisible();
+  expect(sources.get(STEPSTONE.id).notification_channel_ids).toEqual(settings.notifications.ids());
 });
 
 async function createWeekly(page: Page, log: ApiLog): Promise<void> {
@@ -186,12 +201,12 @@ async function createWeekly(page: Page, log: ApiLog): Promise<void> {
   ]);
 }
 
-const resendSelect = (page: Page) => notify(page).getByLabel("Vorlage für Resend");
+const resendSelect = (page: Page) => notify(page).getByLabel("Vorlage für E-Mail (Resend)");
 
 async function pickWeeklyInSource(page: Page, log: ApiLog): Promise<void> {
   await page.goto(SOURCE_URL);
-  await notify(page).getByLabel("Resend benachrichtigen").check();
-  await notify(page).getByLabel("Empfänger").fill(RECIPIENT);
+  await notify(page).getByLabel("Bewerbungs-Mail benachrichtigen").check();
+  await notify(page).getByLabel("Empfänger für E-Mail (Resend)").fill(RECIPIENT);
   await resendSelect(page).selectOption({ label: WEEKLY.name });
   await notify(page).getByRole("button", { name: "Speichern" }).click();
   await expect(page.getByText("Gespeichert.")).toBeVisible();
@@ -240,6 +255,7 @@ test.describe("template round trip", () => {
     await editWeekly(page, log, id);
     await deleteWeekly(page);
     await page.goto(SOURCE_URL);
+    await notify(page).getByLabel("Bewerbungs-Mail benachrichtigen").check();
     await expect(resendSelect(page).locator("option", { hasText: WEEKLY.name })).toHaveCount(0);
     await expect(resendSelect(page).locator("option:checked")).toHaveText(KEPT_COPY);
     expect(sources.get(STEPSTONE.id).resend_template).toBe(WEEKLY.content);
@@ -274,12 +290,12 @@ async function openSmtpByKeyboard(page: Page): Promise<void> {
   await expect(subNav.getByRole("link", { name: "Benachrichtigungen" })).toBeFocused();
   await press(page, "Enter");
   await expect(heading(page)).toBeVisible();
-  await tabTo(page, button(page, "SMTP ändern"));
+  await tabTo(page, button(page, "Firmen-SMTP bearbeiten"));
   await press(page, "Enter");
-  await expect(button(page, "SMTP schließen")).toHaveAttribute("aria-expanded", "true");
+  await expect(button(page, "Firmen-SMTP schließen")).toHaveAttribute("aria-expanded", "true");
 }
 
-test("keyboard only: from the sub-nav to a saved SMTP host and a closed test dialog", async ({
+test("keyboard only: from the sub-nav to a saved SMTP host and a test send", async ({
   page,
   mockApi,
 }) => {
@@ -288,17 +304,17 @@ test("keyboard only: from the sub-nav to a saved SMTP host and a closed test dia
   await page.goto("/settings");
   await openSmtpByKeyboard(page);
   await press(page, "Tab");
-  await expect(form(page, "SMTP").getByLabel("Server")).toBeFocused();
+  await expect(form(page, "Firmen-SMTP").getByLabel("Name", { exact: true })).toBeFocused();
+  await press(page, "Tab");
+  await expect(form(page, "Firmen-SMTP").getByLabel("SMTP-Server")).toBeFocused();
   await press(page, "ControlOrMeta+a");
   await typeKeys(page, SMTP_HOST);
   await press(page, "Enter");
-  await expect(button(page, "SMTP ändern")).toBeFocused();
-  expect(settings.profile.smtp_host).toBe(SMTP_HOST);
+  await expect(button(page, "Firmen-SMTP bearbeiten")).toBeFocused();
+  expect(settings.notifications.valueOf(SMTP_CHANNEL.id, "host")).toBe(SMTP_HOST);
   await press(page, "Shift+Tab");
-  await expect(button(page, "Test über SMTP senden")).toBeFocused();
+  await expect(button(page, "Test über Firmen-SMTP senden")).toBeFocused();
   await press(page, "Enter");
-  await expect(page.getByRole("dialog", { name: "Test-E-Mail senden" })).toBeVisible();
-  await press(page, "Escape");
-  await expect(page.getByRole("dialog", { name: "Test-E-Mail senden" })).toHaveCount(0);
-  await expect(button(page, "Test über SMTP senden")).toBeFocused();
+  await expect(page.getByText("Test über Firmen-SMTP gesendet.")).toBeVisible();
+  await expect(button(page, "Test über Firmen-SMTP senden")).toBeFocused();
 });

@@ -6,13 +6,12 @@ import {
   PLATFORM_SETUP_PATH,
   PLATFORMS_PATH,
   PREVIEW_LINKS_PATH,
+  URL_PATTERN_PATH,
   platformCrawlPath,
   platformNamePath,
   platformPath,
   platformRunsPath,
-  platformTestPath,
   type InitialRun,
-  type NotifyChannel,
 } from "./platformPaths";
 import { queryKeys } from "./queryKeys";
 
@@ -34,14 +33,17 @@ export const platformSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   url: z.string(),
+  // The target site's icon (the server builds a Google favicon address); absent on legacy rows.
+  favicon_url: z.string().nullish(),
   is_active: z.boolean().default(true),
   setup_status: z.string().default("active"),
   url_pattern: z.string().nullish(),
-  schedule_time: z.string().nullish(),
+  schedule_times: z.array(z.string()).nullish().catch(null),
   schedule_days: z.array(z.number().int()).nullish().catch(null),
   last_crawl_at: z.string().nullish(),
   last_run: lastRunSchema.nullish().catch(null),
-  notification_adapters: stringList,
+  // The selected channels of the user, in the order chosen (feedback 1 T16).
+  notification_channel_ids: stringList,
   pushover_template: z.string().nullish(),
   resend_template: z.string().nullish(),
   resend_recipients: stringList,
@@ -59,9 +61,10 @@ export interface PlatformPatch {
   url?: string;
   url_pattern?: string;
   is_active?: boolean;
-  schedule_time?: string | null;
+  schedule_times?: string[] | null;
   schedule_days?: number[] | null;
-  notification_adapters?: NotifyChannel[];
+  /** Ids of the user's channels; [] switches notifications off (at most 20). */
+  notification_channel_ids?: string[];
   pushover_template?: string | null;
   resend_template?: string | null;
   mailjet_template?: string | null;
@@ -110,12 +113,6 @@ export async function suggestPlatformName(id: number): Promise<string> {
   return (await api.request(platformNamePath(id), nameSchema, { method: "POST" })).name;
 }
 
-const sentSchema = z.object({ ok: z.boolean() });
-
-export async function sendPlatformTest({ id, channel }: { id: number; channel: NotifyChannel }) {
-  await api.request(platformTestPath(id, channel), sentSchema, { method: "POST" });
-}
-
 const runSchema = z.object({
   started_at: z.string().nullish(),
   finished_at: z.string(),
@@ -157,14 +154,27 @@ export async function previewSourceLinks({
   return preview.links;
 }
 
+const patternSchema = z.object({ url_pattern: z.string() });
+
+/** The pattern the setup would store for these example links (server/routers/platforms.py). */
+export async function deriveUrlPattern(selected: readonly string[]): Promise<string> {
+  const derived = await api.request(URL_PATTERN_PATH, patternSchema, {
+    method: "POST",
+    json: { selected_urls: selected },
+  });
+  return derived.url_pattern;
+}
+
 export interface PlatformSetupRequest {
   url: string;
   selected_urls: string[];
   initial_run: InitialRun;
   name?: string;
-  schedule_time: string | null;
+  schedule_times: string[] | null;
   schedule_days: number[] | null;
-  url_pattern?: string;
+  url_pattern: string;
+  /** The user's own channels the new source reports through; left out when none is chosen. */
+  notification_channel_ids?: string[];
 }
 
 const setupSchema = platformSchema.extend({ initial_crawl_started: z.boolean().default(false) });

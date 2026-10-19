@@ -13,7 +13,6 @@ const LINKS = [
   { url: "https://x.de/jobsuche/p/kotlin-2", text: "Kotlin" },
   { url: "https://x.de/unternehmen/top", text: "Unternehmen entdecken" },
 ];
-const ALL_URLS = LINKS.map((link) => link.url);
 const run = (...actions: WizardAction[]): WizardState =>
   actions.reduce(wizardReducer, INITIAL_WIZARD);
 const loaded = (): WizardAction[] => [
@@ -21,10 +20,33 @@ const loaded = (): WizardAction[] => [
   { type: "linksLoaded", links: LINKS },
 ];
 
+const PATTERN = "/jobsuche/p/";
+const confirmed = (pattern = PATTERN): WizardAction[] => [
+  { type: "toggle", url: LINKS[0]!.url },
+  { type: "confirmPattern", pattern },
+  { type: "next", pattern },
+];
+
 describe("wizard state", () => {
-  it("found links open step 2 with the job links preselected", () => {
+  it("found links open step 2 with nothing preselected", () => {
     const state = run(...loaded());
-    expect([state.step, state.selected]).toEqual([2, [LINKS[0]!.url, LINKS[1]!.url]]);
+    expect([state.step, state.selected]).toEqual([2, []]);
+  });
+
+  it("a new check drops the earlier choice, typed pattern and confirmation", () => {
+    const state = run(
+      ...loaded(),
+      { type: "toggle", url: LINKS[0]!.url },
+      { type: "pattern", pattern: "/p/" },
+      { type: "confirmPattern", pattern: "/p/" },
+      { type: "linksLoaded", links: LINKS },
+    );
+    expect([state.selected, state.customPattern, state.confirmedPattern]).toEqual([[], null, null]);
+  });
+
+  it("Weiter with a chosen link and the confirmed pattern keeps that pattern for the setup", () => {
+    const state = run(...loaded(), ...confirmed(` ${PATTERN} `));
+    expect([state.step, state.pattern, state.errors]).toEqual([3, PATTERN, {}]);
   });
 
   it("Zurück and Weiter keep every entry", () => {
@@ -32,39 +54,67 @@ describe("wizard state", () => {
       ...loaded(),
       { type: "toggle", url: LINKS[2]!.url },
       { type: "pattern", pattern: "/p/" },
+      ...confirmed("/p/"),
       { type: "back" },
-      { type: "next" },
     );
-    expect([state.step, state.selected.length, state.pattern]).toEqual([2, 3, "/p/"]);
+    expect([state.step, state.selected.length, state.customPattern]).toEqual([2, 2, "/p/"]);
   });
 
   it("Weiter needs a link", () => {
-    const state = run(...loaded(), { type: "selectNone", urls: ALL_URLS }, { type: "next" });
+    const state = run(...loaded(), { type: "next", pattern: PATTERN });
     expect([state.step, state.errors.links]).toEqual([2, "sources.wizard.pickOne"]);
   });
 
-  it("filters over text and path, and select all only takes the visible ones", () => {
-    const filtered = run(
+  it("Weiter needs a valid pattern", () => {
+    const state = run(...loaded(), ...confirmed("/"));
+    expect([state.step, state.errors.url_pattern]).toEqual([2, "sources.error.pattern"]);
+  });
+
+  it("Weiter needs the shown pattern confirmed; a confirmation of another pattern does not count", () => {
+    const unconfirmed = run(
       ...loaded(),
-      { type: "selectNone", urls: ALL_URLS },
-      { type: "filter", filter: "kotlin" },
+      { type: "toggle", url: LINKS[0]!.url },
+      {
+        type: "next",
+        pattern: PATTERN,
+      },
     );
+    const stale = run(
+      ...loaded(),
+      { type: "toggle", url: LINKS[0]!.url },
+      { type: "confirmPattern", pattern: "/jobsuche/" },
+      { type: "next", pattern: PATTERN },
+    );
+    expect([unconfirmed.step, unconfirmed.errors.patternConfirm]).toEqual([
+      2,
+      "sources.wizard.patternConfirm",
+    ]);
+    expect(stale.step).toBe(2);
+  });
+
+  it("Weiter is refused while the pattern for a changed selection is still derived", () => {
+    const state = run(
+      ...loaded(),
+      { type: "toggle", url: LINKS[0]!.url },
+      { type: "confirmPattern", pattern: PATTERN },
+      { type: "next", pattern: null },
+    );
+    expect([state.step, state.errors.patternConfirm]).toEqual([2, "sources.wizard.patternWait"]);
+  });
+
+  it("filters over text and path, and select all only takes the visible ones", () => {
+    const filtered = run(...loaded(), { type: "filter", filter: "kotlin" });
     expect(visibleLinks(filtered).map((link) => link.text)).toEqual(["Kotlin"]);
     const urls = visibleLinks(filtered).map((link) => link.url);
     expect(wizardReducer(filtered, { type: "selectAll", urls }).selected).toEqual([LINKS[1]!.url]);
   });
 
-  it("server field errors jump to the earliest step and open Erweitert for the pattern", () => {
-    const state = run(
-      ...loaded(),
-      { type: "next" },
-      { type: "serverErrors", fields: ["name", "url_pattern"] },
-    );
-    expect([state.step, state.advancedOpen, state.errors.url_pattern]).toEqual([
-      2,
-      true,
-      "sources.error.pattern",
-    ]);
+  it("server field errors jump to the earliest step that holds one", () => {
+    const state = run(...loaded(), ...confirmed(), {
+      type: "serverErrors",
+      fields: ["name", "url_pattern"],
+    });
+    expect([state.step, state.errors.url_pattern]).toEqual([2, "sources.error.pattern"]);
   });
 
   it("is dirty from the first typed character", () => {

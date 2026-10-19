@@ -23,30 +23,29 @@ const RUNNING_CRAWL = {
 };
 
 describe("useActivity", () => {
-  it("keeps the last finished task when a reconnect re-seeds from the scraper", async () => {
+  it("keeps the finished runs when a reconnect re-seeds from the scraper", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse(200, { jobs: [RUNNING_CRAWL] })),
     );
     const queryClient = createTestQueryClient();
-    const lastFinished = {
-      id: "c0",
-      source: "de.indeed.com",
-      outcome: "failed" as const,
-      finishedAt: FINISHED_AT,
-      platformId: null,
-    };
-    queryClient.setQueryData<ActivityState>(queryKeys.activity, {
-      ...EMPTY_ACTIVITY,
-      lastFinished,
-    });
+    const finished = [
+      {
+        id: "c0",
+        source: "de.indeed.com",
+        outcome: "failed" as const,
+        finishedAt: FINISHED_AT,
+        platformId: null,
+      },
+    ];
+    queryClient.setQueryData<ActivityState>(queryKeys.activity, { ...EMPTY_ACTIVITY, finished });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useActivity(true), { wrapper });
     await queryClient.refetchQueries({ type: "active" });
     await waitFor(() => expect(result.current.running).toHaveLength(1));
-    expect(result.current.lastFinished).toEqual(lastFinished);
+    expect(result.current.finished).toEqual(finished);
   });
 });
 

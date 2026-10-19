@@ -1,5 +1,3 @@
-import type { DocumentKind } from "@/api/jobDocuments";
-
 export interface PendingTask {
   startedAt: number;
   failed: boolean;
@@ -10,15 +8,16 @@ export type PendingTasks = Readonly<Record<string, PendingTask>>;
 
 export const EMPTY_PENDING: PendingTasks = {};
 
-/** Interview prep and research publish no failure event (backend gap G6); after this, offer a retry. */
+/** Research publishes no failure event (backend gap G6); after this, offer a retry. */
 export const STALL_AFTER_MS = 180_000;
 
 export const pendingTaskId = {
   analysis: (jobId: string) => `analysis:${jobId}`,
   prep: (jobId: string) => `prep:${jobId}`,
   research: (domain: string) => `research:${domain}`,
-  render: (jobId: string, kind: DocumentKind) => `render:${jobId}:${kind}`,
-  renderPrefix: (jobId: string) => `render:${jobId}:`,
+  // A research started on a job: the domain may still be unknown (the server identifies it).
+  jobResearch: (jobId: string) => `job-research:${jobId}`,
+  postingDetails: (jobId: string) => `posting-details:${jobId}`,
   generation: (jobId: string) => `generation:${jobId}`,
 };
 
@@ -34,14 +33,6 @@ export function finishTask(tasks: PendingTasks, id: string): PendingTasks {
   const rest = { ...tasks };
   delete rest[id];
   return rest;
-}
-
-export function failTasks(tasks: PendingTasks, prefix: string): PendingTasks {
-  const next: Record<string, PendingTask> = {};
-  for (const [id, task] of Object.entries(tasks)) {
-    next[id] = id.startsWith(prefix) ? { ...task, failed: true } : task;
-  }
-  return next;
 }
 
 export function taskPhase(tasks: PendingTasks, id: string, now: number): TaskPhase {

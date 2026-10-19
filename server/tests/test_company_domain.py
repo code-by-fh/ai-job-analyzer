@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from database.core import JobEntry
-from services.company_domain import normalised_host, validate_company_domain
+from services.company_domain import is_job_board_or_redirect, normalised_host, validate_company_domain
 from tests.factories import TEST_USER_ID, OTHER_USER_ID, fetch, make_job, make_platform, make_profile, make_user
 from workers.tasks.analyze import analyze_job_task, save_job_basic_task
 
@@ -70,34 +70,29 @@ def run_save(session_factory, seed, fake_redis):
     return _run
 
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://www.Acme.de:8443/careers/1", "acme.de"),
-    ("https://jobs.acme.de/1", "jobs.acme.de"),
-    ("https://www.stepstone.de/stellenangebote/1", None),
-    ("https://www.indeed.com/viewjob?jk=1", "indeed.com"),
-    ("https://localhost/job", None),
-    ("https://www.acme.com./jobs/1", None),
-    ("not a url", None),
-])
-def test_basic_save_sets_company_domain_only_for_non_board_hosts(run_save, url, expected):
-    assert run_save(url) == expected
+# The posting host used to be stored as company domain, so a Google redirect link made google.com the
+# "default" the research then ran for. The domain now comes from the user or the AI identification only.
+POSTING_URLS = [
+    "https://www.google.com/url?q=https://jobs.bahn.de/1",
+    "https://www.Acme.de:8443/careers/1",
+    "https://www.indeed.com/viewjob?jk=1",
+]
 
 
-def test_job_board_host_of_the_job_platform_is_not_used(run_save):
-    assert run_save("https://stepstone.de/job/1", platform_id=12) is None
+@pytest.mark.parametrize("url", POSTING_URLS)
+def test_basic_save_never_takes_the_posting_host_as_company_domain(run_save, url):
+    assert run_save(url) is None
 
 
-@pytest.mark.parametrize("url,expected", [("https://acme.example/jobs/1", "acme.example"),
-                                          ("https://www.acme.com./jobs/1", None),
-                                          ("https://www.stepstone.de/jobs/1", None)])
-def test_analysis_sets_company_domain_only_for_non_board_hosts(session_factory, seed, fake_redis, url, expected):
+@pytest.mark.parametrize("url", POSTING_URLS)
+def test_analysis_never_takes_the_posting_host_as_company_domain(session_factory, seed, fake_redis, url):
     seed(make_user(), make_profile(), make_platform(url="https://www.stepstone.de/jobs"))
     with patch("workers.tasks.analyze.SessionLocal", session_factory), \
          patch("workers.tasks.analyze.redis.from_url", return_value=fake_redis), \
          patch("workers.tasks.analyze.get_client_and_model", return_value=(None, "m")), \
          patch("workers.tasks.analyze.analyze_job", return_value={"score": 80, "reasoning": "ok"}):
         analyze_job_task(_job_data(url))
-    assert fetch(session_factory, JobEntry, "job-1").company_domain == expected
+    assert fetch(session_factory, JobEntry, "job-1").company_domain is None
 
 
 def test_normalised_host_never_raises_for_trailing_dot_hosts():
@@ -113,3 +108,13 @@ def test_trailing_dot_company_path_domain_is_a_422(api_client, suffix):
 def test_patch_rejects_trailing_dot_company_domain(api_client, seed):
     seed(make_job())
     assert api_client.patch("/jobs/job-1", json={"company_domain": "example.com."}).status_code == 422
+
+
+@pytest.mark.parametrize("host", ["google.com", "stepstone.de", "de.indeed.com", "eur01.safelinks.protection.outlook.com"])
+def test_known_job_boards_and_redirectors_are_recognised(host):
+    assert is_job_board_or_redirect(host) is True
+
+
+@pytest.mark.parametrize("host", ["acme.de", "karriere.acme.de", "notgoogle.com", "bahn.de"])
+def test_employer_hosts_are_not_taken_for_job_boards(host):
+    assert is_job_board_or_redirect(host) is False

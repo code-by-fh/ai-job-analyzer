@@ -6,6 +6,7 @@ import type { MessageKey } from "@/i18n/de";
 import { useNow } from "@/lib/clock";
 import { useI18n } from "@/i18n/useI18n";
 import { cx } from "@/ui/cx";
+import { GenerationElapsed } from "../documents/GenerationNote";
 import { useJobFormat, type JobFormat } from "../format/useJobFormat";
 import { followUpLabel } from "../labels";
 import { NextStepActions } from "./NextStepActions";
@@ -29,11 +30,22 @@ export function NextStepCard({ job }: { job: JobDetail }) {
       </h2>
       <DueLine job={job} step={step} />
       <p className="next-text">{t(step.text)}</p>
+      <GenerationSince job={job} step={step} />
       <div className="next-actions">
         <NextStepActions job={job} step={step} />
         <NextStepExtras job={job} step={step} />
       </div>
     </section>
+  );
+}
+
+/** While the documents are written, how long that has been going on. */
+function GenerationSince({ job, step }: { job: JobDetail; step: NextStep }) {
+  if (step.kind !== "generating") return null;
+  return (
+    <p className="next-elapsed">
+      <GenerationElapsed job={job} className="is-bare" />
+    </p>
   );
 }
 

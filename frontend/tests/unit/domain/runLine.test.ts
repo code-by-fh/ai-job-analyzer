@@ -17,7 +17,7 @@ function platform(overrides: Partial<Platform> = {}): Platform {
     url: "https://www.stepstone.de/jobs/kotlin",
     is_active: true,
     setup_status: "active",
-    schedule_time: null,
+    schedule_times: null,
     schedule_days: null,
     last_crawl_at: null,
     last_run: null,
@@ -89,28 +89,38 @@ describe("nextRunAt", () => {
   const now = new Date(2026, 9, 8, 10, 0);
 
   it("finds today's later slot", () => {
-    const schedule = platform({ schedule_time: "14:00", schedule_days: [3] });
+    const schedule = platform({ schedule_times: ["14:00"], schedule_days: [3] });
     expect(nextRunAt([schedule], now)).toEqual(new Date(2026, 9, 8, 14, 0));
   });
 
+  it("takes the first of several times still ahead today", () => {
+    const schedule = platform({ schedule_times: ["07:00", "12:30", "18:00"], schedule_days: [3] });
+    expect(nextRunAt([schedule], now)).toEqual(new Date(2026, 9, 8, 12, 30));
+  });
+
+  it("moves to the first time of the next weekday once today's times have passed", () => {
+    const schedule = platform({ schedule_times: ["06:00", "09:00"], schedule_days: [3, 4] });
+    expect(nextRunAt([schedule], now)).toEqual(new Date(2026, 9, 9, 6, 0));
+  });
+
   it("moves to the next scheduled weekday once today's slot has passed", () => {
-    const schedule = platform({ schedule_time: "07:00", schedule_days: [0] });
+    const schedule = platform({ schedule_times: ["07:00"], schedule_days: [0] });
     expect(nextRunAt([schedule], now)).toEqual(new Date(2026, 9, 12, 7, 0));
   });
 
   it("takes the earliest active, valid schedule", () => {
     const platforms = [
-      platform({ schedule_time: "18:00", schedule_days: [3] }),
-      platform({ schedule_time: "12:00", schedule_days: [3], is_active: false }),
-      platform({ schedule_time: "11:00", schedule_days: [] }),
-      platform({ schedule_time: "9:5", schedule_days: [3] }),
+      platform({ schedule_times: ["18:00"], schedule_days: [3] }),
+      platform({ schedule_times: ["12:00"], schedule_days: [3], is_active: false }),
+      platform({ schedule_times: ["11:00"], schedule_days: [] }),
+      platform({ schedule_times: ["9:5"], schedule_days: [3] }),
     ];
     expect(nextRunAt(platforms, now)).toEqual(new Date(2026, 9, 8, 18, 0));
   });
 
   it("wraps from Sunday to Monday", () => {
     const sunday = new Date(2026, 9, 11, 10, 0);
-    const schedule = platform({ schedule_time: "07:00", schedule_days: [0] });
+    const schedule = platform({ schedule_times: ["07:00"], schedule_days: [0] });
     expect(nextRunAt([schedule], sunday)).toEqual(new Date(2026, 9, 12, 7, 0));
   });
 
@@ -119,9 +129,11 @@ describe("nextRunAt", () => {
   });
 
   it("reads the schedule as the sources page does: unknown and repeated weekdays do not count", () => {
-    const schedule = platform({ schedule_time: "14:00", schedule_days: [9, 3, 3] });
+    const schedule = platform({ schedule_times: ["14:00"], schedule_days: [9, 3, 3] });
     expect(nextRunAt([schedule], now)).toEqual(new Date(2026, 9, 8, 14, 0));
-    expect(nextRunAt([platform({ schedule_time: "14:00", schedule_days: [9] })], now)).toBeNull();
+    expect(
+      nextRunAt([platform({ schedule_times: ["14:00"], schedule_days: [9] })], now),
+    ).toBeNull();
   });
 });
 

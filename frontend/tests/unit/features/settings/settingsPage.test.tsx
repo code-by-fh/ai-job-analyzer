@@ -73,18 +73,17 @@ describe("Einstellungen frame", () => {
     liveNavigation.reset("section=account");
     const calls = stubRoutes(settingsStubs());
     renderWithProviders(<SettingsPage />);
-    // Notification settings and the time zone are two queries on the one GET /settings; /me
-    // decides whether the Administration group shows (7b D1).
+    // The channel types and the user's channels come from /notifications/*; /me decides whether
+    // the Administration group shows (7b D1).
     await waitFor(() => {
       const paths = calls.map((call) => new URL(call.url).pathname).sort();
       expect(paths).toEqual([
         "/me",
-        "/notification-settings/channels",
         "/notification-templates",
+        "/notifications/channel-types",
+        "/notifications/channels",
         "/platforms",
         "/settings",
-        "/settings",
-        "/storage/status",
       ]);
     });
   });

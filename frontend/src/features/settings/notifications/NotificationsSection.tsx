@@ -4,11 +4,10 @@ import { useI18n } from "@/i18n/useI18n";
 import type { SettingsSectionProps } from "../SettingsPage";
 import { SettingsSectionFrame } from "../SettingsSectionFrame";
 import { ChannelList } from "./ChannelList";
-import { RecipientForm } from "./RecipientForm";
 import { SourceOverview } from "./SourceOverview";
 import { TemplateLibrary } from "./templates/TemplateLibrary";
 
-/** Benachrichtigungen: Kanäle, Standard-Empfänger, Vorlagen, Pro Quelle (ruling 1.14). */
+/** Benachrichtigungen: Kanäle (each with its default recipients), Vorlagen, Pro Quelle. */
 export function NotificationsSection({ report }: SettingsSectionProps) {
   const { t } = useI18n();
   return (
@@ -20,7 +19,6 @@ export function NotificationsSection({ report }: SettingsSectionProps) {
           </h3>
           <ChannelList report={report} />
         </section>
-        <RecipientForm report={report} />
         <TemplateLibrary report={report} />
         <SourceOverview />
       </div>

@@ -10,7 +10,16 @@ import { ContactRows } from "./ContactRows";
 import { DateFields, RecruiterFields, SalaryFields } from "./DatesFields";
 import { useDatesSubmit } from "./useDatesSubmit";
 
-export function DatesDrawer({ job, onClose }: { job: JobDetail; onClose: () => void }) {
+/** The field the drawer opens on; without one the ModalLayer focuses the first control. */
+export type DatesFocus = "interviewAt";
+
+interface DatesDrawerProps {
+  job: JobDetail;
+  focus?: DatesFocus;
+  onClose: () => void;
+}
+
+export function DatesDrawer({ job, focus, onClose }: DatesDrawerProps) {
   const { t } = useI18n();
   const { form, setForm, submit, error, saving } = useDatesSubmit(job, onClose);
   const fields = { form, setForm, error };
@@ -18,7 +27,7 @@ export function DatesDrawer({ job, onClose }: { job: JobDetail; onClose: () => v
     <Drawer open onClose={onClose} label={t("dates.title")} variant="narrow">
       <form className="panel-in" onSubmit={submit} noValidate>
         <PanelHeader title={t("dates.title")} onClose={onClose} />
-        <DateFields {...fields} followUpName={t(followUpLabel(job))} />
+        <DateFields {...fields} followUpName={t(followUpLabel(job))} focus={focus} />
         <ContactRows {...fields} />
         <RecruiterFields {...fields} />
         <SalaryFields {...fields} />

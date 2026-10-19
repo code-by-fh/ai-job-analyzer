@@ -7,6 +7,7 @@ import { ApiError } from "@/api/errors";
 import { PageSkeleton } from "@/ui/Skeleton";
 import { UnsavedChangesProvider } from "@/ui/UnsavedChanges";
 import { BottomBar } from "./BottomBar";
+import { CrawlStrip } from "./crawl/CrawlStrip";
 import { GlobalSearch } from "./GlobalSearch";
 import { PageError } from "./PageError";
 import { RealtimeProvider } from "./RealtimeProvider";
@@ -14,7 +15,7 @@ import { Sidebar } from "./Sidebar";
 import { useCurrentUser } from "./useCurrentUser";
 import { useServerLanguageSync } from "./useServerLanguageSync";
 
-/** Frame of every signed-in page: sidebar (desktop), bottom bar (mobile), global search. */
+/** Frame of every signed-in page: sidebar (desktop), crawl strip and bottom bar (mobile), global search. */
 export function AppShell({ children }: { children: ReactNode }) {
   const session = useCurrentUser();
   return (
@@ -25,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="main" id="main" tabIndex={-1}>
           <ShellContent session={session}>{children}</ShellContent>
         </main>
+        <CrawlStrip signedIn={session.isSuccess} />
         <BottomBar signedIn={session.isSuccess} />
         <GlobalSearch />
       </div>

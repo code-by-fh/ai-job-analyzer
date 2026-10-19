@@ -9,6 +9,9 @@ import type { Translate } from "@/i18n/translate";
 import { useI18n } from "@/i18n/useI18n";
 import { useToast, type ToastApi } from "@/ui/ToastProvider";
 import { currentPhaseLabel } from "../labels";
+import { useCelebrate } from "../outcome/Celebration";
+import { useOpenTab } from "../tabs/JobTabs";
+import { tabAfterStatusChange } from "../tabs/jobTabs";
 
 export interface StatusChangeInput {
   to: UserStatus;
@@ -17,6 +20,8 @@ export interface StatusChangeInput {
 
 // 400 (system target) and 409 (locked state) both mean the server refused this phase.
 const REFUSED = { BAD_REQUEST: "phase.refused", CONFLICT: "phase.refused" } as const;
+// Feedback 1 T14: an accepted offer is celebrated, whichever control made the change.
+const STATUS_ACCEPTED = "ACCEPTED";
 
 function storeJob(queryClient: QueryClient, job: JobDetail): void {
   // A GET still in flight (e.g. realtime-triggered) carries the old status; it must not land after.
@@ -43,11 +48,17 @@ export function useChangeStatus(job: JobDetail) {
   const { t } = useI18n();
   const toast = useToast();
   const mutation = useStatusMutation(job);
+  const openTab = useOpenTab();
+  const celebrate = useCelebrate();
   // Errors are already toasted by the mutation; callers only need to know that it failed.
   const run = (change: StatusChange) => mutation.mutateAsync(change).catch(() => null);
   const changeStatus = async (input: StatusChangeInput): Promise<JobDetail | null> => {
     const updated = await run(input);
-    if (updated) announce({ toast, t, previous: job.status, updated, run });
+    if (!updated) return null;
+    announce({ toast, t, previous: job.status, updated, run });
+    const tab = tabAfterStatusChange(updated.status);
+    if (tab) openTab(tab);
+    if (updated.status === STATUS_ACCEPTED && job.status !== STATUS_ACCEPTED) celebrate();
     return updated;
   };
   return { changeStatus, isPending: mutation.isPending };

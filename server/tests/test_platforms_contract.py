@@ -1,6 +1,7 @@
 """Phase 5 contract of the platforms API (SSRF guard, crawl start, runs, writes, delete, channels)."""
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +28,12 @@ SETUP_BODY = {
     "url": "https://jobs.example.com/search",
     "selected_urls": ["https://jobs.example.com/job/1", "https://jobs.example.com/job/2"],
 }
+
+
+@pytest.fixture(autouse=True)
+def maintained_profile(seed):
+    """Sources need a maintained profile; the tests of the profile gate itself live in test_profile_gate.py."""
+    seed(make_profile())
 
 
 def _loc(response) -> list:
@@ -165,7 +172,7 @@ def _run_check(session_factory, answer: dict, checks: int = 1):
 
 
 def _scheduled_check(session_factory, seed, answer: dict):
-    seed(make_user(), make_platform(is_active=True, schedule_time="00:00", schedule_days=EVERY_DAY))
+    seed(make_user(), make_platform(is_active=True, schedule_times=["00:00"], schedule_days=EVERY_DAY))
     _run_check(session_factory, answer)
     return fetch(session_factory, JobPlatform, TEST_PLATFORM_ID)
 
@@ -231,31 +238,53 @@ def test_patch_writes_the_url_pattern(api_client, seed, session_factory):
 
 
 @pytest.mark.parametrize("body,field", [
-    ({"schedule_time": "24:00", "schedule_days": [0]}, "schedule_time"),
-    ({"schedule_time": "8:00", "schedule_days": [0]}, "schedule_time"),
-    ({"schedule_time": "08:00", "schedule_days": [7]}, "schedule_days"),
-    ({"schedule_time": "08:00", "schedule_days": [1, 1]}, "schedule_days"),
-    ({"schedule_time": "08:00", "schedule_days": []}, "schedule_days"),
+    ({"schedule_times": ["24:00"], "schedule_days": [0]}, "schedule_times"),
+    ({"schedule_times": ["8:00"], "schedule_days": [0]}, "schedule_times"),
+    ({"schedule_times": ["08:00"], "schedule_days": [7]}, "schedule_days"),
+    ({"schedule_times": ["08:00"], "schedule_days": [1, 1]}, "schedule_days"),
+    ({"schedule_times": ["08:00"], "schedule_days": []}, "schedule_days"),
+    ({"schedule_times": ["08:00", "08:00"], "schedule_days": [0]}, "schedule_times"),
+    ({"schedule_times": [], "schedule_days": [0]}, "schedule_times"),
+    ({"schedule_times": [f"{hour:02d}:00" for hour in range(7)], "schedule_days": [0]}, "schedule_times"),
     ({"name": "   "}, "name"),
     ({"url_pattern": "/"}, "url_pattern"),
 ])
-def test_patch_rejects_schedule_time_out_of_range_and_other_bad_values(api_client, seed, body, field):
+def test_patch_rejects_schedule_times_out_of_range_and_other_bad_values(api_client, seed, body, field):
     seed(make_platform())
     response = _patch(api_client, body)
     assert (response.status_code, _loc(response)) == (422, ["body", field])
 
 
+@pytest.mark.parametrize("time", ["08:00\n", "08:00\r\n", " 08:00"])
+def test_patch_rejects_a_time_with_surrounding_whitespace(api_client, seed, time):
+    seed(make_platform())
+    response = _patch(api_client, {"schedule_times": [time], "schedule_days": [0]})
+    assert (response.status_code, _loc(response)) == (422, ["body", "schedule_times"])
+
+
+def test_patch_stores_several_times_sorted(api_client, seed, session_factory):
+    seed(make_platform())
+    response = _patch(api_client, {"schedule_times": ["18:00", "07:30"], "schedule_days": [0]})
+    assert response.status_code == 200
+    assert fetch(session_factory, JobPlatform, TEST_PLATFORM_ID).schedule_times == ["07:30", "18:00"]
+
+
+def test_the_list_carries_the_favicon_url(api_client, seed):
+    seed(make_platform(favicon_url=OWN_FAVICON))
+    assert [platform["favicon_url"] for platform in api_client.get("/platforms").json()] == [OWN_FAVICON]
+
+
 def test_patch_rejects_a_time_without_days(api_client, seed):
     seed(make_platform())
-    response = _patch(api_client, {"schedule_time": "08:00"})
+    response = _patch(api_client, {"schedule_times": ["08:00"]})
     assert (response.status_code, _loc(response)) == (422, ["body", "schedule_days"])
 
 
 def test_patch_clears_the_schedule(api_client, seed, session_factory):
-    seed(make_platform(schedule_time="08:00", schedule_days=[0, 1]))
-    assert _patch(api_client, {"schedule_time": None, "schedule_days": None}).status_code == 200
+    seed(make_platform(schedule_times=["08:00"], schedule_days=[0, 1]))
+    assert _patch(api_client, {"schedule_times": None, "schedule_days": None}).status_code == 200
     platform = fetch(session_factory, JobPlatform, TEST_PLATFORM_ID)
-    assert (platform.schedule_time, platform.schedule_days) == (None, None)
+    assert (platform.schedule_times, platform.schedule_days) == (None, None)
 
 
 OWN_FAVICON = "https://cdn.example.com/icon.png"
@@ -284,11 +313,11 @@ def _setup(api_client, **fields):
 
 
 def test_setup_takes_name_schedule_and_pattern_without_asking_the_ai(api_client):
-    response, name = _setup(api_client, name="Kotlin Hamburg", schedule_time="07:30",
+    response, name = _setup(api_client, name="Kotlin Hamburg", schedule_times=["07:30"],
                             schedule_days=[0, 2, 4], url_pattern="/job/")
     body = response.json()
-    assert (body["name"], body["schedule_time"], body["schedule_days"], body["url_pattern"]) == (
-        "Kotlin Hamburg", "07:30", [0, 2, 4], "/job/",
+    assert (body["name"], body["schedule_times"], body["schedule_days"], body["url_pattern"]) == (
+        "Kotlin Hamburg", ["07:30"], [0, 2, 4], "/job/",
     )
     name.assert_not_called()
 
@@ -300,19 +329,19 @@ def test_setup_without_name_asks_the_ai_and_infers_the_pattern(api_client):
 
 
 def test_setup_rejects_an_incomplete_schedule_and_an_empty_selection(api_client):
-    incomplete, _ = _setup(api_client, schedule_time="07:30")
+    incomplete, _ = _setup(api_client, schedule_times=["07:30"])
     empty, _ = _setup(api_client, selected_urls=[])
     assert (_loc(incomplete), _loc(empty)) == (["body", "schedule_days"], ["body", "selected_urls"])
 
 
 def test_setup_with_an_invalid_time_reports_only_the_time(api_client):
-    response, _ = _setup(api_client, schedule_time="25:00", schedule_days=[1])
-    assert [error["loc"] for error in response.json()["detail"]] == [["body", "schedule_time"]]
+    response, _ = _setup(api_client, schedule_times=["25:00"], schedule_days=[1])
+    assert [error["loc"] for error in response.json()["detail"]] == [["body", "schedule_times"]]
 
 
 def test_setup_days_without_a_time_are_refused_on_the_time(api_client, session_factory):
     response, _ = _setup(api_client, schedule_days=[1])
-    assert (response.status_code, _loc(response)) == (422, ["body", "schedule_time"])
+    assert (response.status_code, _loc(response)) == (422, ["body", "schedule_times"])
     with session_factory() as db:
         assert db.query(JobPlatform).count() == 0
 
@@ -320,11 +349,11 @@ def test_setup_days_without_a_time_are_refused_on_the_time(api_client, session_f
 def test_patch_days_without_a_time_are_refused_on_the_time(api_client, seed):
     seed(make_platform())
     response = _patch(api_client, {"schedule_days": [1]})
-    assert (response.status_code, _loc(response)) == (422, ["body", "schedule_time"])
+    assert (response.status_code, _loc(response)) == (422, ["body", "schedule_times"])
 
 
 def test_a_legacy_half_schedule_still_accepts_a_rename(api_client, seed, session_factory):
-    seed(make_platform(schedule_time="08:00", schedule_days=None))
+    seed(make_platform(schedule_times=["08:00"], schedule_days=None))
     assert _patch(api_client, {"name": "Renamed"}).status_code == 200
     assert fetch(session_factory, JobPlatform, TEST_PLATFORM_ID).name == "Renamed"
 
@@ -417,23 +446,6 @@ PUSHOVER_USER_KEY = "pushover-user-4711"
 SMTP_HOST = "smtp.example.com"
 
 
-def test_channel_status_is_booleans_only(api_client, seed):
-    seed(make_profile(pushover_user_key=PUSHOVER_USER_KEY, pushover_api_token=SECRET_TOKEN,
-                      smtp_host=SMTP_HOST, smtp_user=SMTP_USER, smtp_password=SECRET_PASSWORD,
-                      resend_api_key=SECRET_TOKEN))
-    response = api_client.get("/notification-settings/channels")
-    assert response.json() == {"PUSHOVER": True, "RESEND": False, "MAILJET": False, "SMTP": True}
-    leaked = [value for value in (SECRET_TOKEN, SECRET_PASSWORD, PUSHOVER_USER_KEY, SMTP_HOST, SMTP_USER)
-              if value in response.text]
-    assert leaked == []
-
-
-def test_channel_status_without_profile_is_all_false(api_client):
-    assert api_client.get("/notification-settings/channels").json() == {
-        "PUSHOVER": False, "RESEND": False, "MAILJET": False, "SMTP": False,
-    }
-
-
 IDN_URL = "https://jobs.münchen.de/suche"
 IDN_CANONICAL_URL = "https://jobs.xn--mnchen-3ya.de/suche"
 B1_URL = "http://1.1.1.1%2elocalhost/latest"
@@ -496,7 +508,7 @@ def test_starting_a_crawl_waits_longer_than_the_scraper_dns_check():
 
 
 def test_a_refused_slot_is_not_retried_every_check(session_factory, seed):
-    seed(make_user(), make_platform(is_active=True, schedule_time="00:00", schedule_days=EVERY_DAY))
+    seed(make_user(), make_platform(is_active=True, schedule_times=["00:00"], schedule_days=EVERY_DAY))
     post = _run_check(session_factory, {"status": "Error", "message": "x"}, checks=2)
     assert post.call_count == 1
     with session_factory() as db:
@@ -536,7 +548,7 @@ def test_patch_accepts_its_own_domain_for_a_legacy_mixed_case_url(api_client, se
 
 def test_a_naive_legacy_finished_at_does_not_abort_the_scheduler_run(session_factory, seed):
     seed(make_user(), make_platform(
-        is_active=True, schedule_time="00:00", schedule_days=EVERY_DAY,
+        is_active=True, schedule_times=["00:00"], schedule_days=EVERY_DAY,
         last_run={"finished_at": "2020-01-01T00:00:00", "started_at": None, "found": 0, "new": 0, "matched": 0},
     ))
     post = _run_check(session_factory, {"status": "Started", "job_id": "crawl-9"})
@@ -563,14 +575,117 @@ def test_legacy_setup_stamps_the_last_crawl_when_the_scraper_starts(api_client, 
 def test_the_scheduler_waits_for_a_crawl_start_as_long_as_the_api(session_factory, seed):
     from core.crawl_registry import SCRAPER_START_TIMEOUT_SECONDS
 
-    seed(make_user(), make_platform(is_active=True, schedule_time="00:00", schedule_days=EVERY_DAY))
+    seed(make_user(), make_platform(is_active=True, schedule_times=["00:00"], schedule_days=EVERY_DAY))
     post = _run_check(session_factory, {"status": "Started", "job_id": "c"})
     assert post.call_args.kwargs["timeout"] == SCRAPER_START_TIMEOUT_SECONDS
 
 
 def test_the_preview_proxy_waits_longer_than_the_render_call_and_two_dns_checks(api_client):
-    from services import render_client
+    from services import page_rendering
 
     with patch("routers.platforms.requests.post") as post:
         api_client.post("/platforms/preview-links", json={"url": SETUP_BODY["url"]})
-    assert post.call_args.kwargs["timeout"] > render_client.HTTP_TIMEOUT_SECONDS + 2 * url_safety.DNS_TIMEOUT_SECONDS
+    assert post.call_args.kwargs["timeout"] > page_rendering.HTTP_TIMEOUT_SECONDS + 2 * url_safety.DNS_TIMEOUT_SECONDS
+
+
+def test_patch_stores_several_times_sorted(api_client, seed, session_factory):
+    seed(make_platform())
+    response = _patch(api_client, {"schedule_times": ["18:30", "07:00", "12:00"], "schedule_days": [0]})
+    assert (response.status_code, response.json()["schedule_times"]) == (200, ["07:00", "12:00", "18:30"])
+    assert fetch(session_factory, JobPlatform, TEST_PLATFORM_ID).schedule_times == ["07:00", "12:00", "18:30"]
+
+
+def test_setup_takes_up_to_six_times(api_client):
+    times = [f"{hour:02d}:15" for hour in (6, 8, 10, 12, 14, 16)]
+    response, _ = _setup(api_client, schedule_times=times, schedule_days=[0])
+    assert response.json()["schedule_times"] == times
+
+
+def _due(times, now_local, last_crawl_at=None):
+    from workers.tasks.scheduling import _is_due
+
+    platform = SimpleNamespace(
+        name="P", schedule_times=times, schedule_days=EVERY_DAY, last_crawl_at=last_crawl_at, last_run=None,
+    )
+    return _is_due(platform, now_local, timezone.utc)
+
+
+def test_a_second_slot_of_the_day_is_due_after_the_first_was_crawled():
+    now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
+    morning_crawl = datetime(2026, 10, 14, 8, 1)
+    assert _due(["08:00", "12:00"], now, morning_crawl) is True
+
+
+def test_a_slot_is_not_due_again_once_its_crawl_started():
+    now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
+    assert _due(["08:00", "12:00"], now, datetime(2026, 10, 14, 12, 1)) is False
+
+
+def test_a_missed_early_slot_does_not_cause_a_second_crawl_for_the_later_slot():
+    now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
+    assert _due(["08:00", "12:00"], now, datetime(2026, 10, 14, 12, 30)) is False
+
+
+def test_no_slot_is_due_before_the_first_time():
+    assert _due(["08:00", "12:00"], datetime(2026, 10, 14, 7, 0, tzinfo=timezone.utc)) is False
+
+
+PATTERN_PATH = "/platforms/url-pattern"
+
+
+def test_url_pattern_is_derived_from_the_chosen_links(api_client):
+    response = api_client.post(PATTERN_PATH, json={"selected_urls": SETUP_BODY["selected_urls"]})
+    assert (response.status_code, response.json()) == (200, {"url_pattern": "/job/"})
+
+
+def test_url_pattern_of_one_link_cuts_its_unique_tail(api_client):
+    response = api_client.post(PATTERN_PATH, json={"selected_urls": ["https://x.de/jobsuche/p/dev-1"]})
+    assert response.json() == {"url_pattern": "/jobsuche"}
+
+
+@pytest.mark.parametrize("selected", [
+    [],
+    ["https://x.de/a/" + "b" * 2048],
+    ["https://x.de/job/1"] * 1001,
+])
+def test_url_pattern_refuses_an_empty_or_oversized_selection(api_client, selected):
+    response = api_client.post(PATTERN_PATH, json={"selected_urls": selected})
+    assert (response.status_code, _loc(response)[:2]) == (422, ["body", "selected_urls"])
+
+
+def test_url_pattern_needs_a_login(session_factory):
+    from fastapi.testclient import TestClient
+    from main import app
+
+    response = TestClient(app).post(PATTERN_PATH, json={"selected_urls": ["https://x.de/job/1"]})
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("pattern", "url", "expected"),
+    [
+        ("/jobsuche/p/", "https://jobs.example.com/jobsuche/p/12", True),
+        ("/jobsuche/p/", "https://jobs.example.com/blog/jobsuche/p/12", False),
+        ("/jobs?id=", "https://jobs.example.com/jobs?id=7&x=1", True),
+        ("/jobs", "https://jobs.example.com/careers/jobs", False),
+        ("/jobs", "https://jobs.example.com/jobs#top", True),
+        ("jobsuche/p/", "https://jobs.example.com/x/jobsuche/p/12", True),
+    ],
+)
+def test_the_crawl_filter_starts_a_slash_pattern_at_the_path_and_keeps_substring_for_old_patterns(
+    pattern, url, expected
+):
+    from core.platform_rules import url_matches_pattern
+
+    assert url_matches_pattern(url, pattern) is expected
+
+
+def test_the_filter_task_keeps_only_links_that_start_with_the_pattern(session_factory, seed):
+    from workers.tasks.urls import filter_urls_task
+
+    seed(make_platform(url_pattern="/job/"))
+    links = ["https://jobs.example.com/job/1", "https://jobs.example.com/about/job/2"]
+    with patch("workers.tasks.urls.SessionLocal", session_factory), patch("workers.tasks.urls.redis") as redis_module:
+        redis_module.from_url.return_value.exists.return_value = False
+        result = filter_urls_task(["https://jobs.example.com/search", links, TEST_USER_ID, None, TEST_PLATFORM_ID])
+    assert result[0] == ["https://jobs.example.com/job/1"]

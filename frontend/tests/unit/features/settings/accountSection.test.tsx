@@ -32,7 +32,7 @@ const TOO_LONG =
 const WRONG_CURRENT = "Das aktuelle Passwort stimmt nicht.";
 const UNEXPECTED = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 const FACTORY_TEXT =
-  "Löscht deine Stellen, Bewerbungen, Quellen, dein Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, die Google-Drive-Verbindung, Sprache und Zeitzone. Dateien in Google Drive bleiben dort. Das Konto selbst bleibt. Das lässt sich nicht rückgängig machen.";
+  "Löscht deine Stellen, Bewerbungen, Quellen, dein Profil, Nachweise und eigene Vorlagen, dazu die Zugangsdaten der Benachrichtigungen, Sprache und Zeitzone. Das Konto selbst bleibt. Das lässt sich nicht rückgängig machen.";
 // 37 umlauts: 37 characters, 74 UTF-8 bytes (over the 72-byte bcrypt bound).
 const TOO_MANY_BYTES = "ä".repeat(37);
 
@@ -168,69 +168,6 @@ describe("Passwort ändern", () => {
     const current = within(form).getByLabelText("Aktuelles Passwort");
     await waitFor(() => expect(current).toHaveAccessibleDescription(WRONG_CURRENT));
     await waitFor(() => expect(queryClient.getMutationCache().getAll()).toEqual([]));
-  });
-});
-
-async function openArchive(): Promise<HTMLElement> {
-  await userEvent.click(await screen.findByRole("button", { name: "Alle Stellen archivieren" }));
-  return dialog("Alle Stellen archivieren");
-}
-
-const archiveQuery = (calls: RecordedCall[]) =>
-  Object.fromEntries(new URL(callsTo(calls, "DELETE", "/jobs")[0]!.url).searchParams);
-
-describe("Alle Stellen archivieren", () => {
-  it("asks, sends both options and toasts the count", async () => {
-    const { calls, invalidate } = renderAccount({
-      "DELETE /jobs": { status: "archived", count: 3 },
-    });
-    const confirm = await openArchive();
-    expect(confirm).toHaveTextContent(
-      "Verschiebt alle Treffer im Eingang nach „Von dir aussortiert“.",
-    );
-    expect(callsTo(calls, "DELETE", "/jobs")).toHaveLength(0);
-    const archive = within(confirm).getByRole("button", { name: "Archivieren" });
-    expect(archive).toHaveClass("btn-primary");
-    await userEvent.click(archive);
-    expect(await screen.findByText("3 Stellen archiviert.")).toBeVisible();
-    expect(archiveQuery(calls)).toEqual({ keep_favorites: "true", keep_applications: "true" });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.jobsRoot });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.jobCounts });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.setupStatus });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.platforms });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.thresholdDistribution });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.thresholdPreviewRoot });
-  });
-
-  it("unchecked options are sent and named in the question", async () => {
-    const { calls } = renderAccount({ "DELETE /jobs": { status: "archived", count: 1 } });
-    await userEvent.click(await screen.findByRole("checkbox", { name: "Favoriten behalten" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Bewerbungen behalten" }));
-    const confirm = await openArchive();
-    expect(confirm).toHaveTextContent("Auch Favoriten werden archiviert.");
-    expect(confirm).toHaveTextContent("Auch Bewerbungen werden archiviert.");
-    await userEvent.click(within(confirm).getByRole("button", { name: "Archivieren" }));
-    expect(await screen.findByText("1 Stelle archiviert.")).toBeVisible();
-    expect(archiveQuery(calls)).toEqual({ keep_favorites: "false", keep_applications: "false" });
-  });
-
-  it("says when there was nothing to archive and returns focus to its button", async () => {
-    renderAccount({ "DELETE /jobs": { status: "archived", count: 0 } });
-    const confirm = await openArchive();
-    await userEvent.click(within(confirm).getByRole("button", { name: "Archivieren" }));
-    expect(await screen.findByText("Nichts zu archivieren.")).toBeVisible();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Alle Stellen archivieren" })).toHaveFocus(),
-    );
-  });
-
-  it("keeps the question open and toasts when the archive fails", async () => {
-    renderAccount({ "DELETE /jobs": failWith(HTTP_TOO_MANY, { error: "Rate limit exceeded" }) });
-    const confirm = await openArchive();
-    await userEvent.click(within(confirm).getByRole("button", { name: "Archivieren" }));
-    expect(await screen.findByText(RATE_LIMITED)).toBeVisible();
-    expect(confirm).toBeInTheDocument();
   });
 });
 

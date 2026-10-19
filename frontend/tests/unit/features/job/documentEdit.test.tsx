@@ -45,7 +45,6 @@ function show(html = PLAIN_HTML) {
     "GET /jobs/job-1/documents/4/view": () => new Response("%PDF-1.4"),
     "GET /jobs/job-1/documents/html": { html },
     "PUT /jobs/job-1/documents/html": { ok: true },
-    "POST /jobs/job-1/documents/render": { queued: true },
   });
 }
 
@@ -71,17 +70,17 @@ describe("editing a document", () => {
     expect(frame.getAttribute("srcdoc")).toContain("<p>alt</p>");
   });
 
-  it("saves the edited HTML, asks for a render and shows the progress", async () => {
+  it("saves only the edited HTML (no PDF render) and shows the document again", async () => {
     const calls = show();
     const frame = await openEditor();
     frame.contentDocument!.body.innerHTML = "<p>neu</p>";
     await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
-    await waitFor(() =>
-      expect(calls.map((call) => call.method)).toEqual(expect.arrayContaining(["PUT", "POST"])),
-    );
+    expect(await screen.findByText("Änderungen gespeichert.")).toBeInTheDocument();
     const put = calls.find((call) => call.method === "PUT");
     expect(JSON.parse(put?.body ?? "").html).toContain("<p>neu</p>");
-    expect(await screen.findByText("PDF wird neu gesetzt …")).toBeInTheDocument();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    expect(screen.queryByTitle("Lebenslauf bearbeiten")).not.toBeInTheDocument();
+    expect(await screen.findByTitle("Lebenslauf")).toHaveAttribute("sandbox", "");
   });
 
   it("discards an unchanged edit without asking or saving", async () => {
@@ -126,10 +125,10 @@ describe("editing a document", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("asks before the preview is switched to the other document", async () => {
+  it("asks before the preview is closed with unsaved changes", async () => {
     show();
     makeDirty(await openEditor());
-    await userEvent.click(screen.getByRole("button", { name: "Anschreiben", pressed: false }));
+    await userEvent.click(screen.getByRole("button", { name: "Schließen" }));
     expect(
       await screen.findByRole("dialog", { name: "Änderungen verwerfen?" }),
     ).toBeInTheDocument();

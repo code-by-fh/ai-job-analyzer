@@ -46,7 +46,7 @@ def test_global_error_carries_user_id(session_factory, seed, fake_redis):
 
 def test_crawl_completed_carries_user_id(fake_redis):
     fake_redis.hgetall.return_value = {b"total": b"2", b"jobs_saved": b"1", b"jobs_skipped": b"1"}
-    with patch("workers.tasks.crawl_status.flush_all_digests"):
+    with patch("workers.tasks.crawl_status.flush_digest"):
         maybe_complete_crawl(CRAWL_ID, TEST_USER_ID, None, fake_redis)
     assert events_of_type(fake_redis, "crawl_completed") == [{"type": "crawl_completed", "user_id": TEST_USER_ID}]
 

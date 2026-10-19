@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { A4Preview } from "@/ui/A4Preview";
@@ -73,12 +73,6 @@ describe("A4Preview", () => {
     expect(screen.getByText("Noch nicht erstellt")).toBeInTheDocument();
   });
 
-  it("opens a full-screen preview", async () => {
-    render(<A4Preview title="Lebenslauf" pdfUrl={PDF_URL} slug="" />);
-    await userEvent.click(screen.getByRole("button", { name: "Vorschau groß öffnen" }));
-    expect(screen.getByRole("dialog", { name: "Lebenslauf" })).toBeInTheDocument();
-  });
-
   it("names the embedded PDF", () => {
     const { container } = render(<A4Preview title="Lebenslauf" pdfUrl={PDF_URL} slug="" />);
     expect(container.querySelector("object")).toHaveAttribute("aria-label", "Lebenslauf");
@@ -88,19 +82,12 @@ describe("A4Preview", () => {
     Object.defineProperty(navigator, "pdfViewerEnabled", { value: false, configurable: true });
     render(<A4Preview title="Lebenslauf" pdfUrl={PDF_URL} slug="" />);
     expect(screen.getByText("Dein Browser zeigt PDFs hier nicht direkt an.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Vorschau groß öffnen" })).not.toBeInTheDocument();
   });
 
-  it("traps focus in the full-screen preview and closes it with Escape", async () => {
+  it("offers no full-screen preview of its own; the document modal is large", () => {
+    Object.defineProperty(navigator, "pdfViewerEnabled", { value: true, configurable: true });
     render(<A4Preview title="Lebenslauf" pdfUrl={PDF_URL} slug="" />);
-    await userEvent.click(screen.getByRole("button", { name: "Vorschau groß öffnen" }));
-    const dialog = screen.getByRole("dialog", { name: "Lebenslauf" });
-    await userEvent.tab();
-    await userEvent.tab();
-    await userEvent.tab();
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
-    await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("marks a busy sheet with a static note", () => {
@@ -125,6 +112,17 @@ describe("A4Preview", () => {
     expect(live).toHaveTextContent("Wird erzeugt");
   });
 
+  it("lays HTML children on a fixed A4 page scaled by a zoom step class", () => {
+    const { container } = render(
+      <A4Preview title="Lebenslauf" pdfUrl={null} slug="">
+        <iframe title="Lebenslauf" />
+      </A4Preview>,
+    );
+    const page = container.querySelector(".paper-page");
+    expect(page).toContainElement(screen.getByTitle("Lebenslauf"));
+    expect(container.querySelector(".paper")?.className).toMatch(/\bzoom-\d+\b/);
+  });
+
   it("shows its children instead of the PDF (editing)", () => {
     render(
       <A4Preview title="Lebenslauf" pdfUrl={PDF_URL} slug="">
@@ -132,7 +130,6 @@ describe("A4Preview", () => {
       </A4Preview>,
     );
     expect(screen.getByText("Editor")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Vorschau groß öffnen" })).not.toBeInTheDocument();
   });
 });
 
@@ -156,6 +153,18 @@ describe("Disclosure", () => {
     await userEvent.click(button);
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Text")).toBeVisible();
+  });
+
+  it("shows its closed region while the page prints and hides it afterwards", () => {
+    render(<Disclosure label="Vollständige Begründung">Text</Disclosure>);
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(screen.getByText("Text")).toBeVisible();
+    act(() => {
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    expect(screen.getByText("Text")).not.toBeVisible();
   });
 
   it("follows its open prop and reports toggles in controlled mode", async () => {

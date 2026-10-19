@@ -61,6 +61,12 @@ class CrawlRedisState:
         self.hashes.setdefault(key, {}).update({field: _bytes(value)} if field else {})
         self.hashes[key].update({name: _bytes(item) for name, item in (mapping or {}).items()})
 
+    def hincrby(self, key, field, amount=1):
+        self.drop_expired()
+        fields = self.hashes.setdefault(key, {})
+        fields[field] = _bytes(int(fields.get(field, b"0")) + amount)
+        return int(fields[field])
+
     def hget(self, key, field):
         self.drop_expired()
         return self.hashes.get(key, {}).get(field)
@@ -110,7 +116,9 @@ def lock_backed(fake_redis: MagicMock, clock: Clock, decoded: bool = False) -> C
     decoded=True answers like a client created with decode_responses=True (str instead of bytes).
     """
     state = CrawlRedisState(clock)
-    for name in ("set", "get", "delete", "hset", "hget", "hgetall", "hmget", "expire", "eval", "smembers", "keys"):
+    for name in (
+        "set", "get", "delete", "hset", "hget", "hgetall", "hincrby", "hmget", "expire", "eval", "smembers", "keys",
+    ):
         getattr(fake_redis, name).side_effect = getattr(state, name)
     fake_redis.sadd.side_effect = lambda key, value: state.sets.setdefault(key, set()).add(_bytes(value))
     fake_redis.srem.side_effect = lambda key, value: state.sets.get(_text(key), set()).discard(_bytes(value))

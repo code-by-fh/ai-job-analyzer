@@ -79,7 +79,7 @@ function MenuTrigger({ label, menuId, open, buttonRef, setOpen, busy }: MenuTrig
     <button
       ref={buttonRef}
       type="button"
-      className="btn btn-sm"
+      className="btn"
       aria-haspopup="menu"
       aria-expanded={open}
       aria-controls={open ? menuId : undefined}

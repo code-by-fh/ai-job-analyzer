@@ -18,7 +18,7 @@ const profileDocumentSchema = z.object({
   file_size: z.number().int().nullish(),
   mime_type: z.string().nullish(),
   created_at: z.string().nullish(),
-  // Drive files answer 400 on view/download; an answer without the flag predates it.
+  // Rows without stored bytes answer 400 on view/download; an answer without the flag predates it.
   downloadable: z
     .boolean()
     .nullish()

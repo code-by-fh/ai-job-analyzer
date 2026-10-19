@@ -1,4 +1,4 @@
-"""Account: archive-all scope, a reset without foreign-key errors, the password floor, storage status.
+"""Account: archive-all scope, a reset without foreign-key errors, the password floor.
 
 Every test here runs on SQLite with foreign keys enforced, as PostgreSQL does.
 """
@@ -15,7 +15,7 @@ from core.auth import (
     token_claims, verify_password,
 )
 from database.core import (
-    DocumentTemplate, JobDocument, JobEntry, JobPlatform, JobStatusHistory, NotificationTemplate,
+    CompanyDeepDive, DocumentTemplate, JobDocument, JobEntry, JobPlatform, JobStatusHistory, NotificationTemplate,
     PlatformRun, ProfileDocument, User, UserProfile,
 )
 from routers.auth import BCRYPT_MAX_PASSWORD_BYTES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
@@ -56,8 +56,7 @@ def crawl_registry(monkeypatch):
 
 @pytest.fixture()
 def own_sessions(monkeypatch, session_factory):
-    for module in ("routers.auth", "routers.storage"):
-        monkeypatch.setattr(f"{module}.SessionLocal", session_factory)
+    monkeypatch.setattr("routers.auth.SessionLocal", session_factory)
 
 
 @pytest.fixture()
@@ -136,6 +135,7 @@ def _owned_rows(user_id: int, job_id: str, platform_id: int) -> list:
         make_profile_document(user_id=user_id, id=900 + user_id),
         make_template(user_id=user_id, id=800 + user_id),
         NotificationTemplate(name="Meine", type="PUSHOVER", content="x", user_id=user_id, is_admin=False),
+        CompanyDeepDive(user_id=user_id, domain="acme.de", focus="culture", focus_hash="h", result="Kultur"),
     ]
 
 
@@ -156,7 +156,10 @@ def two_accounts(api_client, seed):
     _seed_two_accounts(seed)
 
 
-OWNED_MODELS = (JobEntry, JobPlatform, UserProfile, ProfileDocument, DocumentTemplate, NotificationTemplate, JobDocument)
+OWNED_MODELS = (
+    JobEntry, JobPlatform, UserProfile, ProfileDocument, DocumentTemplate, NotificationTemplate, JobDocument,
+    CompanyDeepDive,
+)
 
 
 def test_reset_removes_dependent_rows_first(
@@ -167,8 +170,8 @@ def test_reset_removes_dependent_rows_first(
     assert response.json() == {
         "status": "reset complete", "jobs_deleted": 1, "platforms_deleted": 1, "profile_deleted": True,
     }
-    assert [_count(session_factory, model, user_id=TEST_USER_ID) for model in OWNED_MODELS] == [0] * 7
-    assert [_count(session_factory, model, user_id=OTHER_USER_ID) for model in OWNED_MODELS] == [1] * 7
+    assert [_count(session_factory, model, user_id=TEST_USER_ID) for model in OWNED_MODELS] == [0] * len(OWNED_MODELS)
+    assert [_count(session_factory, model, user_id=OTHER_USER_ID) for model in OWNED_MODELS] == [1] * len(OWNED_MODELS)
     assert _count(session_factory, JobStatusHistory, job_id="mine") == 0
     assert _count(session_factory, JobStatusHistory, job_id="theirs") == 1
     assert _count(session_factory, PlatformRun, platform_id=1) == 0
@@ -320,22 +323,6 @@ def test_new_user_password_at_the_floor_is_accepted(api_client, session_factory,
     assert _count(session_factory, User, username="neu") == 1
 
 
-def test_storage_status_reports_availability_without_secrets(api_client, seed, own_sessions, monkeypatch):
-    monkeypatch.setattr("routers.storage.GOOGLE_CLIENT_ID", "client-id")
-    monkeypatch.setattr("routers.storage.GOOGLE_CLIENT_SECRET", "client-secret")
-    seed(make_profile(google_drive_refresh_token="DRIVE_SECRET", google_drive_email="me@example.com",
-                      active_storage_service="GOOGLE_DRIVE"))
-    response = api_client.get("/storage/status")
-    assert response.json() == {"available": True, "connected": True, "active": "GOOGLE_DRIVE", "email": "me@example.com"}
-    assert "DRIVE_SECRET" not in response.text and "client-secret" not in response.text
-
-
-def test_storage_status_without_server_configuration(api_client, own_sessions, monkeypatch):
-    monkeypatch.setattr("routers.storage.GOOGLE_CLIENT_ID", None)
-    response = api_client.get("/storage/status")
-    assert response.json() == {"available": False, "connected": False, "active": "NONE", "email": None}
-
-
 def _tokens(user_id: int = TEST_USER_ID) -> dict:
     data = token_claims(make_user(user_id))
     return {"access_token": create_access_token(data), "refresh_token": create_refresh_token(data)}
@@ -437,3 +424,8 @@ def test_password_checks_of_two_accounts_on_one_address_count_apart(
     statuses = [attempt(api_client) for _ in range(PASSWORD_CHECK_LIMIT)]
     _use_cookies(api_client, _tokens(OTHER_USER_ID))
     assert statuses + [attempt(api_client)] == [400] * (PASSWORD_CHECK_LIMIT + 1)
+
+
+@pytest.mark.parametrize(("method", "path"), [("get", "/storage/status"), ("post", "/storage/toggle")])
+def test_the_storage_location_endpoints_are_gone(api_client, method, path):
+    assert getattr(api_client, method)(path).status_code == 404

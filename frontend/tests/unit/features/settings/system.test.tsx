@@ -30,12 +30,11 @@ const WRONG_PASSWORD = "Das Passwort stimmt nicht.";
 const CRAWL_RUNNING_TEXT = "Gerade läuft eine Suche. Versuche es nach ihrem Ende erneut.";
 // R12: the copy names what routers/admin.py wipe_database deletes, and what stays.
 const OWN_TEXT =
-  "Löscht deine Stellen mit Verlauf und Dokumenten, deine Quellen mit ihren Läufen und jedes Firmenprofil, auf das keine verbleibende Stelle mehr verweist (bei nur einem Benutzer: alle).";
+  "Löscht deine Stellen mit Verlauf und Dokumenten, deine Quellen mit ihren Läufen, deine Profildaten (Einstellungen, Nachweise, eigene Vorlagen, Lebenslaufdaten) und jedes Firmenprofil, auf das keine verbleibende Stelle mehr verweist (bei nur einem Benutzer: alle).";
 const ALL_TEXT =
-  "Löscht die Stellen, Quellen und Firmenprofile aller Benutzer, auch deine, mit Verlauf und Dokumenten.";
-const KEEP_TEXT =
-  "Benutzerkonten, Profile, Nachweise und Vorlagen bleiben. Das lässt sich nicht rückgängig machen.";
-const ALL_SCOPE = "Alle Benutzer (Stellen, Quellen, Firmenprofile)";
+  "Löscht die Stellen, Quellen, Profildaten (Einstellungen, Nachweise, eigene Vorlagen, Lebenslaufdaten) und Firmenprofile aller Benutzer, auch deine, mit Verlauf und Dokumenten.";
+const KEEP_TEXT = "Benutzerkonten bleiben. Das lässt sich nicht rückgängig machen.";
+const ALL_SCOPE = "Alle Benutzer (Stellen, Quellen, Profildaten, Firmenprofile)";
 const WIPE_ALL = "Alle Daten löschen";
 
 // Ruling 11: provider-neutral, one fixed sentence per code.

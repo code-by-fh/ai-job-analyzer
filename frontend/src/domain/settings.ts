@@ -1,6 +1,6 @@
 // Runtime imports stay relative: e2e fixtures load this module outside the app's path aliases.
 import { ADMIN_LIMITS, USERNAME_PATTERN } from "../api/adminPaths";
-import { DRIVE_CALLBACK, PASSWORD_LIMITS } from "../api/settingsPaths";
+import { PASSWORD_LIMITS } from "../api/settingsPaths";
 
 /** The Einstellungen page; the shell links here too (features/shell/navigation.ts re-exports it). */
 export const SETTINGS_HREF = "/settings";
@@ -75,12 +75,4 @@ export function usernameProblem(name: string): UsernameProblem | null {
   if (characters < ADMIN_LIMITS.usernameMin) return "tooShort";
   if (characters > ADMIN_LIMITS.usernameMax) return "tooLong";
   return USERNAME_PATTERN.test(trimmed) ? null : "chars";
-}
-
-export type DriveCallback = "connected" | "failed";
-
-export function driveCallbackOf(params: URLSearchParams): DriveCallback | null {
-  if (params.get(DRIVE_CALLBACK.successParam) === DRIVE_CALLBACK.connected) return "connected";
-  if (params.get(DRIVE_CALLBACK.errorParam) === DRIVE_CALLBACK.failed) return "failed";
-  return null;
 }

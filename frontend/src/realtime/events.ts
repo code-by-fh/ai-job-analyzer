@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { crawlProgressSchema } from "@/api/crawlProgress";
 
 // Backend change B3: every user-related event carries a top-level user_id.
 const userScoped = { user_id: z.number().int() };
 // Crawl events use job_id for the crawl run, not for a job posting.
 const crawlRun = { ...userScoped, job_id: z.string() };
+// Crawl events that can follow the pipeline carry its real progress (backend Task 6, additive).
+const crawlStep = { ...crawlRun, progress: crawlProgressSchema.optional() };
 const jobRef = z.object({ id: z.string() });
 // new_job also carries the score and archive flag; an import toast reports both (decision D7).
 const newJobRef = z.object({
@@ -15,34 +18,36 @@ const newJobRef = z.object({
 export const realtimeEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("crawl_job_started"),
-    ...crawlRun,
+    ...crawlStep,
     platform: z.string(),
     platform_id: z.number().int().nullish(),
+    // Epoch milliseconds as a string (scraper hash convention).
+    started_at: z.string().nullish(),
   }),
   z.object({
     type: z.literal("crawl_job_progress"),
-    ...crawlRun,
+    ...crawlStep,
     platform: z.string(),
     total: z.number(),
     scraping_completed: z.number().optional(),
   }),
   z.object({
     type: z.literal("crawl_job_extracting"),
-    ...crawlRun,
+    ...crawlStep,
     extracting_count: z.number(),
     total: z.number(),
   }),
   z.object({
     type: z.literal("job_analysis_started"),
-    ...crawlRun,
+    ...crawlStep,
     analysis_completed: z.number(),
   }),
-  z.object({ type: z.literal("job_analysis_finished"), ...crawlRun, jobs_saved: z.number() }),
-  z.object({ type: z.literal("crawl_job_completed"), ...crawlRun }),
+  z.object({ type: z.literal("job_analysis_finished"), ...crawlStep, jobs_saved: z.number() }),
+  z.object({ type: z.literal("crawl_job_completed"), ...crawlStep }),
   z.object({ type: z.literal("crawl_job_failed"), ...crawlRun }),
   z.object({ type: z.literal("crawl_job_cancelled"), ...crawlRun }),
   // A posting that already exists. The seed path omits existing_job_id, a duplicate sets it.
-  z.object({ type: z.literal("job_skipped"), ...crawlRun, existing_job_id: z.string().nullish() }),
+  z.object({ type: z.literal("job_skipped"), ...crawlStep, existing_job_id: z.string().nullish() }),
   z.object({ type: z.literal("crawl_completed"), ...userScoped }),
   z.object({
     type: z.literal("new_job"),
@@ -51,17 +56,26 @@ export const realtimeEventSchema = z.discriminatedUnion("type", [
     job: newJobRef,
   }),
   z.object({ type: z.literal("job_updated"), ...userScoped, job: jobRef }),
-  // Generation and render tasks. `status` is deliberately not parsed: ai.render_document_pdf
-  // publishes a status it never wrote to the database, so the client always refetches instead.
+  // End of a generation. `status` is not parsed: the client always refetches the job instead.
   z.object({
     type: z.literal("job_update"),
     ...userScoped,
     job_id: z.string(),
-    rendered_kind: z.enum(["cv", "cover_letter"]).optional(),
     error: z.string().nullish(),
   }),
   z.object({ type: z.literal("interview_prep_ready"), ...userScoped, job_id: z.string() }),
-  z.object({ type: z.literal("company_profile_ready"), ...userScoped, domain: z.string() }),
+  // A research started on a job also names the job; its domain is null when the AI found none.
+  z.object({
+    type: z.literal("company_profile_ready"),
+    ...userScoped,
+    domain: z.string().nullish(),
+    job_id: z.string().optional(),
+  }),
+  // The end of "Aus der Anzeige übernehmen"; the client reloads the job, which tells the outcome.
+  z.object({ type: z.literal("posting_details_ended"), ...userScoped, job_id: z.string() }),
+  // The end (either outcome) of a run inside a request; the client reloads the stored state.
+  z.object({ type: z.literal("cv_import_ended"), ...userScoped }),
+  z.object({ type: z.literal("deep_dive_ended"), ...userScoped, domain: z.string() }),
   // Also sent when the AI fill failed, so the gallery stops showing "in progress".
   z.object({ type: z.literal("template_ready"), ...userScoped, template_id: z.number().int() }),
   z.object({ type: z.literal("global_error"), ...userScoped }),

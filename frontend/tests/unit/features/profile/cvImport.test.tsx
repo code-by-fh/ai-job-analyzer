@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_FILE_BYTES } from "@/api/profilePaths";
+import { queryKeys } from "@/api/queryKeys";
 import { redirectToLogin } from "@/api/session";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { jsonResponse, type RecordedCall } from "../../support/fakeFetch";
@@ -61,6 +62,16 @@ const READING = "Der Lebenslauf wird gelesen. Das kann einige Minuten dauern.";
 const DONE = "Lebenslauf übernommen. Prüfe Ziel und Lebenslauf.";
 const DRAFT_KEPT =
   "Der Lebenslauf wurde importiert und gespeichert. Deine ungespeicherten Änderungen hier sind noch offen: „Speichern“ ersetzt den Import durch sie.";
+
+// GET /settings while the server runs an import this page did not send (a reload).
+const RUNNING = {
+  ...EMPTY,
+  cv_import_running: true,
+  cv_import_started_at: "2026-10-16T09:30:00+00:00",
+  cv_import_error: null,
+};
+const FAILED = "Die KI konnte den Lebenslauf nicht lesen. Versuche es später noch einmal.";
+const ALREADY_RUNNING = "Es läuft bereits ein Import. Warte, bis er fertig ist.";
 
 const pdf = () => new File(["%PDF-1.4"], "Lebenslauf.PDF", { type: "application/pdf" });
 const importButton = () => screen.findByRole("button", { name: "Lebenslauf importieren (PDF)" });
@@ -199,6 +210,11 @@ describe("CV import", () => {
       "Die KI konnte den Lebenslauf nicht lesen. Versuche es später noch einmal.",
     ],
     [
+      503,
+      { detail: "ai_busy" },
+      "Gerade laufen zu viele KI-Vorgänge. Bitte versuche es gleich noch einmal.",
+    ],
+    [
       500,
       { detail: "Internal Server Error" },
       "Der Server hat einen Fehler gemeldet. Bitte versuche es gleich noch einmal.",
@@ -216,7 +232,7 @@ describe("CV import", () => {
     await pick(pdf());
     expect(await screen.findByText(sentence)).toBeVisible();
     expect(
-      screen.queryByText(/file_too_large|unsupported_type|cv_no_text|cv_parse|Internal/),
+      screen.queryByText(/file_too_large|unsupported_type|cv_no_text|cv_parse|ai_busy|Internal/),
     ).toBeNull();
   });
 
@@ -407,5 +423,73 @@ describe("CV import", () => {
     await pick(pdf());
     expect(await screen.findByText("Keine Verbindung zum Server.")).toBeVisible();
     expect(screen.queryByText(/Failed to fetch/)).toBeNull();
+  });
+
+  it("after a reload shows the import the server still runs and blocks a second one", async () => {
+    const calls = stubRoutes(profileStubs({ "GET /settings": RUNNING }));
+    renderWithProviders(<ProfilePage />);
+    const button = await importButton();
+    await waitFor(() => expect(button).toHaveAttribute("aria-busy", "true"));
+    expect(screen.getByText(READING, { selector: ".notice *" })).toBeVisible();
+    await userEvent.click(button);
+    expect(uploads(calls)).toHaveLength(0);
+  });
+
+  it("after a reload counts the running import from the server's start", async () => {
+    const startedAt = new Date(Date.now() - (2 * 60_000 + 1_000)).toISOString();
+    const running = { ...RUNNING, cv_import_started_at: startedAt };
+    stubRoutes(profileStubs({ "GET /settings": running }));
+    renderWithProviders(<ProfilePage />);
+    expect(await screen.findByText("läuft seit 2 Minuten")).toBeInTheDocument();
+  });
+
+  it("shows the fixed sentence for an import the server ended with an error", async () => {
+    stubRoutes(profileStubs({ "GET /settings": { ...EMPTY, cv_import_error: "cv_parse_failed" } }));
+    renderWithProviders(<ProfilePage />);
+    expect(await screen.findByText(FAILED)).toBeVisible();
+    expect(screen.queryByText(/cv_parse_failed/)).toBeNull();
+  });
+
+  it("keeps edits typed during an import the server ran for a reloaded page", async () => {
+    let finished = false;
+    const settings = () => jsonResponse(200, finished ? { ...EMPTY, ...IMPORTED } : RUNNING);
+    stubRoutes(profileStubs({ "GET /settings": settings }));
+    const { queryClient } = renderWithProviders(<ProfilePage />);
+    const education = await screen.findByLabelText("Ausbildung");
+    await userEvent.type(education, "Abitur");
+    finished = true;
+    // The cv_import_ended event invalidates the profile (realtime/applyEvent.ts).
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.profile }));
+    expect(await screen.findByText(DRAFT_KEPT, { selector: ".cv-draft-kept p" })).toBeVisible();
+    expect(education).toHaveValue("Abitur");
+  });
+
+  it("shows the CV the server imported for a reloaded page on a clean form", async () => {
+    let finished = false;
+    const settings = () => jsonResponse(200, finished ? { ...EMPTY, ...IMPORTED } : RUNNING);
+    stubRoutes(profileStubs({ "GET /settings": settings }));
+    const { queryClient } = renderWithProviders(<ProfilePage />);
+    await screen.findByLabelText("Ausbildung");
+    finished = true;
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.profile }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Ausbildung")).toHaveValue("B.Sc. Informatik"),
+    );
+    expect(document.querySelector(".cv-draft-kept")).toBeNull();
+    expect(screen.queryByText(READING, { selector: ".notice *" })).toBeNull();
+  });
+
+  it("a second import while one runs reads a fixed sentence", async () => {
+    stubRoutes(
+      profileStubs({
+        "GET /settings": EMPTY,
+        "POST /settings/upload-cv": () => jsonResponse(409, { detail: "cv_import_running" }),
+      }),
+    );
+    renderWithProviders(<ProfilePage />);
+    await importButton();
+    await pick(pdf());
+    expect(await screen.findByText(ALREADY_RUNNING)).toBeVisible();
+    expect(screen.queryByText(/cv_import_running/)).toBeNull();
   });
 });

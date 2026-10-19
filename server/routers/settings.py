@@ -1,7 +1,8 @@
 import io
 import math
 import zoneinfo
-from typing import List, Literal, Optional, Union
+from types import SimpleNamespace
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from openai import OpenAIError
@@ -11,6 +12,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user, get_db
+from core.cv_import_state import CV_PARSE_FAILED, claim_import, fail_import, finish_import, import_running
 from core.job_status import (
     ARCHIVE_BY_THRESHOLD_VALUES,
     RESTORE_BY_THRESHOLD_VALUES,
@@ -18,6 +20,7 @@ from core.job_status import (
     STATUS_SEEN,
     ArchiveReason,
 )
+from core.profile_rules import profile_complete
 from core.uploads import MAX_UPLOAD_BYTES, PDF_TYPE, field_error, read_upload_sync, require_type
 from database.core import (
     MAX_LOCATION_LENGTH,
@@ -25,11 +28,9 @@ from database.core import (
     MAX_SALARY_LENGTH,
     MAX_SKILLS_LENGTH,
     CVDataModel,
-    EmailAddress,
     JobEntry,
     JobPlatform,
     NotificationPreviewRequest,
-    NotificationSettingsData,
     NotificationTemplate,
     NotificationTemplateCreate,
     NotificationTemplateResponse,
@@ -37,8 +38,8 @@ from database.core import (
     SettingsData,
     User,
     UserProfile,
+    iso_utc,
 )
-from core.connection_errors import connection_test_error
 from intelligence.service import SETUP_AI_TASK, _call_openrouter, extract_json, get_client_and_model, is_ai_configured
 from core.logger import get_logger
 from services.template_access import TEMPLATE_STATUS_PROCESSING, TemplateRef, find_usable_template, looks_like_template_id
@@ -46,19 +47,17 @@ from routers.deps import (
     _SECRET_FIELDS,
     _SECRET_MASK,
     _mask_profile,
-    NOTIFICATION_TEST_RATE,
     _template_to_dict,
     limiter,
     user_or_ip_key,
 )
-from workers.notifications.push import render_push_message
-from workers.notifications.templates import render_email_html
-from workers.worker import (
-    _send_via_mailjet_batch,
-    _send_via_pushover,
-    _send_via_resend_batch,
-    _send_via_smtp_batch,
-)
+from routers.notifications import http_error
+from routers.sync_ai_runs import stale_before, sync_ai_slot
+from services import notifications_client
+from services.match_notifications import USER_NAME_MAX_LENGTH, job_item
+from services.notification_channels import LEGACY_CREDENTIAL_FIELDS
+from services.notifications_client import NotifyError
+from services.run_events import announce_end, publish_cv_import_ended
 
 logger = get_logger(__name__)
 
@@ -102,7 +101,7 @@ CV_PARSE_MAX_TOKENS = 16_000
 _FINISHED_BY_TOKEN_CAP = "length"
 MIN_CV_TEXT_CHARS = 50
 CV_NO_TEXT = "cv_no_text"
-CV_PARSE_FAILED = "cv_parse_failed"
+CV_IMPORT_RUNNING = "cv_import_running"
 # The fields a CV may fill; empty answers keep the stored value (the import must not blank a goal).
 _IMPORTED_TEXT_FIELDS = ("role", "skills", "min_salary", "location")
 # The only lists the answer may hold, each with the field a plain-text entry fills; a list or an object anywhere
@@ -314,41 +313,8 @@ def _threshold_population(db: Session, user_id: int):
     )
 
 
-def _profile_complete(profile: Optional[UserProfile]) -> bool:
-    return bool(profile and (profile.role or "").strip() and (profile.skills or "").strip())
-
-
 def _owns_any(db: Session, column, *conditions) -> bool:
     return db.query(column).filter(*conditions).first() is not None
-
-
-class TestNotificationBody(BaseModel):
-    # Empty falls back to the stored global recipient; anything else must look like an address.
-    recipient: Union[EmailAddress, Literal[""]] = ""
-
-
-def _make_fake_platform(recipient: str = "") -> object:
-    """Create a minimal fake platform for settings-page adapter tests."""
-    class _FakePlatform:
-        name = "Test"
-        resend_recipients = [recipient] if recipient else []
-        resend_template = None
-        mailjet_recipients = [recipient] if recipient else []
-        mailjet_template = None
-        smtp_recipients = [recipient] if recipient else []
-        smtp_template = None
-        pushover_template = None
-    return _FakePlatform()
-
-
-class _FakeJob:
-    id = 0
-    title = "Senior Software Engineer"
-    company = "Acme Corp"
-    match_score = 87.0
-    reasoning = "Strong match based on your Python and FastAPI experience."
-    url = "https://example.com/job/123"
-    platform_id = None
 
 
 def _apply_partial_update(profile: UserProfile, update: BaseModel) -> None:
@@ -408,7 +374,21 @@ def get_settings(
         db.add(profile)
         db.commit()
         db.refresh(profile)
-    return _mask_profile(profile)
+    return {**_without_legacy_credentials(_mask_profile(profile)), **_cv_import_view(profile)}
+
+
+def _cv_import_view(profile: UserProfile) -> dict:
+    """The durable import state, so a reloaded profile page shows a running import and how it ended."""
+    return {
+        "cv_import_running": import_running(profile),
+        "cv_import_started_at": iso_utc(profile.cv_import_started_at),
+        "cv_import_error": profile.cv_import_error,
+    }
+
+
+def _without_legacy_credentials(view: dict) -> dict:
+    """The old credential columns are only read by the start-up migration; channels live in the service."""
+    return {key: value for key, value in view.items() if key not in LEGACY_CREDENTIAL_FIELDS}
 
 
 @router.post("/settings")
@@ -487,6 +467,50 @@ def delete_settings(
         raise HTTPException(status_code=500, detail="Datenbankfehler")
 
 
+def _start_cv_import(db: Session, user_id: int) -> UserProfile:
+    """Claim and commit the start before the AI call, so a reloaded page sees the import running."""
+    profile = _profile_for(db, user_id)
+    db.flush()
+    if not claim_import(db, profile.id, stale_before()):
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CV_IMPORT_RUNNING)
+    db.commit()
+    return profile
+
+
+def _parse_and_store(db: Session, profile: UserProfile, text: str) -> Optional[dict]:
+    """The stored values, or None when the AI gave no usable answer."""
+    client, model = get_client_and_model(SETUP_AI_TASK, db)
+    # Ends the read transaction, so no database connection is held during the minutes-long AI call.
+    db.commit()
+    parsed = parse_cv_with_ai(text, client, model)
+    if parsed is None:
+        return None
+    finish_import(profile)
+    return _store_parsed_cv(db, profile.user_id, parsed)
+
+
+def _end_failed_cv_import(db: Session, profile: UserProfile) -> None:
+    db.rollback()
+    fail_import(profile, CV_PARSE_FAILED)
+    db.commit()
+    announce_end(publish_cv_import_ended, profile.user_id)
+
+
+def _run_cv_import(db: Session, profile: UserProfile, text: str) -> dict:
+    """Every failure ends the run with the one fixed parse error before it propagates."""
+    try:
+        stored = _parse_and_store(db, profile, text)
+    except Exception:
+        _end_failed_cv_import(db, profile)
+        raise
+    if stored is None:
+        _end_failed_cv_import(db, profile)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CV_PARSE_FAILED)
+    announce_end(publish_cv_import_ended, profile.user_id)
+    return stored
+
+
 @router.post("/settings/upload-cv")
 @limiter.limit("10/minute")
 def upload_cv(
@@ -496,16 +520,15 @@ def upload_cv(
     db: Session = Depends(get_db),
 ):
     # Sync on purpose: the AI call blocks, so FastAPI must run it in the threadpool, not on the event loop.
+    # A reload does not end it: the thread finishes and stores, and the end event tells the reloaded page.
     content = read_upload_sync(file, MAX_CV_BYTES)
     require_type(content, PDF_TYPE)
     text = extract_text_from_pdf(content)
     if len(text.strip()) < MIN_CV_TEXT_CHARS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=[field_error("file", CV_NO_TEXT)])
-    client, model = get_client_and_model(SETUP_AI_TASK, db)
-    parsed = parse_cv_with_ai(text, client, model)
-    if parsed is None:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CV_PARSE_FAILED)
-    return {"status": "success", "data": _store_parsed_cv(db, current_user.id, parsed)}
+    with sync_ai_slot():
+        profile = _start_cv_import(db, current_user.id)
+        return {"status": "success", "data": _run_cv_import(db, profile, text)}
 
 
 @router.post("/language-preference")
@@ -602,175 +625,9 @@ def get_setup_status(
     return {
         "has_source": _owns_any(db, JobPlatform.id, JobPlatform.user_id == user_id),
         "ai_configured": is_ai_configured(db),
-        "profile_complete": _profile_complete(profile),
+        "profile_complete": profile_complete(profile),
         "has_jobs": _owns_any(db, JobEntry.id, JobEntry.user_id == user_id, JobEntry.status != STATUS_SEEN),
     }
-
-
-def _channel_status(profile: Optional[UserProfile]) -> dict:
-    """The predicates of the test endpoints (routers/platforms.py test-*): configured means sendable."""
-    if profile is None:
-        return dict.fromkeys(("PUSHOVER", "RESEND", "MAILJET", "SMTP"), False)
-    return {
-        "PUSHOVER": bool(profile.pushover_user_key and profile.pushover_api_token),
-        "RESEND": bool(profile.resend_api_key and profile.resend_from_email),
-        "MAILJET": bool(profile.mailjet_api_key and profile.mailjet_secret_key and profile.mailjet_from_email),
-        "SMTP": bool(profile.smtp_host and profile.smtp_user and profile.smtp_password),
-    }
-
-
-@router.get("/notification-settings/channels")
-def notification_channel_status(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Which channels can send. Booleans only: no credential or address leaves the server."""
-    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    return _channel_status(profile)
-
-
-@router.post("/notification-settings")
-def save_notification_settings(
-    settings: NotificationSettingsData,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    profile = (
-        db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    )
-    if not profile:
-        profile = UserProfile(user_id=current_user.id)
-        db.add(profile)
-    _apply_partial_update(profile, settings)
-    db.commit()
-    return {"status": "saved"}
-
-
-@router.post("/notification-settings/test-pushover")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_pushover_settings(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.pushover_user_key or not profile.pushover_api_token:
-            raise HTTPException(status_code=400, detail="Pushover credentials not configured")
-        if not _send_via_pushover(_FakeJob(), profile, platform=_make_fake_platform()):
-            raise HTTPException(status_code=500, detail="Pushover delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, "Pushover test notification")
-
-
-@router.post("/notification-settings/test-resend")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_resend_settings(
-    request: Request,
-    body: TestNotificationBody,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.resend_api_key or not profile.resend_from_email:
-            raise HTTPException(status_code=400, detail="Resend credentials not configured")
-        recipient = body.recipient or profile.email_global_recipient
-        if not recipient:
-            raise HTTPException(status_code=400, detail="No recipient provided")
-        if not _send_via_resend_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
-            raise HTTPException(status_code=500, detail="Resend delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, "Resend test notification")
-
-
-@router.post("/notification-settings/test-mailjet")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_mailjet_settings(
-    request: Request,
-    body: TestNotificationBody,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.mailjet_api_key or not profile.mailjet_secret_key or not profile.mailjet_from_email:
-            raise HTTPException(status_code=400, detail="Mailjet credentials not configured")
-        recipient = body.recipient or profile.email_global_recipient
-        if not recipient:
-            raise HTTPException(status_code=400, detail="No recipient provided")
-        if not _send_via_mailjet_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
-            raise HTTPException(status_code=500, detail="Mailjet delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, "Mailjet test notification")
-
-
-@router.post("/notification-settings/test-smtp")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_smtp_settings(
-    request: Request,
-    body: TestNotificationBody,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if not profile or not profile.smtp_host or not profile.smtp_user or not profile.smtp_password:
-            raise HTTPException(status_code=400, detail="SMTP credentials not configured")
-        recipient = body.recipient or profile.email_global_recipient
-        if not recipient:
-            raise HTTPException(status_code=400, detail="No recipient provided")
-        if not _send_via_smtp_batch([_FakeJob()], profile, platform=_make_fake_platform(recipient), userName=current_user.username):
-            raise HTTPException(status_code=500, detail="SMTP delivery failed")
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise connection_test_error(e, 500, "SMTP test notification")
-
-
-@router.post("/notification-settings/test-email")
-@limiter.limit(NOTIFICATION_TEST_RATE, key_func=user_or_ip_key)
-def test_email_notification(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Send a test email to the configured global recipient using the first configured adapter."""
-    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    recipient = profile.email_global_recipient
-    if not recipient:
-        raise HTTPException(status_code=400, detail="No global recipient configured")
-
-    fake_platform = _make_fake_platform(recipient)
-
-    sent = False
-    if profile.resend_api_key and profile.resend_from_email:
-        sent = _send_via_resend_batch([_FakeJob()], profile, platform=fake_platform, userName=current_user.username)
-    elif profile.smtp_host and profile.smtp_user and profile.smtp_password:
-        sent = _send_via_smtp_batch([_FakeJob()], profile, platform=fake_platform, userName=current_user.username)
-    elif profile.mailjet_api_key and profile.mailjet_secret_key and profile.mailjet_from_email:
-        sent = _send_via_mailjet_batch([_FakeJob()], profile, platform=fake_platform, userName=current_user.username)
-
-    if not sent:
-        raise HTTPException(
-            status_code=500,
-            detail="Test delivery failed or no email adapter configured (Resend, Mailjet or SMTP)"
-        )
-
-    return {"success": True}
 
 
 @router.get("/notification-templates", response_model=List[NotificationTemplateResponse])
@@ -794,6 +651,14 @@ def list_notification_templates(
 NOTIFICATION_PREVIEW_RATE = "30/minute"
 PREVIEW_USER_NAME_FALLBACK = "Test"
 PREVIEW_PLATFORM_NAME = "Test"
+# One sample match, so a preview shows the template as a real digest would.
+SAMPLE_JOB = SimpleNamespace(
+    title="Senior Software Engineer",
+    company="Acme Corp",
+    match_score=87.0,
+    reasoning="Strong match based on your Python and FastAPI experience.",
+    url="https://example.com/job/123",
+)
 EMAIL_TEMPLATE_TYPES = ("RESEND", "MAILJET", "SMTP")
 
 
@@ -804,16 +669,27 @@ def preview_notification_template(
     body: NotificationPreviewRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """The template rendered with a fixed sample job by the senders' own functions; nothing is sent.
+    """The template rendered with a fixed sample job by the notification service's own renderer; nothing is sent.
 
-    An email answer is user-authored HTML (``html: true``): the server only fills text into it and
-    fetches nothing, so a client must treat it as untrusted and show it only in a sandboxed frame.
+    An email answer is user-authored HTML (``html: true``): the service only fills escaped text into it
+    and fetches nothing, so a client must treat it as untrusted and show it only in a sandboxed frame.
+    A template the service refuses (a push text over its bound) is a 422 on ``content``.
     """
-    if body.type in EMAIL_TEMPLATE_TYPES:
-        user_name = current_user.username or PREVIEW_USER_NAME_FALLBACK
-        html = render_email_html([_FakeJob()], body.content, userName=user_name, platform_name=PREVIEW_PLATFORM_NAME)
-        return {"html": True, "body": html}
-    return {"html": False, "body": render_push_message(_FakeJob(), body.content)}
+    email = body.type in EMAIL_TEMPLATE_TYPES
+    template = {
+        "name": "job_digest",
+        ("html" if email else "push_text"): body.content or None,
+        "variables": {
+            "user_name": (current_user.username or PREVIEW_USER_NAME_FALLBACK)[:USER_NAME_MAX_LENGTH],
+            "platform_name": PREVIEW_PLATFORM_NAME,
+            "jobs": [job_item(SAMPLE_JOB)],
+        },
+    }
+    try:
+        rendered = notifications_client.get_client().preview(template)
+    except NotifyError as error:
+        raise http_error(error, loc_for=lambda _path: ["body", "content"]) from error
+    return {"html": email, "body": rendered["html"] if email else rendered["push_text"]}
 
 
 @router.post("/notification-templates", response_model=NotificationTemplateResponse)

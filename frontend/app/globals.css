@@ -8,6 +8,7 @@
 @import "../src/features/shell/shell.css";
 @import "../src/features/auth/auth.css";
 @import "../src/features/job/job.css";
+@import "../src/features/job/outcome/outcome.css";
 @import "../src/features/inbox/inbox.css";
 @import "../src/features/applications/applications.css";
 @import "../src/features/sources/sources.css";

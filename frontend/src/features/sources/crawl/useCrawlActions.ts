@@ -11,6 +11,7 @@ import { useI18n } from "@/i18n/useI18n";
 import { sourceLabel, type ActivityState } from "@/realtime/activity";
 import { markCrawlStarted } from "@/realtime/useActivity";
 import { useToast, type ToastApi } from "@/ui/ToastProvider";
+import { isProfileRequired } from "../profileGate";
 
 // Start and cancel of one source run one after the other: a cancel never overtakes its start.
 const crawlScope = (platform: Platform) => ({ id: `crawl-${platform.id}` });
@@ -38,6 +39,10 @@ async function announceStart({ crawlId, platform, queryClient, toast, t }: Accep
 
 /** D4: a 409 means another crawl of this source runs (scheduler, other tab), so show that one. */
 function reportRefusedStart({ error, platform, queryClient, toast, t }: Refusal): void {
+  if (isProfileRequired(error)) {
+    toast.show({ message: t("sources.profileRequired.error"), tone: "error" });
+    return;
+  }
   const running = error instanceof ApiError && error.code === "CONFLICT";
   if (!running) {
     toast.show({ message: describeError(error, t), tone: "error" });

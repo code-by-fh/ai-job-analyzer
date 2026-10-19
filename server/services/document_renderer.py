@@ -1,5 +1,6 @@
 """Render application documents (CV, cover letter) from HTML templates to PDF."""
 
+import json
 import os
 from io import BytesIO
 
@@ -8,9 +9,23 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
 from core.logger import get_logger
+from services.bounded_child import ChildFailed, ChildLimits, run_child
 from services.safe_fetch import TEMPLATE_DIR, safe_url_fetcher, strip_attachment_links, xhtml2pdf_link_callback
 
 logger = get_logger(__name__)
+
+# On-demand PDF render limits (the download renders the current HTML each time). Memory and CPU are
+# enforced by the OS inside the child, the wall clock by the parent. A CV of a few pages needs about
+# 1 s and 120 MB; a document near the 1,000,000-char HTML bound exceeds the memory limit and fails.
+PDF_RENDER_MEMORY_BYTES = 512 * 1024 * 1024
+PDF_RENDER_CPU_SECONDS = 20
+PDF_RENDER_TIMEOUT_SECONDS = 30
+MAX_PDF_BYTES = 20 * 1024 * 1024
+_PDF_CHILD_MODULE = "services.pdf_render_child"
+
+
+class PdfRenderFailed(RuntimeError):
+    """The PDF could not be rendered within the limits; the cause is logged, never shown."""
 
 _env = Environment(
     loader=FileSystemLoader(TEMPLATE_DIR),
@@ -54,6 +69,24 @@ def html_to_pdf(html: str) -> bytes:
     document = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher)
     strip_attachment_links(document.etree_element)
     return document.write_pdf()
+
+
+def render_pdf_isolated(html: str) -> bytes:
+    """Render *html* with `html_to_pdf` in a child process bounded in memory, CPU, wall clock and output.
+
+    Raises PdfRenderFailed for any failure, so a hostile or huge document can neither pin nor
+    crash the API process.
+    """
+    request = json.dumps({
+        "html": html,
+        "memory_bytes": PDF_RENDER_MEMORY_BYTES,
+        "cpu_seconds": PDF_RENDER_CPU_SECONDS,
+    }).encode("utf-8")
+    try:
+        return run_child(_PDF_CHILD_MODULE, request, ChildLimits(PDF_RENDER_TIMEOUT_SECONDS, MAX_PDF_BYTES))
+    except (ChildFailed, OSError) as error:
+        logger.error("On-demand PDF render failed", exc_info=True)
+        raise PdfRenderFailed(str(error)) from error
 
 
 def render_cv_html(cv_data: dict, template_key: str = "classic") -> str:

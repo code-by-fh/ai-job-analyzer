@@ -97,24 +97,6 @@
   .settings-block .sec-title-sm {
     margin-bottom: 12px;
   }
-  /* The OAuth callback's notice sits above the first block; the empty live region takes no room. */
-  .settings-callback:not(:empty) {
-    margin-bottom: 20px;
-  }
-  /* Speicherort: a fieldset without the browser's frame; the time zone field is a .field. */
-  fieldset.settings-block {
-    border: 0;
-    margin-inline: 0;
-    padding: 0;
-    min-width: 0;
-  }
-  .field + .settings-block {
-    margin-top: 28px;
-  }
-  .settings-block legend.sec-title-sm {
-    padding: 0;
-    margin-bottom: 4px;
-  }
   /* Prototype .radio-row: radio, title and hint; 44 px so the whole row is a touch target. */
   .radio-row {
     display: flex;
@@ -134,9 +116,6 @@
     height: 15px;
     flex: none;
   }
-  .radio-row:has(input:disabled) {
-    cursor: default;
-  }
   .radio-row .radio-title {
     display: block;
     font-weight: 500;
@@ -145,18 +124,6 @@
     display: block;
     color: var(--text-2);
     font-size: var(--fs-13);
-  }
-  /* Under the Drive row, aligned with its text (15 px radio plus the 12 px gap). */
-  .radio-detail {
-    display: grid;
-    gap: 10px;
-    justify-items: start;
-    padding-left: 27px;
-  }
-  .storage-connected {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
   /* R4, preflight ruling 17: every button in the pane and its dialogs is a touch target at every width. */
   .settings-pane .btn,
@@ -478,6 +445,43 @@
   }
   .settings-section .drawer-section + .settings-block {
     margin-top: 28px;
+  }
+  /* A stored secret: its label, "gesetzt" and the buttons that replace or remove it. */
+  .chan-secret-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+  }
+  .chan-secret-state {
+    font-size: var(--fs-13);
+    color: var(--text-2);
+  }
+  .chan-replace {
+    display: grid;
+    gap: 4px;
+    justify-items: start;
+  }
+  .chan-replace > .field {
+    justify-self: stretch;
+  }
+  .chan-add {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .chan-add .hint {
+    margin: 0;
+  }
+  .chan-new {
+    padding-top: 14px;
+  }
+  .chan-new .drawer-section {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
   }
   .chan-sources {
     list-style: none;

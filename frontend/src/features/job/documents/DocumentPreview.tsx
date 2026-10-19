@@ -1,83 +1,98 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { describeError } from "@/api/describeError";
-import {
-  DOCUMENT_KINDS,
-  generatedDocument,
-  jobDocumentsQueryOptions,
-  type DocumentKind,
-  type JobDocument,
-} from "@/api/jobDocuments";
+import type { DocumentKind, JobDocument } from "@/api/jobDocuments";
 import type { JobDetail } from "@/api/jobs";
 import { isGenerating } from "@/domain/jobStatus";
+import { PreviewFrame } from "@/features/profile/templates/TemplatePreview";
 import { useI18n } from "@/i18n/useI18n";
 import { A4Preview } from "@/ui/A4Preview";
 import { Notice } from "@/ui/Notice";
-import { Seg } from "@/ui/Seg";
+import { ViewerDialog } from "@/ui/ViewerDialog";
 import { useJobFormat } from "../format/useJobFormat";
 import { DOCUMENT_LABEL } from "../labels";
-import { DRIVE_UNSUPPORTED } from "./saveFile";
-import { useDocumentFile, useObjectUrl } from "./useDocumentFile";
+import { usePreviewSource, type PreviewSource } from "./usePreviewSource";
 
 export interface DocumentPreviewProps {
   job: JobDetail;
   kind: DocumentKind;
-  onKindChange: (kind: DocumentKind) => void;
-  /** Replaces the PDF while the HTML is edited (Task 17). */
+  onClose: () => void;
+  /** Replaces the document on the sheet while its HTML is edited. */
   editor?: ReactNode;
-  busy?: boolean;
+  /** Toolbar buttons: edit or save and discard, download. */
+  actions?: ReactNode;
+  /** Between the toolbar and the sheet, e.g. that the stored document changed. */
+  notice?: ReactNode;
 }
 
-/** Prototype renderPreview: the seg is the only preview switch (usability #21). */
-export function DocumentPreview({ job, kind, onKindChange, editor, busy }: DocumentPreviewProps) {
+/**
+ * The A4 sheet of one document in the large viewer; opened on click, never permanently shown.
+ * The toolbar names the job's company, or while editing how to edit.
+ */
+export function DocumentPreview(props: DocumentPreviewProps) {
+  const { job, kind, onClose, editor, actions, notice } = props;
   const { t } = useI18n();
-  const options = DOCUMENT_KINDS.map((value) => ({ value, label: t(DOCUMENT_LABEL[value]) }));
-  const document = generatedDocument(useQuery(jobDocumentsQueryOptions(job.id)).data ?? [], kind);
+  const title = t(DOCUMENT_LABEL[kind]);
+  const source = usePreviewSource(job, kind);
+  const subtitle = editor ? t("edit.hint") : (job.company ?? undefined);
   return (
-    <div>
-      <div className="preview-head">
-        <h3 className="sec-title-sm">{t("preview.title")}</h3>
-        <Seg options={options} value={kind} onChange={onKindChange} label={t("preview.switch")} />
-      </div>
-      <PreviewSheet
-        job={job}
-        kind={kind}
-        document={document}
-        editor={editor}
-        busy={busy || isGenerating(job)}
-      />
-    </div>
+    <ViewerDialog
+      title={title}
+      subtitle={subtitle}
+      actions={actions}
+      notice={notice}
+      onClose={onClose}
+    >
+      <PreviewSheet title={title} source={source} editor={editor} busy={isGenerating(job)} />
+    </ViewerDialog>
   );
 }
 
 interface PreviewSheetProps {
-  job: JobDetail;
-  kind: DocumentKind;
-  document?: JobDocument;
+  title: string;
+  source: PreviewSource;
   editor?: ReactNode;
   busy: boolean;
 }
 
-function PreviewSheet({ job, kind, document, editor, busy }: PreviewSheetProps) {
+/**
+ * Task 12: the HTML is shown read-only in the template preview's frame (empty sandbox, no
+ * scripts, active content and link targets stripped, editor CSP); the PDF exists only on download.
+ */
+function PreviewSheet({ title, source, editor, busy }: PreviewSheetProps) {
   const { t } = useI18n();
-  const file = useDocumentFile(job.id, document);
-  const pdfUrl = useObjectUrl(file.data);
-  if (file.isError)
-    return <Notice tone="error">{describeError(file.error, t, DRIVE_UNSUPPORTED)}</Notice>;
+  if (source.type === "failed")
+    return <Notice tone="error">{describeError(source.error, t)}</Notice>;
+  const html = source.type === "html" ? source.html : undefined;
+  const sheet = html ? <PreviewFrame html={html} title={title} /> : undefined;
   return (
     <A4Preview
-      title={t(DOCUMENT_LABEL[kind])}
-      pdfUrl={pdfUrl}
-      downloadName={document?.original_filename}
-      slug={<ProofSlug document={document} busy={busy} />}
-      emptyText={t("preview.missing", { doc: t(DOCUMENT_LABEL[kind]) })}
-      busy={busy}
+      title={title}
+      pdfUrl={source.type === "pdf" ? source.url : null}
+      downloadName={source.type === "pdf" ? source.document?.original_filename : undefined}
+      slug={<SheetSlug source={source} busy={busy} />}
+      fit="page"
+      emptyText={t("preview.missing", { doc: title })}
+      busy={busy || (source.type === "html" && html === undefined)}
     >
-      {editor}
+      {editor ?? sheet}
     </A4Preview>
   );
+}
+
+type ShownSource = Exclude<PreviewSource, { type: "failed" }>;
+
+function SheetSlug({ source, busy }: { source: ShownSource; busy: boolean }) {
+  const { t } = useI18n();
+  if (source.type === "html")
+    return (
+      <>
+        <b>{t(busy ? "preview.setting" : "preview.editable")}</b>
+        <span>{t("preview.pdfOnDownload")}</span>
+      </>
+    );
+  return <ProofSlug document={source.document} busy={busy} />;
 }
 
 function ProofSlug({ document, busy }: { document?: JobDocument; busy: boolean }) {

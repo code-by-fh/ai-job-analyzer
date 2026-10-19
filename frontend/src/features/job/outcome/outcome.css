@@ -1,0 +1,393 @@
+/* Offer outcome tabs and the accepted-offer celebration (feedback 1 T14). */
+@layer components {
+  .outcome-head {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 22px 0 4px;
+  }
+  .outcome-seal {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border: 2px solid var(--ok);
+    border-radius: var(--r-pill);
+    color: var(--ok);
+  }
+  .outcome-seal svg {
+    width: 28px;
+    height: 28px;
+  }
+  .outcome-title {
+    font: 650 26px/1.15 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .outcome-lead {
+    color: var(--text-2);
+    max-width: 62ch;
+    margin: 8px 0 0;
+  }
+  .outcome-grid > div > section + section {
+    margin-top: 28px;
+  }
+  .outcome-checks {
+    list-style: none;
+    margin: 6px 0 12px;
+    padding: 0;
+  }
+  .outcome-checks li + li {
+    border-top: 1px solid var(--line);
+  }
+  .outcome-tips ul {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    max-width: 62ch;
+  }
+  .outcome-tips li {
+    padding: 10px 0;
+    color: var(--text-2);
+  }
+  .outcome-tips li + li {
+    border-top: 1px solid var(--line);
+  }
+
+  /* The quote is the tab's one large element: Bricolage, hung on the ink rule. */
+  .outcome-quote {
+    margin: 22px 0 0;
+    padding: 4px 0 4px 20px;
+    border-left: var(--rule-w) solid var(--rule);
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+  }
+  .outcome-quote blockquote {
+    margin: 0;
+  }
+  .outcome-quote blockquote p {
+    font: 600 clamp(22px, 3.2cqi, 30px) / 1.2 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    max-width: 30ch;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .outcome-quote figcaption {
+    color: var(--text-3);
+  }
+  .outcome-next {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 16px;
+  }
+  .outcome-next .meta {
+    margin: 0;
+    color: var(--text-2);
+  }
+  @media (max-width: 767px) {
+    .outcome-head {
+      gap: 12px;
+    }
+    .outcome-title {
+      font-size: 22px;
+    }
+    .outcome-next .btn {
+      min-height: 44px;
+    }
+  }
+
+  /*
+    Celebration: a stamp presses onto the page, its ring and tick draw in, and paper strips burst
+    out and fall. CSS only, about 2.3 s (CELEBRATION_MS); hidden entirely under reduced motion.
+  */
+  .celebrate {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-celebration);
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    animation: celebrate-out 400ms ease-in 1900ms forwards;
+  }
+  .celebrate-stamp {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    padding: 22px 30px 18px;
+    background: var(--float);
+    border: 1px solid var(--line);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-float);
+    rotate: -4deg;
+    animation: celebrate-press 520ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  .celebrate-mark {
+    width: 84px;
+    height: 84px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .celebrate-mark circle,
+  .celebrate-mark path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  .celebrate-mark circle {
+    animation: celebrate-draw 420ms var(--ease) 120ms forwards;
+  }
+  .celebrate-mark path {
+    animation: celebrate-draw 320ms var(--ease) 460ms forwards;
+  }
+  .celebrate-word {
+    margin: 0;
+    font: 700 30px/1 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .confetti {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+  }
+  .confetti i {
+    position: absolute;
+    width: 7px;
+    height: 15px;
+    border-radius: 1px;
+    opacity: 0;
+    animation: confetti-fly 1500ms both;
+    animation-delay: calc(380ms + var(--delay));
+  }
+  .confetti i:nth-child(4n + 1) {
+    background: var(--accent);
+  }
+  .confetti i:nth-child(4n + 2) {
+    background: var(--st-offer);
+  }
+  .confetti i:nth-child(4n + 3) {
+    background: var(--st-drafted);
+  }
+  .confetti i:nth-child(4n) {
+    background: var(--text);
+    width: 5px;
+  }
+  .confetti i:nth-child(3n) {
+    height: 9px;
+  }
+  .confetti i:nth-child(1) {
+    --dx: 150px;
+    --dy: -40px;
+    --r: -150deg;
+    --delay: 0ms;
+  }
+  .confetti i:nth-child(2) {
+    --dx: 165px;
+    --dy: 37px;
+    --r: -77deg;
+    --delay: 29ms;
+  }
+  .confetti i:nth-child(3) {
+    --dx: 218px;
+    --dy: 36px;
+    --r: -4deg;
+    --delay: 58ms;
+  }
+  .confetti i:nth-child(4) {
+    --dx: 79px;
+    --dy: 53px;
+    --r: 69deg;
+    --delay: 87ms;
+  }
+  .confetti i:nth-child(5) {
+    --dx: 123px;
+    --dy: 71px;
+    --r: 142deg;
+    --delay: 116ms;
+  }
+  .confetti i:nth-child(6) {
+    --dx: 24px;
+    --dy: 135px;
+    --r: -85deg;
+    --delay: 5ms;
+  }
+  .confetti i:nth-child(7) {
+    --dx: 34px;
+    --dy: 67px;
+    --r: -12deg;
+    --delay: 34ms;
+  }
+  .confetti i:nth-child(8) {
+    --dx: -68px;
+    --dy: 94px;
+    --r: 61deg;
+    --delay: 63ms;
+  }
+  .confetti i:nth-child(9) {
+    --dx: -55px;
+    --dy: 132px;
+    --r: 134deg;
+    --delay: 92ms;
+  }
+  .confetti i:nth-child(10) {
+    --dx: -110px;
+    --dy: 37px;
+    --r: -93deg;
+    --delay: 121ms;
+  }
+  .confetti i:nth-child(11) {
+    --dx: -125px;
+    --dy: 73px;
+    --r: -20deg;
+    --delay: 10ms;
+  }
+  .confetti i:nth-child(12) {
+    --dx: -234px;
+    --dy: 16px;
+    --r: 53deg;
+    --delay: 39ms;
+  }
+  .confetti i:nth-child(13) {
+    --dx: -140px;
+    --dy: 8px;
+    --r: 126deg;
+    --delay: 68ms;
+  }
+  .confetti i:nth-child(14) {
+    --dx: -200px;
+    --dy: -58px;
+    --r: -101deg;
+    --delay: 97ms;
+  }
+  .confetti i:nth-child(15) {
+    --dx: -248px;
+    --dy: -40px;
+    --r: -28deg;
+    --delay: 126ms;
+  }
+  .confetti i:nth-child(16) {
+    --dx: -131px;
+    --dy: -101px;
+    --r: 45deg;
+    --delay: 15ms;
+  }
+  .confetti i:nth-child(17) {
+    --dx: -182px;
+    --dy: -103px;
+    --r: 118deg;
+    --delay: 44ms;
+  }
+  .confetti i:nth-child(18) {
+    --dx: -130px;
+    --dy: -193px;
+    --r: -109deg;
+    --delay: 73ms;
+  }
+  .confetti i:nth-child(19) {
+    --dx: -98px;
+    --dy: -129px;
+    --r: -36deg;
+    --delay: 102ms;
+  }
+  .confetti i:nth-child(20) {
+    --dx: -20px;
+    --dy: -186px;
+    --r: 37deg;
+    --delay: 131ms;
+  }
+  .confetti i:nth-child(21) {
+    --dx: -56px;
+    --dy: -215px;
+    --r: 110deg;
+    --delay: 20ms;
+  }
+  .confetti i:nth-child(22) {
+    --dx: 54px;
+    --dy: -147px;
+    --r: -117deg;
+    --delay: 49ms;
+  }
+  .confetti i:nth-child(23) {
+    --dx: 46px;
+    --dy: -184px;
+    --r: -44deg;
+    --delay: 78ms;
+  }
+  .confetti i:nth-child(24) {
+    --dx: 180px;
+    --dy: -166px;
+    --r: 29deg;
+    --delay: 107ms;
+  }
+  .confetti i:nth-child(25) {
+    --dx: 100px;
+    --dy: -130px;
+    --r: 102deg;
+    --delay: 136ms;
+  }
+  .confetti i:nth-child(26) {
+    --dx: 196px;
+    --dy: -87px;
+    --r: -125deg;
+    --delay: 25ms;
+  }
+  .confetti i:nth-child(27) {
+    --dx: 227px;
+    --dy: -119px;
+    --r: -52deg;
+    --delay: 54ms;
+  }
+  .confetti i:nth-child(28) {
+    --dx: 160px;
+    --dy: -25px;
+    --r: 21deg;
+    --delay: 83ms;
+  }
+  @keyframes celebrate-press {
+    from {
+      scale: 1.35;
+      opacity: 0;
+    }
+  }
+  @keyframes celebrate-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes celebrate-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes confetti-fly {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(0.3);
+      animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1);
+    }
+    40% {
+      opacity: 1;
+      transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) rotate(var(--r));
+      animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) translate(calc(var(--dx) * 1.2), calc(var(--dy) + 180px))
+        rotate(calc(var(--r) * 3));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .celebrate {
+      display: none;
+    }
+  }
+}

@@ -5,25 +5,35 @@ Every refusal is a fixed code: it becomes the 422 message, which the web maps by
 
 import re
 from typing import List, Optional
+from urllib.parse import urlparse
 
-SCHEDULE_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+SCHEDULE_TIME = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 # 0 = Monday, as workers/tasks/scheduling.py compares with datetime.weekday().
 WEEKDAYS = range(7)
 MAX_NAME_LENGTH = 100
 MAX_PATTERN_LENGTH = 300
 
-INVALID_SCHEDULE_TIME = "invalid_schedule_time"
+MAX_SCHEDULE_TIMES = 6
+
+INVALID_SCHEDULE_TIMES = "invalid_schedule_times"
 INVALID_SCHEDULE_DAYS = "invalid_schedule_days"
 SCHEDULE_INCOMPLETE = "schedule_incomplete"
 INVALID_NAME = "invalid_name"
 INVALID_URL_PATTERN = "invalid_url_pattern"
 
 
-def check_schedule_time(value: Optional[str]) -> Optional[str]:
-    """The time as sent, or ValueError(INVALID_SCHEDULE_TIME) unless it is HH:MM between 00:00 and 23:59."""
-    if value is not None and not SCHEDULE_TIME.match(value):
-        raise ValueError(INVALID_SCHEDULE_TIME)
-    return value
+def check_schedule_times(value: Optional[List[str]]) -> Optional[List[str]]:
+    """The times sorted, or ValueError(INVALID_SCHEDULE_TIMES) unless 1-MAX_SCHEDULE_TIMES unique HH:MM values."""
+    if value is None:
+        return None
+    if (
+        not 1 <= len(value) <= MAX_SCHEDULE_TIMES
+        or len(set(value)) != len(value)
+        # fullmatch: "$" would also accept a trailing newline.
+        or not all(SCHEDULE_TIME.fullmatch(time) for time in value)
+    ):
+        raise ValueError(INVALID_SCHEDULE_TIMES)
+    return sorted(value)
 
 
 def check_schedule_days(value: Optional[List[int]]) -> Optional[List[int]]:
@@ -56,8 +66,18 @@ def check_url_pattern(value: Optional[str]) -> Optional[str]:
     return pattern
 
 
-def incomplete_schedule_field(time: Optional[str], days: Optional[List[int]]) -> Optional[str]:
-    """The missing half of a schedule, or None. A time without days (or the reverse) never runs."""
-    if (time is None) == (days is None):
+def incomplete_schedule_field(times: Optional[List[str]], days: Optional[List[int]]) -> Optional[str]:
+    """The missing half of a schedule, or None. Times without days (or the reverse) never run."""
+    if (times is None) == (days is None):
         return None
-    return "schedule_time" if time is None else "schedule_days"
+    return "schedule_times" if times is None else "schedule_days"
+
+
+def url_matches_pattern(url: str, pattern: str) -> bool:
+    """The crawl filter's one test. A pattern starting with "/" is the start of the posting address
+    after the domain (path plus query), so the link must begin with it; any other (older) pattern
+    is a plain substring of the whole URL."""
+    if not pattern.startswith("/"):
+        return pattern in url
+    parsed = urlparse(url)
+    return (parsed.path + (f"?{parsed.query}" if parsed.query else "")).startswith(pattern)

@@ -72,6 +72,11 @@ const profileSchema = z.object({
     .transform((value) => value ?? emptyCv()),
   cv_template: z.string().nullish(),
   cover_letter_template: z.string().nullish(),
+  // Durable CV import run state (core/cv_import_state.py): a running import survives a reload; the
+  // error is a fixed code, never shown.
+  cv_import_running: z.boolean().default(false),
+  cv_import_started_at: z.string().nullish(),
+  cv_import_error: z.string().nullish(),
 });
 // The server answers {status: "saved"}; nothing in it is read.
 const anyBodySchema = z.unknown();
@@ -111,7 +116,8 @@ export type ImportedProfile = z.infer<typeof importAnswerSchema>["data"];
 
 /**
  * The server parses and stores the CV itself and answers with the stored values. Refusals:
- * 413/415, 422 `cv_no_text` on `file`, 502 `cv_parse_failed` (REFUSAL in profilePaths.ts).
+ * 413/415, 422 `cv_no_text` on `file`, 409 `cv_import_running`, 502 `cv_parse_failed` (REFUSAL in
+ * profilePaths.ts).
  */
 export async function importCv(file: File): Promise<ImportedProfile> {
   const form = new FormData();

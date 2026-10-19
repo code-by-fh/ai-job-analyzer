@@ -1,4 +1,4 @@
-import type { InitialRun, NotifyChannel } from "@/api/platformPaths";
+import type { InitialRun } from "@/api/platformPaths";
 import type { Schedule } from "@/domain/schedule";
 import { dayRuns, type SourceState } from "@/domain/sources";
 import type { MessageKey } from "@/i18n/de";
@@ -10,13 +10,6 @@ export const SOURCE_STATE_LABEL: Readonly<Record<SourceState, MessageKey>> = {
   paused: "sources.state.paused",
   failing: "sources.state.failing",
   ok: "sources.state.ok",
-};
-
-export const CHANNEL_LABEL: Readonly<Record<NotifyChannel, MessageKey>> = {
-  PUSHOVER: "sources.channel.pushover",
-  RESEND: "sources.channel.resend",
-  MAILJET: "sources.channel.mailjet",
-  SMTP: "sources.channel.smtp",
 };
 
 export const INITIAL_RUN_LABEL: Readonly<
@@ -49,13 +42,13 @@ function runText([first, last]: [number, number], t: Translate): string {
   return first === last ? day(first) : `${day(first)}${LIST}${day(last)}`;
 }
 
-/** D6: "Mo–Fr 08:00", "Mo, Mi 07:30", "täglich 06:00", "Nur manuell". */
+/** D6: "Mo–Fr 08:00", "Mo, Mi 07:30, 18:00", "täglich 06:00", "Nur manuell". */
 export function scheduleText(schedule: Schedule | null, t: Translate): string {
   if (!schedule) return t("sources.schedule.manual");
-  if (schedule.days.length === ALL_DAYS)
-    return t("sources.schedule.daily", { time: schedule.time });
+  const time = schedule.times.join(LIST);
+  if (schedule.days.length === ALL_DAYS) return t("sources.schedule.daily", { time });
   const days = dayRuns(schedule.days)
     .map((run) => runText(run, t))
     .join(LIST);
-  return t("sources.schedule.days", { days, time: schedule.time });
+  return t("sources.schedule.days", { days, time });
 }

@@ -1,10 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
 import { COLOR_SCHEMES, SCREENSHOT_SIZES, VIEWPORTS } from "./support/constants";
 import { fixNow } from "./support/jobFixtures";
+import { SMTP_CHANNEL } from "./support/notificationFixtures";
 import { horizontalOverflow, saveScreenshot } from "./support/page";
 import { STEPSTONE } from "./support/platformFixtures";
 import { SourcesServer, sourcesRoutes } from "./support/sourcesServer";
 import { expect, test } from "./support/test";
+import { chooseLinksAndConfirm } from "./support/wizardSteps";
 
 const MIN_HIT_TARGET_PX = 44;
 const SEARCH_URL = "https://www.get-in-it.de/jobsuche?query=kotlin";
@@ -24,11 +26,12 @@ async function settled(page: Page): Promise<void> {
   );
 }
 
-/** Steps 1 and 2 with the prototype's page: the six postings stay preselected. */
+/** Steps 1 and 2 with the prototype's page: two postings chosen, the derived pattern confirmed. */
 async function toStep3(page: Page): Promise<void> {
   await page.goto("/sources?add=1");
   await wizard(page).getByLabel("Adresse einer Suchergebnisseite").fill(SEARCH_URL);
   await wizard(page).getByRole("button", { name: "Seite prüfen" }).click();
+  await chooseLinksAndConfirm(wizard(page));
   await wizard(page).getByRole("button", { name: "Weiter", exact: true }).click();
   await expect(wizard(page).getByLabel("Name", { exact: true })).toBeFocused();
 }
@@ -89,7 +92,9 @@ test("a new source with a first analysis appears running and focused", async ({
   await mockApi(sourcesRoutes(server));
   await toStep3(page);
   await wizard(page).getByLabel("Name", { exact: true }).fill("get-in-it Kotlin");
-  await wizard(page).getByLabel("Uhrzeit").fill("07:30");
+  await wizard(page).getByLabel("Uhrzeit 1", { exact: true }).fill("07:30");
+  await wizard(page).getByRole("button", { name: "Uhrzeit hinzufügen" }).click();
+  await wizard(page).getByLabel("Uhrzeit 2", { exact: true }).fill("18:00");
   const days = wizard(page).getByRole("group", { name: "Wochentage" });
   await days.getByRole("button", { name: "Di" }).click();
   await days.getByRole("button", { name: "Do" }).click();
@@ -101,12 +106,20 @@ test("a new source with a first analysis appears running and focused", async ({
   ).toBeVisible();
   await expect(wizard(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/sources$/);
-  await expect(row(page, "get-in-it Kotlin")).toContainText("Mo, Mi 07:30");
+  await expect(row(page, "get-in-it Kotlin")).toContainText("Mo, Mi 07:30, 18:00");
   await expect(row(page, "get-in-it Kotlin")).toContainText("Läuft");
   await expect(page.getByRole("link", { name: "get-in-it Kotlin" })).toBeFocused();
+  // The global crawl indicator takes the new crawl over from the closed wizard.
+  const indicator = page
+    .getByRole("complementary", { name: "Seitenleiste" })
+    .getByRole("button", { name: /^2 Aufgaben laufen/ });
+  await indicator.click();
+  const activity = page.getByRole("dialog", { name: "Im Hintergrund" });
+  await expect(activity.getByRole("link", { name: "get-in-it Kotlin" })).toBeVisible();
+  await page.keyboard.press("Escape");
   expect(server.get(CREATED_ID)).toMatchObject({
     url_pattern: "/jobsuche/p/",
-    schedule_time: "07:30",
+    schedule_times: ["07:30", "18:00"],
     schedule_days: [0, 2],
   });
   // The new source answers its own calls (its drawer loads its run history).
@@ -125,4 +138,45 @@ test("an address that already is a source links to its drawer", async ({ page, m
   await expect(wizard(page).getByText("Diese Quelle gibt es schon.")).toBeVisible();
   await wizard(page).getByRole("button", { name: "„StepStone“ ansehen" }).click();
   await expect(page.getByRole("dialog", { name: "Quelle StepStone" })).toBeVisible();
+});
+
+test("step 3 picks a channel and creates another one in a dialog, both are sent with the setup", async ({
+  page,
+  mockApi,
+}) => {
+  const server = new SourcesServer();
+  await mockApi(sourcesRoutes(server));
+  await toStep3(page);
+  const group = wizard(page).getByRole("region", { name: "Benachrichtigungen" });
+  await group.locator("label.check", { hasText: "Firmen-SMTP benachrichtigen" }).click();
+  await group.getByRole("button", { name: "Neuen Kanal anlegen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Neuer Kanal" });
+  await dialog.getByLabel("Art").selectOption({ label: "E-Mail (Mailjet)" });
+  await dialog.getByLabel("Name").fill("Mailjet Jobs");
+  await dialog.getByLabel("API-Schlüssel").fill("mj-key");
+  await dialog.getByLabel("Secret Key").fill("mj-secret");
+  await dialog.getByLabel("Absender-Adresse").fill("mj@example.com");
+  await dialog.getByLabel("Empfänger").fill("mj@example.com");
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(wizard(page).getByLabel("Mailjet Jobs benachrichtigen")).toBeChecked();
+  await wizard(page).getByRole("button", { name: "Quelle anlegen" }).click();
+  await expect(wizard(page)).toHaveCount(0);
+  const [mailjet] = server.notifications.ids().slice(-1);
+  expect(server.get(CREATED_ID).notification_channel_ids).toEqual([SMTP_CHANNEL.id, mailjet]);
+});
+
+test("without channel types step 3 shows no notification group and still creates the source", async ({
+  page,
+  mockApi,
+}) => {
+  const server = new SourcesServer();
+  server.notifications.types = [];
+  await mockApi(sourcesRoutes(server));
+  await toStep3(page);
+  await expect(wizard(page).getByRole("button", { name: "Quelle anlegen" })).toBeVisible();
+  await expect(wizard(page).getByRole("region", { name: "Benachrichtigungen" })).toHaveCount(0);
+  await wizard(page).getByRole("button", { name: "Quelle anlegen" }).click();
+  await expect(wizard(page)).toHaveCount(0);
+  expect(server.get(CREATED_ID).notification_channel_ids).toEqual([]);
 });

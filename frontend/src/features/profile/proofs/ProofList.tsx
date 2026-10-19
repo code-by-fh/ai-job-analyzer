@@ -68,7 +68,7 @@ function BlockedNote({ proof }: { proof: ProfileDocument }) {
   return <div className="meta proof-blocked">{t("profile.proofs.notOpenable")}</div>;
 }
 
-/** A Drive file or one without stored bytes (the server does not say which) keeps its buttons, inactive with the reason (D8). */
+/** A file without stored bytes keeps its buttons, inactive with the reason (D8). */
 function ProofActions({ proof, onView, onDelete }: ProofRowProps) {
   const { t } = useI18n();
   const name = proofName(proof);

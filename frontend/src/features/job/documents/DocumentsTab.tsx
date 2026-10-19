@@ -1,8 +1,9 @@
 "use client";
 
-import { FileText, Pencil, RefreshCw } from "lucide-react";
+import { Eye, FileText, Pencil, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { DOCUMENT_KINDS, type DocumentKind } from "@/api/jobDocuments";
+import { useQuery } from "@tanstack/react-query";
+import { DOCUMENT_KINDS, jobDocumentsQueryOptions, type DocumentKind } from "@/api/jobDocuments";
 import type { JobDetail } from "@/api/jobs";
 import { documentPresence, documentsReady } from "@/domain/documents";
 import { isGenerating } from "@/domain/jobStatus";
@@ -17,7 +18,7 @@ import { DocumentRow } from "./DocumentRow";
 import { DownloadButton } from "./DownloadButton";
 import { FilesSection } from "./FilesSection";
 import { GenerationNote } from "./GenerationNote";
-import { RenderStatus, useRenderRunning } from "./RenderStatus";
+import { hasPdf } from "./downloadPdf";
 import { useAttachChoice } from "./useAttachChoice";
 import { useDocumentEdit } from "./useDocumentEdit";
 import { useEditSource, type EditSource } from "./useEditSource";
@@ -25,26 +26,34 @@ import { useGeneration } from "./useGeneration";
 
 type DocumentEdit = ReturnType<typeof useDocumentEdit>;
 
-/** "Bewerbungsmappe": document rows left, the A4 proof right; the proof is also the editing sheet. */
+/** "Bewerbungsmappe": the document rows side by side; a preview opens on click and doubles as the editing sheet. */
 export function DocumentsTab({ job }: { job: JobDetail }) {
-  const [preview, setPreview] = useState<DocumentKind>("cv");
+  const [preview, setPreview] = useState<DocumentKind | null>(null);
   const edit = useDocumentEdit(job);
   const startEdit = (kind: DocumentKind) => {
     void edit.start(kind).then((started) => started && setPreview(kind));
   };
-  // Switching the preview while editing would drop the edit, so it asks like "Verwerfen".
-  const switchPreview = (kind: DocumentKind) => {
-    void edit.stop().then((left) => left && setPreview(kind));
+  // Closing while editing would drop the edit, so it asks like "Verwerfen".
+  const closePreview = () => {
+    void edit.stop().then((left) => left && setPreview(null));
   };
   return (
     <div className="mappe">
-      <MappeColumn job={job} onEdit={startEdit} />
-      <PreviewColumn job={job} preview={preview} onPreview={switchPreview} edit={edit} />
+      <MappeColumn job={job} onEdit={startEdit} onPreview={setPreview} />
+      {preview ? (
+        <PreviewModal job={job} kind={preview} edit={edit} onClose={closePreview} />
+      ) : null}
     </div>
   );
 }
 
-function MappeColumn({ job, onEdit }: { job: JobDetail; onEdit: (kind: DocumentKind) => void }) {
+interface MappeColumnProps {
+  job: JobDetail;
+  onEdit: (kind: DocumentKind) => void;
+  onPreview: (kind: DocumentKind) => void;
+}
+
+function MappeColumn({ job, onEdit, onPreview }: MappeColumnProps) {
   const { t } = useI18n();
   const [attach, setAttach] = useAttachChoice(job.id);
   return (
@@ -52,7 +61,7 @@ function MappeColumn({ job, onEdit }: { job: JobDetail; onEdit: (kind: DocumentK
       <MappeHead job={job} attach={attach} />
       <p className="prose small">{t("docs.intro")}</p>
       <GenerationNote job={job} />
-      <DocumentRows job={job} attach={attach} onEdit={onEdit} />
+      <DocumentRows job={job} attach={attach} onEdit={onEdit} onPreview={onPreview} />
       <AttachProfileDocuments attach={attach} onChange={setAttach} />
       <FilesSection job={job} />
     </div>
@@ -63,64 +72,102 @@ interface DocumentRowsProps {
   job: JobDetail;
   attach: boolean;
   onEdit: (kind: DocumentKind) => void;
+  onPreview: (kind: DocumentKind) => void;
 }
 
-function DocumentRows({ job, attach, onEdit }: DocumentRowsProps) {
-  return DOCUMENT_KINDS.map((kind) => (
-    <DocumentRow
-      key={kind}
-      job={job}
-      kind={kind}
-      attach={attach}
-      actions={<RowActions job={job} kind={kind} onEdit={onEdit} />}
-    />
-  ));
+function DocumentRows({ job, attach, onEdit, onPreview }: DocumentRowsProps) {
+  return (
+    <div className="docrows">
+      {DOCUMENT_KINDS.map((kind) => (
+        <DocumentRow
+          key={kind}
+          job={job}
+          kind={kind}
+          attach={attach}
+          actions={<RowActions job={job} kind={kind} onEdit={onEdit} onPreview={onPreview} />}
+        />
+      ))}
+    </div>
+  );
 }
 
 interface RowActionsProps {
   job: JobDetail;
   kind: DocumentKind;
   onEdit: (kind: DocumentKind) => void;
+  onPreview: (kind: DocumentKind) => void;
 }
 
-function RowActions({ job, kind, onEdit }: RowActionsProps) {
+function PreviewButton({ onClick }: { onClick: () => void }) {
   const { t } = useI18n();
-  const editable = documentPresence(job)[kind] && !isGenerating(job);
+  return (
+    <Button size="sm" icon={Eye} onClick={onClick}>
+      {t("docs.preview")}
+    </Button>
+  );
+}
+
+/** Whether the stored HTML can be edited now: it exists and no generation rewrites it. */
+function canEdit(job: JobDetail, kind: DocumentKind): boolean {
+  return documentPresence(job)[kind] && !isGenerating(job);
+}
+
+function RowActions({ job, kind, onEdit, onPreview }: RowActionsProps) {
+  const { t } = useI18n();
+  const documents = useQuery(jobDocumentsQueryOptions(job.id)).data ?? [];
+  // A job generated before Task 12 may have only its stored PDF; it is shown, not edited.
+  const viewable = hasPdf({ job, kind, documents, label: t(DOCUMENT_LABEL[kind]) });
   return (
     <>
-      {editable ? (
-        <Button size="sm" icon={Pencil} onClick={() => onEdit(kind)}>
-          {t("edit.start")}
-        </Button>
-      ) : null}
+      {viewable ? <PreviewButton onClick={() => onPreview(kind)} /> : null}
+      {canEdit(job, kind) ? <EditButton onClick={() => onEdit(kind)} /> : null}
       <DownloadButton job={job} kind={kind} />
-      <RenderStatus job={job} kind={kind} />
     </>
   );
 }
 
-interface PreviewColumnProps {
-  job: JobDetail;
-  preview: DocumentKind;
-  onPreview: (kind: DocumentKind) => void;
-  edit: DocumentEdit;
+function EditButton({ onClick }: { onClick: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Button size="sm" icon={Pencil} onClick={onClick}>
+      {t("edit.start")}
+    </Button>
+  );
 }
 
-function PreviewColumn({ job, preview, onPreview, edit }: PreviewColumnProps) {
-  const editing = edit.editing === preview;
-  const rendering = useRenderRunning(job.id, preview);
-  const source = useEditSource(job.id, preview, editing);
+interface PreviewModalProps {
+  job: JobDetail;
+  kind: DocumentKind;
+  edit: DocumentEdit;
+  onClose: () => void;
+}
+
+function PreviewModal({ job, kind, edit, onClose }: PreviewModalProps) {
+  const editing = edit.editing === kind;
+  const source = useEditSource(job.id, kind, editing);
+  const { t } = useI18n();
   return (
-    <div>
-      <DocumentPreview
-        job={job}
-        kind={preview}
-        onKindChange={onPreview}
-        busy={rendering}
-        editor={editing ? <EditorSheet kind={preview} source={source} edit={edit} /> : undefined}
-      />
-      {editing ? <EditBar edit={edit} changed={source.changed} /> : null}
-    </div>
+    <DocumentPreview
+      job={job}
+      kind={kind}
+      onClose={onClose}
+      editor={editing ? <EditorSheet kind={kind} source={source} edit={edit} /> : undefined}
+      actions={<PreviewActions job={job} kind={kind} edit={edit} />}
+      notice={
+        editing && source.changed ? <Notice tone="warn">{t("edit.changedOnServer")}</Notice> : null
+      }
+    />
+  );
+}
+
+/** While editing: save and discard; otherwise edit (when possible) and download. */
+function PreviewActions({ job, kind, edit }: Omit<PreviewModalProps, "onClose">) {
+  if (edit.editing === kind) return <EditActions edit={edit} />;
+  return (
+    <>
+      {canEdit(job, kind) ? <EditButton onClick={() => void edit.start(kind)} /> : null}
+      <DownloadButton job={job} kind={kind} />
+    </>
   );
 }
 
@@ -138,19 +185,17 @@ function EditorSheet({ kind, source, edit }: EditorSheetProps) {
   return <DocumentEditor html={source.html} title={title} frameRef={frameRef} onEdit={markDirty} />;
 }
 
-function EditBar({ edit, changed }: { edit: DocumentEdit; changed: boolean }) {
+function EditActions({ edit }: { edit: DocumentEdit }) {
   const { t } = useI18n();
   return (
-    <div className="edit-bar">
-      {changed ? <Notice tone="warn">{t("edit.changedOnServer")}</Notice> : null}
+    <>
       <Button size="sm" variant="primary" busy={edit.saving} onClick={edit.save}>
         {t("edit.save")}
       </Button>
       <Button size="sm" variant="ghost" onClick={edit.stop}>
         {t("edit.discard")}
       </Button>
-      <span>{t("edit.hint")}</span>
-    </div>
+    </>
   );
 }
 

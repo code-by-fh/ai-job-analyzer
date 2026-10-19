@@ -45,6 +45,14 @@ async function pick(file: File): Promise<void> {
 }
 
 describe("FilesSection", () => {
+  it("names the section and says what it is for", () => {
+    show();
+    expect(
+      screen.getByRole("heading", { name: "Eigene Dateien zur Bewerbung" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Zeugnisse, Referenzen oder eigene Versionen/)).toBeInTheDocument();
+  });
+
   it("lists every file with its kind and size", async () => {
     show();
     const row = (await screen.findByText("zeugnis.png")).closest("li") as HTMLElement;
@@ -139,6 +147,15 @@ describe("FilesSection", () => {
     );
   });
 
+  it("names the file and its kind in the viewer's toolbar", async () => {
+    show();
+    const row = (await screen.findByText("zeugnis.png")).closest("li") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "zeugnis.png ansehen" }));
+    const bar = screen.getByRole("dialog", { name: "zeugnis.png" }).querySelector(".viewer-bar")!;
+    expect(within(bar as HTMLElement).getByRole("heading", { name: "zeugnis.png" })).toBeVisible();
+    expect(bar).toHaveTextContent("Bild");
+  });
+
   it("offers no viewer for Word files, only download", async () => {
     stubRoutes({
       "GET /jobs/job-1/documents": [
@@ -151,14 +168,18 @@ describe("FilesSection", () => {
     expect(screen.getByRole("button", { name: "cv.docx herunterladen" })).toBeInTheDocument();
   });
 
-  it("shows the Drive message when a stored file cannot be opened", async () => {
+  it("shows the generic error, never server text, when a stored file cannot be opened", async () => {
     stubRoutes({
       "GET /jobs/job-1/documents": [UPLOAD],
-      "GET /jobs/job-1/documents/9/view": () => new Response("{}", { status: 400 }),
+      "GET /jobs/job-1/documents/9/view": () =>
+        new Response(JSON.stringify({ detail: "Invalid file path" }), { status: 400 }),
     });
     renderWithProviders(<FilesSection job={buildJob()} />);
     const row = (await screen.findByText("zeugnis.png")).closest("li") as HTMLElement;
     await user.click(within(row).getByRole("button", { name: "zeugnis.png ansehen" }));
-    expect(await screen.findByText(/Google Drive/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Etwas ist schiefgelaufen. Bitte versuche es erneut."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid file path/)).toBeNull();
   });
 });

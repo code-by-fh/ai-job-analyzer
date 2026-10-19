@@ -6,7 +6,7 @@ import { pendingTaskId } from "@/domain/pendingTasks";
 import { parseFitReasoning, type FitReasoning, type ReasoningBlock } from "@/domain/reasoning";
 import { roundScore, scoreBand } from "@/domain/scoreBand";
 import { useI18n } from "@/i18n/useI18n";
-import { useTaskPhase } from "@/realtime/usePendingTasks";
+import { usePendingStart, useTaskPhase } from "@/realtime/usePendingTasks";
 import { Button } from "@/ui/Button";
 import { Disclosure } from "@/ui/Disclosure";
 import { Icon } from "@/ui/Icon";
@@ -132,7 +132,7 @@ function PostingText({ description }: { description?: string | null }) {
 function useAnalysis(job: JobDetail) {
   const taskId = pendingTaskId.analysis(job.id);
   const task = useStartTask(taskId, () => reanalyzeJob(job.id));
-  return { ...task, phase: useTaskPhase(taskId) };
+  return { ...task, phase: useTaskPhase(taskId), startedAt: usePendingStart(taskId) };
 }
 
 function NoScore({ job }: { job: JobDetail }) {

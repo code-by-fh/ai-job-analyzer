@@ -5,7 +5,7 @@ Smoke Test Suite for Job Agent MVP
 Tests all essential functions:
   - API Endpoints (Auth, Jobs, Settings, Platforms, Admin, Users)
   - Notification-Adapter (Pushover) via Mocking
-  - Worker-Helper functions (format_cv_for_prompt, send_notification)
+  - Worker-Helper functions (format_cv_for_prompt)
 
 Execution:
   python smoke_test.py                     # gegen http://localhost:8002
@@ -29,8 +29,6 @@ import uuid
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-from unittest.mock import MagicMock, patch, call
-from types import SimpleNamespace
 
 # ─── Colors for terminal output ────────────────────────────────────────────────
 GREEN = "\033[92m"
@@ -362,11 +360,11 @@ def test_platforms(token: str) -> list:
                 "crawl_interval_minutes": 360,
                 "is_active": True,
                 "is_notification_enabled": True,
-                "notification_adapters": ["GMAIL"],
+                "notification_channel_ids": [],
             },
         )
         if r.status_code == 200:
-            ok(f"PATCH /platforms/{pid} -> interval=360, notification=GMAIL")
+            ok(f"PATCH /platforms/{pid} -> interval=360, notification_channel_ids=[]")
         else:
             fail(f"PATCH /platforms/{pid}", f"HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
@@ -560,132 +558,6 @@ def test_worker_utilities() -> None:
         fail("format_cv_for_prompt(None)", str(e))
 
 
-def test_notification_pushover() -> None:
-    """Tests Pushover notification adapter via HTTP mock."""
-    section("11. Notification - Pushover Adapter")
-
-    from workers.notifications.push import _send_via_pushover
-
-    job = SimpleNamespace(
-        id="test-job-456",
-        title="DevOps Engineer",
-        company="CloudCorp AG",
-        match_score=92.0,
-        reasoning="Excellent Docker knowledge.",
-        url="https://cloudcorp.de/jobs/devops",
-    )
-    profile_ok = SimpleNamespace(
-        pushover_user_key="user-key-abc",
-        pushover_api_token="api-token-xyz",
-    )
-    profile_missing = SimpleNamespace(
-        pushover_user_key=None,
-        pushover_api_token=None,
-    )
-
-    # 11a. Missing Credentials
-    result = _send_via_pushover(job, profile_missing)
-    if result is False:
-        ok("_send_via_pushover (missing creds) -> False (correct)")
-    else:
-        fail(
-            "_send_via_pushover (missing creds)",
-            f"Expected False, received {result}",
-        )
-
-    # 11b. successfullye Pushover-Anfrage (HTTP 200)
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    with patch("requests.post", return_value=mock_response) as mock_post:
-        result = _send_via_pushover(job, profile_ok)
-        if result is True:
-            ok("_send_via_pushover (Mock HTTP 200) -> True, Push sent")
-            # Check dass POST-Payload correcte Felder contains
-            call_kwargs = mock_post.call_args
-            payload = (
-                call_kwargs[1]["data"] if call_kwargs[1] else call_kwargs[0][1]
-            )
-            assert payload.get("token") == "api-token-xyz", "Wrong API token"
-            assert payload.get("user") == "user-key-abc", "Wrong User key"
-            ok(
-                "_send_via_pushover -> Payload contains correcten Token und User-Key"
-            )
-        else:
-            fail(
-                "_send_via_pushover (Mock HTTP 200)",
-                f"Expected True, received {result}",
-            )
-
-    # 11c. Pushover Errorfall (HTTP 400)
-    mock_response_err = MagicMock()
-    mock_response_err.status_code = 400
-    mock_response_err.text = '{"errors":["app token is invalid"]}'
-    with patch("requests.post", return_value=mock_response_err):
-        result = _send_via_pushover(job, profile_ok)
-        if result is False:
-            ok("_send_via_pushover (Mock HTTP 400) -> False (Error handling)")
-        else:
-            fail(
-                "_send_via_pushover (Mock HTTP 400)",
-                f"Expected False, received {result}",
-            )
-
-
-def test_notification_dispatcher() -> None:
-    """Tests the send_notification dispatcher (Pushover is the only adapter)."""
-    section("12. Notification - Dispatcher (send_notification)")
-
-    from workers.notifications import push
-
-    job = SimpleNamespace(
-        id="test-job-789",
-        title="Test Position",
-        company="SmokeTest GmbH",
-        match_score=75.0,
-        reasoning="Fits well.",
-        url="https://smoketest.de/jobs/1",
-    )
-    profile = SimpleNamespace(
-        user_id=1,
-        pushover_user_key="key",
-        pushover_api_token="token",
-    )
-    # send_notification only uses db to resolve the username.
-    db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
-        username="smoketester"
-    )
-
-    # 12a. Explicit adapter list: PUSHOVER
-    with patch.object(push, "_send_via_pushover", return_value=True) as mock_push:
-        result = push.send_notification(job, profile, db, adapters=["PUSHOVER"])
-        assert result is True
-        assert mock_push.call_count == 1
-        ok("send_notification(adapters=['PUSHOVER']) -> calls Pushover")
-
-    # 12b. Fallback ohne Adapter-Angabe (nutzt Credentials)
-    with patch.object(push, "_send_via_pushover", return_value=True):
-        result = push.send_notification(job, profile, db, adapters=None)
-        assert result is True
-        ok("send_notification(adapters=None) -> Fallback auf vorhandene Credentials")
-
-    # 12c. Kein Service verfuegbar -> False
-    empty_profile = SimpleNamespace(
-        user_id=1,
-        pushover_user_key=None,
-        pushover_api_token=None,
-    )
-    with patch.object(push, "_send_via_pushover", return_value=False):
-        result = push.send_notification(job, empty_profile, db, adapters=None)
-        if result is False:
-            ok("send_notification (keine Credentials) -> False")
-        else:
-            fail(
-                "send_notification (keine Credentials)",
-                f"Expected False, received {result}",
-            )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # ZUSAMMENFASSUNG
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -747,48 +619,6 @@ def test_unit_format_cv_none():
     assert "No detailed experience" in format_cv_for_prompt(None)
 
 
-def test_unit_send_notification_pushover_only():
-    """pytest: send_notification mit Pushover-Adapter"""
-    from workers.notifications import push
-
-    job = SimpleNamespace(
-        id="j1",
-        title="Dev",
-        company="C",
-        match_score=80,
-        reasoning="r",
-        url="http://x.com",
-    )
-    profile = SimpleNamespace(
-        user_id=1,
-        pushover_user_key="key",
-        pushover_api_token="token",
-    )
-    db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
-        username="tester"
-    )
-    with patch.object(push, "_send_via_pushover", return_value=True) as m:
-        assert push.send_notification(job, profile, db, adapters=["PUSHOVER"]) is True
-        assert m.call_count == 1
-
-
-def test_unit_pushover_missing_creds():
-    """pytest: _send_via_pushover mit fehlenden Credentials"""
-    from workers.notifications.push import _send_via_pushover
-
-    job = SimpleNamespace(
-        id="j2",
-        title="Dev",
-        company="C",
-        match_score=80,
-        reasoning="r",
-        url="http://x.com",
-    )
-    profile = SimpleNamespace(pushover_user_key=None, pushover_api_token=None)
-    assert _send_via_pushover(job, profile) is False
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -839,8 +669,6 @@ def main():
 
     # ── Unit Tests ─────────────────────────────────────────────────────────────
     test_worker_utilities()
-    test_notification_pushover()
-    test_notification_dispatcher()
 
     return print_summary()
 

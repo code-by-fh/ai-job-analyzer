@@ -4,6 +4,7 @@ import { fixNow } from "./support/jobFixtures";
 import { horizontalOverflow, saveScreenshot } from "./support/page";
 import { FOUND_LINKS, sourcesRoutes } from "./support/sourcesServer";
 import { expect, test } from "./support/test";
+import { chooseLinksAndConfirm, DERIVED_PATTERN } from "./support/wizardSteps";
 
 const MIN_HIT_TARGET_PX = 44;
 const SEARCH_URL = "https://www.get-in-it.de/jobsuche?query=kotlin";
@@ -47,8 +48,9 @@ for (const [size, viewport] of SCREENSHOT_SIZES) {
       await page.mouse.move(0, 0);
       await saveScreenshot(page, `sources-wizard-1-${size}-${scheme}`);
       await checkPage(page, SEARCH_URL);
-      await expect(wizard(page).getByText(`${POSTINGS} ausgewählt`)).toBeVisible();
+      await expect(wizard(page).getByText("0 ausgewählt")).toBeVisible();
       await expect(linkRows(page)).toHaveCount(FOUND_LINKS.length);
+      await chooseLinksAndConfirm(wizard(page));
       expect(await horizontalOverflow(page)).toBe(0);
       await page.mouse.move(0, 0);
       await saveScreenshot(page, `sources-wizard-2-${size}-${scheme}`);
@@ -103,21 +105,31 @@ test("Zurück keeps the address", async ({ page, mockApi }) => {
   await expect(address).toHaveValue(SEARCH_URL);
   await expect(address).toBeFocused();
   await wizard(page).getByRole("button", { name: "Seite prüfen" }).click();
-  await expect(wizard(page).getByText(`${POSTINGS} ausgewählt`)).toBeVisible();
+  await expect(wizard(page).getByText("0 ausgewählt")).toBeVisible();
 });
 
-test("Erweitert counts matches", async ({ page, mockApi }) => {
+test("the pattern derived from the chosen links counts matches and must be confirmed", async ({
+  page,
+  mockApi,
+}) => {
   await mockApi(sourcesRoutes());
   await page.goto("/sources?add=1");
   await checkPage(page, SEARCH_URL);
-  await wizard(page).getByRole("button", { name: "Erweitert" }).click();
+  await expect(
+    wizard(page).getByText(/Aus deiner Auswahl leitet die App das URL-Muster ab/),
+  ).toBeVisible();
+  await linkRows(page).first().getByRole("checkbox").check();
   const pattern = wizard(page).getByLabel("URL-Muster");
-  await pattern.fill("/jobsuche/p/");
+  await expect(pattern).toHaveValue("/jobsuche");
+  await linkRows(page).nth(1).getByRole("checkbox").check();
+  await expect(pattern).toHaveValue(DERIVED_PATTERN);
   await expect(
     wizard(page).getByText(
       `${POSTINGS} von ${FOUND_LINKS.length} gefundenen Links enthalten dieses Muster.`,
     ),
   ).toBeVisible();
+  await wizard(page).getByRole("button", { name: "Weiter", exact: true }).click();
+  await expect(wizard(page).getByRole("checkbox", { name: "Muster passt" })).toBeFocused();
   await pattern.fill("/nope/");
   await expect(wizard(page).getByText("Kein gefundener Link enthält dieses Muster.")).toBeVisible();
 });

@@ -1,4 +1,6 @@
 import type { CrawlJob } from "@/api/crawl";
+import type { CrawlProgress } from "@/api/crawlProgress";
+import { mergeProgress } from "@/domain/crawlStages";
 import {
   isFinishEvent,
   type ActivityEvent,
@@ -18,8 +20,12 @@ export interface ActivityTask {
   step: ActivityStep;
   done: number;
   total: number;
+  /** The pipeline's real progress from the latest event or crawl-status; absent until the first one. */
+  progress?: CrawlProgress;
   /** When POST /platforms/{id}/crawl seeded it; absent for tasks the scraper or an event brought. */
   seededAt?: number;
+  /** The server's start (crawl-status, else the start event), epoch ms; absent until one arrives. */
+  startedAt?: number;
 }
 
 export interface FinishedTask {
@@ -29,11 +35,14 @@ export interface FinishedTask {
   platformId: number | null;
   outcome: ActivityOutcome;
   finishedAt: number;
+  /** The crawl's last known progress; absent for runs that never reported any. */
+  progress?: CrawlProgress;
 }
 
 export interface ActivityState {
   running: readonly ActivityTask[];
-  lastFinished: FinishedTask | null;
+  /** The runs that ended in this session, newest first, at most MAX_FINISHED. */
+  finished: readonly FinishedTask[];
   /**
    * Crawl ids that received a terminal event. Analysis events can still arrive afterwards
    * (several workers publish concurrently); they must not bring a finished task back.
@@ -41,7 +50,13 @@ export interface ActivityState {
   endedIds: readonly string[];
 }
 
-export const EMPTY_ACTIVITY: ActivityState = { running: [], lastFinished: null, endedIds: [] };
+export const EMPTY_ACTIVITY: ActivityState = { running: [], finished: [], endedIds: [] };
+export const MAX_FINISHED = 3;
+
+/** The run that ended last, or null. */
+export function latestFinished(state: ActivityState): FinishedTask | null {
+  return state.finished[0] ?? null;
+}
 
 const FINISHED_CRAWL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const OUTCOME_BY_EVENT: Readonly<Record<FinishEvent["type"], ActivityOutcome>> = {
@@ -62,16 +77,21 @@ type ProgressUpdaters = {
 };
 
 const PROGRESS_UPDATERS: ProgressUpdaters = {
-  crawl_job_started: (task, event) => ({
-    ...task,
-    source: sourceLabel(event.platform),
-    step: "starting",
-    platformId: event.platform_id ?? task.platformId,
-  }),
+  crawl_job_started: (task, event) =>
+    withStart(
+      {
+        ...task,
+        source: sourceLabel(event.platform),
+        step: "starting",
+        platformId: event.platform_id ?? task.platformId,
+      },
+      task.startedAt ?? epochStamp(event.started_at),
+    ),
+  // Total 0: the start page's links are counted and being filtered, no page is collected yet.
   crawl_job_progress: (task, event) => ({
     ...task,
     source: sourceLabel(event.platform),
-    step: "collecting",
+    step: event.total > 0 ? "collecting" : task.step,
     done: event.scraping_completed ?? 0,
     total: event.total,
   }),
@@ -94,6 +114,25 @@ const PROGRESS_UPDATERS: ProgressUpdaters = {
   }),
 };
 
+/** A scraper stamp (epoch ms as a string) as a number; undefined when absent or unreadable. */
+function epochStamp(raw: string | null | undefined): number | undefined {
+  const value = Number(raw);
+  return raw && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Sets the start only when one is known, so a task without one carries no startedAt key. */
+function withStart(task: ActivityTask, startedAt: number | undefined): ActivityTask {
+  return startedAt === undefined ? task : { ...task, startedAt };
+}
+
+/**
+ * When the crawl started, for its elapsed time: the server's stamp, else the seed's own time
+ * until the scraper lists the crawl; null when neither is known.
+ */
+export function taskStart(task: ActivityTask): number | null {
+  return task.startedAt ?? task.seededAt ?? null;
+}
+
 /** A platform URL's host; values that are not URLs (old bare hosts) are shown as they are. */
 export function sourceLabel(platformUrl: string): string {
   try {
@@ -105,7 +144,8 @@ export function sourceLabel(platformUrl: string): string {
 
 /**
  * Seeds the state from GET /scraper/crawl-status after a load or reconnect. The scraper does not
- * report when a crawl ended, so the last finished task of `previous` is kept.
+ * report when a crawl ended, so the finished runs of `previous` are kept. Progress an event already
+ * brought further than this answer is kept as well.
  */
 export function activityFromCrawlJobs(
   jobs: readonly CrawlJob[],
@@ -115,7 +155,9 @@ export function activityFromCrawlJobs(
   const isEnded = (job: CrawlJob) =>
     FINISHED_CRAWL_STATUSES.has(job.status) || previous.endedIds.includes(job.job_id);
   // A stale status can still list a crawl whose end event already arrived; it stays ended.
-  const listed = jobs.filter((job) => !isEnded(job)).map(taskFromCrawlJob);
+  const listed = jobs
+    .filter((job) => !isEnded(job))
+    .map((job) => taskFromCrawlJob(job, knownTask(previous, job.job_id)));
   const running = [
     ...listed,
     ...recentSeeds(previous, new Set(jobs.map((job) => job.job_id)), now),
@@ -124,7 +166,11 @@ export function activityFromCrawlJobs(
   const endedIds = [
     ...new Set([...previous.endedIds, ...jobs.filter(isEnded).map((job) => job.job_id)]),
   ];
-  return { running, lastFinished: previous.lastFinished, endedIds };
+  return { running, finished: previous.finished, endedIds };
+}
+
+function knownTask(state: ActivityState, id: string): ActivityTask | undefined {
+  return state.running.find((task) => task.id === id);
 }
 
 /** Seeded crawls an older crawl-status answer cannot know yet (SEED_GRACE_MS). */
@@ -150,23 +196,37 @@ export function reduceActivity(
   return { ...state, running: upsertTask(state.running, progressTask(previous, event)) };
 }
 
-/** Bar width in percent; never below 5 so a task that just started still shows. */
+/**
+ * Bar width in percent of the crawl's work (fetch and analyse every new link), so finding all links
+ * is not 100 %; never below 5 so a task that just started still shows.
+ */
 export function progressPercent(task: ActivityTask): number {
-  if (task.total <= 0) return MIN_VISIBLE_PERCENT;
-  const percent = Math.round((task.done / task.total) * FULL_PERCENT);
+  const workTotal = task.progress?.work_total ?? 0;
+  if (workTotal <= 0) return MIN_VISIBLE_PERCENT;
+  const percent = Math.round(((task.progress?.work_done ?? 0) / workTotal) * FULL_PERCENT);
   return Math.min(FULL_PERCENT, Math.max(MIN_VISIBLE_PERCENT, percent));
 }
 
-function taskFromCrawlJob(job: CrawlJob): ActivityTask {
+/** The percentage for display: null until the crawl knows its work, so a start does not read "5 %". */
+export function measuredPercent(task: ActivityTask): number | null {
+  return (task.progress?.work_total ?? 0) > 0 ? progressPercent(task) : null;
+}
+
+function taskFromCrawlJob(job: CrawlJob, known: ActivityTask | undefined): ActivityTask {
   const step: ActivityStep = job.status === "starting" ? "starting" : "collecting";
-  return {
-    id: job.job_id,
-    source: sourceLabel(job.platform),
-    platformId: job.platform_id ?? null,
-    step,
-    done: job.scraping_completed,
-    total: job.total,
-  };
+  return withStart(
+    {
+      id: job.job_id,
+      source: sourceLabel(job.platform),
+      platformId: job.platform_id ?? null,
+      step,
+      done: job.scraping_completed,
+      total: job.total,
+      progress: mergeProgress(known?.progress, job.progress),
+    },
+    // The hash keeps the queue time across reloads, so it replaces what an event or a seed brought.
+    epochStamp(job.started_at) ?? known?.startedAt,
+  );
 }
 
 function progressTask(previous: ActivityTask | undefined, event: ProgressEvent): ActivityTask {
@@ -183,7 +243,7 @@ function progressTask(previous: ActivityTask | undefined, event: ProgressEvent):
     task: ActivityTask,
     event: ProgressEvent,
   ) => ActivityTask;
-  return update(base, event);
+  return { ...update(base, event), progress: mergeProgress(base.progress, event.progress) };
 }
 
 function upsertTask(tasks: readonly ActivityTask[], next: ActivityTask): ActivityTask[] {
@@ -192,21 +252,36 @@ function upsertTask(tasks: readonly ActivityTask[], next: ActivityTask): Activit
 }
 
 function finishTask(state: ActivityState, event: FinishEvent, now: number): ActivityState {
-  const finished = state.running.find((task) => task.id === event.job_id);
-  const outcome = OUTCOME_BY_EVENT[event.type];
+  const entry = finishedEntry(
+    state.running.find((task) => task.id === event.job_id),
+    event,
+    now,
+  );
   return {
     running: state.running.filter((task) => task.id !== event.job_id),
-    lastFinished: {
-      id: event.job_id,
-      source: finished?.source ?? "",
-      platformId: finished?.platformId ?? null,
-      outcome,
-      finishedAt: now,
-    },
+    finished: [entry, ...state.finished].slice(0, MAX_FINISHED),
     endedIds: state.endedIds.includes(event.job_id)
       ? state.endedIds
       : [...state.endedIds, event.job_id],
   };
+}
+
+/** Only crawl_job_completed carries progress; a failure or cancel keeps what the task knew. */
+function finishedEntry(
+  task: ActivityTask | undefined,
+  event: FinishEvent,
+  now: number,
+): FinishedTask {
+  const entry: FinishedTask = {
+    id: event.job_id,
+    source: task?.source ?? "",
+    platformId: task?.platformId ?? null,
+    outcome: OUTCOME_BY_EVENT[event.type],
+    finishedAt: now,
+  };
+  const eventProgress = "progress" in event ? event.progress : undefined;
+  const progress = mergeProgress(task?.progress, eventProgress);
+  return progress ? { ...entry, progress } : entry;
 }
 
 export interface CrawlSeed {

@@ -9,7 +9,7 @@ from workers.crawl_control import INTERNAL_FAILURE, cleanup_crawl_job, fail_craw
 from database.core import JobPlatform
 from core.crawl_registry import CRAWL_TTL_SECONDS, acquire_crawl_lock
 from tests.crawl_locks import Clock, lock_backed
-from tests.factories import TEST_PLATFORM_ID, TEST_USER_ID, fetch, make_platform, make_user
+from tests.factories import TEST_PLATFORM_ID, TEST_USER_ID, fetch, make_platform, make_profile, make_user
 
 CRAWL_ID = "crawl-1"
 CRAWL_HASH = {b"user_id": str(TEST_USER_ID).encode(), b"platform_id": str(TEST_PLATFORM_ID).encode()}
@@ -49,13 +49,29 @@ def test_cancelled_crawl_records_cancelled_code(monkeypatch, fake_redis, session
 
 
 @pytest.fixture()
-def scraper_client(monkeypatch, fake_redis):
-    from core.auth import get_current_user
+def profileless_scraper_client(monkeypatch, fake_redis, session_factory):
+    from core.auth import get_current_user, get_db
+
+    def _get_db():
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
 
     monkeypatch.setattr(scraper_api, "r", fake_redis)
     scraper_api.app.dependency_overrides[get_current_user] = lambda: make_user()
+    scraper_api.app.dependency_overrides[get_db] = _get_db
     yield TestClient(scraper_api.app)
     scraper_api.app.dependency_overrides.pop(get_current_user, None)
+    scraper_api.app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture()
+def scraper_client(profileless_scraper_client, seed):
+    """The scraper client of a user with a maintained profile (a search needs one)."""
+    seed(make_profile())
+    return profileless_scraper_client
 
 
 @pytest.mark.parametrize(("path", "body"), [
@@ -72,7 +88,7 @@ def test_scraper_refuses_a_name_resolving_to_a_private_address_before_queueing(s
 
 
 def test_scraper_preview_links_refuses_a_private_url_without_render_call(scraper_client):
-    with patch("workers.scraper_worker.render_client.fetch_html") as mock_fetch:
+    with patch("services.page_rendering.fetch_html") as mock_fetch:
         response = scraper_client.post("/preview-links", json={"url": "http://127.0.0.1:8000/"})
     assert response.json() == {"links": []}
     mock_fetch.assert_not_called()
@@ -253,3 +269,10 @@ def test_the_startup_cleanup_publishes_each_failure_after_the_run_is_stored(monk
         scraper_api.cleanup_stale_jobs()
     event = {"type": "crawl_job_failed", "job_id": CRAWL_ID, "user_id": TEST_USER_ID, "reason": "error"}
     assert stored_at_publish == [(event, "failed")]
+
+
+def test_search_without_a_maintained_profile_is_refused_and_starts_nothing(profileless_scraper_client):
+    with patch.object(scraper_api, "chain") as chain:
+        response = profileless_scraper_client.post("/search", json=SEARCH_BODY)
+    assert (response.status_code, response.json()["detail"]) == (409, "profile_required")
+    chain.assert_not_called()

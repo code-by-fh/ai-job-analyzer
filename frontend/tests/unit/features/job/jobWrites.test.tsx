@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { jobQueryOptions, type JobDetail } from "@/api/jobs";
 import { queryKeys } from "@/api/queryKeys";
-import { TodoList } from "@/features/job/history/TodoList";
+import { TodoList } from "@/features/job/todos/TodoList";
 import { NextStepCard } from "@/features/job/next/NextStepCard";
 import { useChangeStatus } from "@/features/job/phase/useChangeStatus";
 import { jsonResponse } from "../../support/fakeFetch";

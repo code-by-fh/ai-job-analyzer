@@ -51,7 +51,7 @@ describe("crawl activity per source", () => {
 
   it("a finished task remembers its platform", () => {
     const ended = reduceActivity(seedCrawlTask(EMPTY_ACTIVITY, SEED, NOW), failed, NOW);
-    expect(ended.lastFinished).toMatchObject({ id: "c1", platformId: 1, outcome: "failed" });
+    expect(ended.finished[0]).toMatchObject({ id: "c1", platformId: 1, outcome: "failed" });
   });
 
   it("crawl status entries carry their platform, imports none", () => {

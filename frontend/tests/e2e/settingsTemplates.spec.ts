@@ -80,8 +80,8 @@ test("create an email template, preview it, pick it in a source drawer", async (
   await expect(page.getByRole("list", { name: "E-Mail" }).getByText(WEEKLY.name)).toBeVisible();
   await page.goto(`/sources?quelle=${STEPSTONE.id}`);
   const drawer = page.getByRole("dialog", { name: "Quelle StepStone" });
-  await drawer.getByLabel("Resend benachrichtigen").check();
-  const select = drawer.getByLabel("Vorlage für Resend");
+  await drawer.getByLabel("Bewerbungs-Mail benachrichtigen").check();
+  const select = drawer.getByLabel("Vorlage für E-Mail (Resend)");
   await expect(select.locator("option", { hasText: WEEKLY.name })).toHaveCount(1);
 });
 

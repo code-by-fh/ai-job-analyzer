@@ -14,10 +14,13 @@ vi.mock("next/navigation", async () =>
 const UNPROCESSABLE = 422;
 const BAD_REQUEST = 400;
 const OK = 200;
+const NEVER = () => new Promise<Response>(() => {});
 const REQUEST_TIMEOUT = 408;
 const CHECKING =
   "Seite wird geladen und nach Stellenlinks durchsucht. Das kann bis zu einer Minute dauern.";
 const PREVIEW = "POST /platforms/preview-links";
+const PATTERN = "POST /platforms/url-pattern";
+const DERIVED = { url_pattern: "/jobsuche/p/" };
 const FOUND_URL = "https://www.get-in-it.de/jobsuche?q=java";
 const LINKS = {
   links: [
@@ -194,20 +197,20 @@ describe("add wizard, steps 1 and 2", () => {
     renderWithProviders(<SourcesPage />);
     const dialog = await check(FOUND_URL);
     expect(
-      await within(dialog).findByText(
-        "Auf www.get-in-it.de wurde 1 Link gefunden. Wähle die Stellenanzeigen aus.",
-      ),
+      await within(dialog).findByText("Auf www.get-in-it.de wurde 1 Link gefunden."),
     ).toBeInTheDocument();
   });
 
   it("a pattern that one of the found links contains reads in the singular", async () => {
-    sourcesStubs(undefined, { [PREVIEW]: { links: [LINKS.links[0]!, NAVIGATION_LINK] } });
+    sourcesStubs(undefined, {
+      [PREVIEW]: { links: [LINKS.links[0]!, NAVIGATION_LINK] },
+      [PATTERN]: DERIVED,
+    });
     renderWithProviders(<SourcesPage />);
     const dialog = await check(FOUND_URL);
-    await userEvent.click(await within(dialog).findByRole("button", { name: "Erweitert" }));
-    await userEvent.type(within(dialog).getByLabelText("URL-Muster"), "/jobsuche/p/");
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
     expect(
-      within(dialog).getByText("1 von 2 gefundenen Links enthält dieses Muster."),
+      await within(dialog).findByText("1 von 2 gefundenen Links enthält dieses Muster."),
     ).toBeInTheDocument();
   });
 
@@ -221,18 +224,33 @@ describe("add wizard, steps 1 and 2", () => {
     );
   });
 
-  it("found links show with the count, the pattern counts matches under Erweitert", async () => {
+  it("found links show unselected with the reason to choose and the pattern still pending", async () => {
     sourcesStubs(undefined, { [PREVIEW]: LINKS });
     renderWithProviders(<SourcesPage />);
     const dialog = await check(FOUND_URL);
     expect(
-      await within(dialog).findByText(
-        "Auf www.get-in-it.de wurden 2 Links gefunden. Wähle die Stellenanzeigen aus.",
-      ),
+      await within(dialog).findByText("Auf www.get-in-it.de wurden 2 Links gefunden."),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("2 ausgewählt")).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole("button", { name: "Erweitert" }));
-    await userEvent.type(within(dialog).getByLabelText("URL-Muster"), "/jobsuche/p/");
+    expect(
+      within(dialog).getByText(/Aus deiner Auswahl leitet die App das URL-Muster ab/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("0 ausgewählt")).toBeInTheDocument();
+    expect(within(dialog).queryAllByRole("checkbox", { checked: true })).toHaveLength(0);
+    expect(
+      within(dialog).getByText(/dann erscheint hier das abgeleitete Muster/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("URL-Muster")).toBeNull();
+  });
+
+  it("the server derives the pattern from the chosen links; the user may edit it", async () => {
+    const calls = sourcesStubs(undefined, { [PREVIEW]: LINKS, [PATTERN]: DERIVED });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await check(FOUND_URL);
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+    const field = within(dialog).getByLabelText("URL-Muster");
+    await waitFor(() => expect(field).toHaveValue("/jobsuche/p/"));
+    const sent = calls.find((call) => call.url.endsWith("/platforms/url-pattern"));
+    expect(JSON.parse(sent!.body!)).toEqual({ selected_urls: [LINKS.links[0]!.url] });
     expect(
       within(dialog).getByText("2 von 2 gefundenen Links enthalten dieses Muster."),
     ).toBeInTheDocument();
@@ -240,6 +258,77 @@ describe("add wizard, steps 1 and 2", () => {
     await userEvent.type(within(dialog).getByLabelText("URL-Muster"), "/nirgends/");
     expect(
       within(dialog).getByText("Kein gefundener Link enthält dieses Muster."),
+    ).toBeInTheDocument();
+  });
+
+  it("Weiter needs the pattern confirmed and puts focus on Muster passt", async () => {
+    sourcesStubs(undefined, { [PREVIEW]: LINKS, [PATTERN]: DERIVED });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await check(FOUND_URL);
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("URL-Muster")).toHaveValue("/jobsuche/p/"),
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Bestätige das Muster mit „Muster passt“ oder passe es an.",
+    );
+    const ok = within(dialog).getByRole("checkbox", { name: "Muster passt" });
+    await waitFor(() => expect(ok).toHaveFocus());
+    await userEvent.click(ok);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
+    expect(within(dialog).getByRole("listitem", { current: "step" })).toHaveTextContent(
+      "Name und Zeitplan",
+    );
+  });
+
+  it("a selection change while its pattern is derived refuses Weiter and the old confirmation", async () => {
+    const answers = [() => jsonResponse(OK, DERIVED), NEVER];
+    sourcesStubs(undefined, { [PREVIEW]: LINKS, [PATTERN]: () => answers.shift()!() });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await check(FOUND_URL);
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+    const field = within(dialog).getByLabelText("URL-Muster");
+    await waitFor(() => expect(field).toHaveValue("/jobsuche/p/"));
+    const ok = within(dialog).getByRole("checkbox", { name: "Muster passt" });
+    await userEvent.click(ok);
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /Go/ }));
+    expect([ok.hasAttribute("disabled"), (ok as HTMLInputElement).checked]).toEqual([true, false]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Das Muster wird noch abgeleitet. Bestätige es, sobald es erscheint.",
+    );
+    expect(within(dialog).getByRole("listitem", { current: "step" })).toHaveTextContent(
+      "Stellenlinks wählen",
+    );
+  });
+
+  it("editing a confirmed pattern asks for the confirmation again", async () => {
+    sourcesStubs(undefined, { [PREVIEW]: LINKS, [PATTERN]: DERIVED });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await check(FOUND_URL);
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("URL-Muster")).toHaveValue("/jobsuche/p/"),
+    );
+    const ok = within(dialog).getByRole("checkbox", { name: "Muster passt" });
+    await userEvent.click(ok);
+    await userEvent.type(within(dialog).getByLabelText("URL-Muster"), "java");
+    expect(ok).not.toBeChecked();
+  });
+
+  it("a pattern the server cannot derive asks the user to enter one", async () => {
+    sourcesStubs(undefined, {
+      [PREVIEW]: LINKS,
+      [PATTERN]: () => jsonResponse(UNPROCESSABLE, { detail: [] }),
+    });
+    renderWithProviders(<SourcesPage />);
+    const dialog = await check(FOUND_URL);
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Java/ }));
+    expect(
+      await within(dialog).findByText(
+        "Das Muster konnte nicht abgeleitet werden. Gib es selbst ein.",
+      ),
     ).toBeInTheDocument();
   });
 

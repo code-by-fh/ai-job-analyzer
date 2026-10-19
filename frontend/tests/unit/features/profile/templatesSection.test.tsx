@@ -112,6 +112,20 @@ describe("Vorlagen gallery", () => {
     expect(within(card("Mein Layout")).getAllByText(/KI-Befüllung endet/)).toHaveLength(1);
   });
 
+  it("shows how long the AI fill runs, counted from the template's creation", async () => {
+    const createdAt = new Date(Date.now() - (6 * 60_000 + 1_000)).toISOString();
+    stubRoutes(
+      profileStubs({
+        "GET /document-templates": [
+          { ...OWN, status: "processing", created_at: createdAt, updated_at: createdAt },
+        ],
+      }),
+    );
+    renderWithProviders(<ProfilePage />);
+    await screen.findByText("Mein Layout");
+    expect(within(card("Mein Layout")).getByText("läuft seit 6 Minuten")).toBeInTheDocument();
+  });
+
   it("a template whose fill was rejected stays selectable", async () => {
     stubRoutes(
       profileStubs({ "GET /document-templates": [{ ...OWN, status: "annotation_rejected" }] }),

@@ -12,6 +12,7 @@ import type { ActivityTask } from "@/realtime/activity";
 import { cx } from "@/ui/cx";
 import { scheduleText } from "./labels";
 import { RunCell } from "./RunCell";
+import { SourceIcon } from "./SourceIcon";
 import { StatusTag } from "./StatusTag";
 import { sourceLinkId } from "./useFocusFallback";
 
@@ -20,11 +21,11 @@ export interface SourceRowProps {
   task: ActivityTask | null;
   /** The last-run cell while a crawl runs (inline progress with Abbrechen). */
   progress?: ReactNode;
-  /** The action cell (Durchsuchen). */
+  /** The action cell (Bearbeiten, Durchsuchen). */
   action?: ReactNode;
 }
 
-/** One focusable link per row (spec 4.3 #5); the action sits in its own cell, never inside the link. */
+/** One focusable link per row (spec 4.3 #5); the actions sit in their own cell, never inside the link. */
 export function SourceRow({ platform, task, progress, action }: SourceRowProps) {
   const { t } = useI18n();
   return (
@@ -47,6 +48,7 @@ export function SourceRow({ platform, task, progress, action }: SourceRowProps) 
 function NameCell({ platform }: { platform: Platform }) {
   return (
     <div className="src-cell src-name-cell">
+      <SourceIcon platform={platform} />
       <Link
         id={sourceLinkId(platform.id)}
         className="src-name"

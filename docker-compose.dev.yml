@@ -1,4 +1,10 @@
 services:
+  ai-job-agent-notify:
+    # Source mounted read-only; uvicorn's stat polling reloads it (Windows bind mounts deliver no file events).
+    command: ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--reload", "--reload-dir", "/srv/app"]
+    volumes:
+      - ./notification-service/app:/srv/app:ro
+
   ai-job-agent-server:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@ai-job-agent-database:5432/${POSTGRES_DB:-jobdb}
@@ -6,12 +12,15 @@ services:
       - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@ai-job-agent-rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://ai-job-agent-redis:6379/0
       - PYTHONUNBUFFERED=1
+      - RENDER_SERVICE=${RENDER_SERVICE:-page-render-service}
+      - RENDER_API_URL=${RENDER_API_URL:-http://ai-job-agent-page-render:8000/api/v1/render}
+      - RENDER_API_KEY=${RENDER_API_KEY}
+      - NOTIFY_API_URL=${NOTIFY_API_URL:-http://ai-job-agent-notify:8000}
+      - NOTIFY_API_KEY=${NOTIFY_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     command: sh -c "python -m database.schema && supervisord -c supervisord.dev.conf"
     volumes:
       - ./server:/app

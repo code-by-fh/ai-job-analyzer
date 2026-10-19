@@ -27,15 +27,13 @@ export function ImportButton() {
   );
 }
 
-/** Text label from 768 px, icon only below (inbox.css); the accessible name stays the full one. */
+/** A labelled secondary button at every width; the accessible name stays the full one. */
 function ImportTrigger({ onClick }: { onClick: () => void }) {
   const { t } = useI18n();
   return (
     <Button
-      variant="ghost"
       size="sm"
       icon={Link2}
-      className="import-trigger"
       aria-label={t("import.open")}
       title={t("import.open")}
       onClick={onClick}

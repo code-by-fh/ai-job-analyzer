@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Platform } from "@/api/platforms";
 import type { MessageKey } from "@/i18n/de";
 import { useI18n } from "@/i18n/useI18n";
-import type { ActivityOutcome } from "@/realtime/activity";
+import { latestFinished, type ActivityOutcome } from "@/realtime/activity";
 import { useActivity } from "@/realtime/useActivity";
 import { useClearThenSet } from "@/ui/useAnnouncement";
 
@@ -23,7 +23,7 @@ function useFreshEnd(
   muted: boolean,
 ): { key: string; text: string } {
   const { t } = useI18n();
-  const finished = useActivity(true).lastFinished;
+  const finished = latestFinished(useActivity(true));
   const finishedId = finished?.id ?? null;
   const [oldNews, setOldNews] = useState(finishedId);
   if (muted && oldNews !== finishedId) setOldNews(finishedId);

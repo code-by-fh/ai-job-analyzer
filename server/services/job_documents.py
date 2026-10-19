@@ -1,36 +1,29 @@
-"""Persist generated/attached application documents as JobDocument rows."""
-
-import asyncio
+"""Persist attached application documents as JobDocument rows; name and retire generated PDFs."""
 
 from database.core import JobDocument
-from core.logger import get_logger
-
-logger = get_logger(__name__)
 
 ATTACHED_KINDS = ["ATTACHED_CERT", "ATTACHED_REFERENCE"]
+# The kind a generated document's PDF was stored under before CV and letter became HTML-only.
+GENERATED_KIND = {"cv": "GENERATED_CV", "cover_letter": "GENERATED_LETTER"}
+_PDF_NAME_PREFIX = {"cv": "Lebenslauf", "cover_letter": "Anschreiben"}
+_NAME_FALLBACK = "Job"
 
 
-def store_generated_document(
-    db,
-    job_id: str,
-    user_id: int,
-    content: bytes,
-    original_filename: str,
-    mime_type: str,
-    kind: str,
-    storage=None,
-):
-    """Create a JobDocument for `content`, replacing any existing doc of the same
-    `kind` for this job, and commit."""
+def generated_pdf_name(kind: str, company: str | None) -> str:
+    """The download name of a generated document, e.g. "Lebenslauf_ACME_GmbH.pdf"."""
+    cleaned = "".join(c for c in (company or _NAME_FALLBACK) if c.isalnum() or c in " -_")
+    return f"{_PDF_NAME_PREFIX[kind]}_{cleaned.replace(' ', '_') or _NAME_FALLBACK}.pdf"
+
+
+def delete_generated_pdf(db, job_id: str, kind: str) -> None:
+    """Remove the PDF an earlier generation stored for *kind* (no commit).
+
+    A regenerated document exists only as HTML; the old PDF would otherwise still be listed as
+    the document's proof.
+    """
     db.query(JobDocument).filter(
-        JobDocument.job_id == job_id, JobDocument.kind == kind
+        JobDocument.job_id == job_id, JobDocument.kind == GENERATED_KIND[kind]
     ).delete(synchronize_session=False)
-    doc = add_job_document(
-        db, job_id, user_id, content, original_filename, mime_type, kind, storage,
-    )
-    db.commit()
-    db.refresh(doc)
-    return doc
 
 
 def delete_attached_documents(db, job_id: str) -> None:
@@ -48,39 +41,17 @@ def add_job_document(
     original_filename: str,
     mime_type: str,
     kind: str,
-    storage=None,
 ) -> JobDocument:
-    """Add a JobDocument without replacing siblings and without committing, so
-    callers can group several inserts into one transaction. Uploads to external
-    storage when `storage` is provided, otherwise stores the blob in the DB."""
-    db_content = None
-    if storage is not None:
-        try:
-            ok = asyncio.run(
-                storage.upload_file(content, original_filename, mime_type=mime_type)
-            )
-            if not ok:
-                logger.warning(f"External upload failed for {original_filename}; storing in DB")
-                db_content = content
-                stored_filename = f"db://{original_filename}"
-            else:
-                stored_filename = f"gdrive://{original_filename}"
-        except Exception as e:
-            logger.error(f"External upload error for {original_filename}: {e}")
-            db_content = content
-            stored_filename = f"db://{original_filename}"
-    else:
-        db_content = content
-        stored_filename = f"db://{original_filename}"
-
+    """Add a JobDocument stored in the DB without replacing siblings and without committing, so
+    callers can group several inserts into one transaction."""
     doc = JobDocument(
         job_id=job_id,
         user_id=user_id,
-        filename=stored_filename,
+        filename=f"db://{original_filename}",
         original_filename=original_filename,
         file_size=len(content),
         mime_type=mime_type,
-        content=db_content,
+        content=content,
         kind=kind,
     )
     db.add(doc)

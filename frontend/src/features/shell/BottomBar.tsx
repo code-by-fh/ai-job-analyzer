@@ -8,6 +8,7 @@ import { useI18n } from "@/i18n/useI18n";
 import { useActivity } from "@/realtime/useActivity";
 import { Icon } from "@/ui/Icon";
 import { activityLabel } from "./ActivityButton";
+import { MORE_BUTTON_ID } from "./crawl/CrawlStrip";
 import { MoreSheet } from "./MoreSheet";
 import { BOTTOM_BAR_NAV, isMoreActive, type NavItem } from "./navigation";
 import { NavBadge } from "./Sidebar";
@@ -52,6 +53,7 @@ function MoreButton({ active, signedIn, onOpen }: MoreButtonProps) {
   const running = useActivity(signedIn).running.length;
   return (
     <button
+      id={MORE_BUTTON_ID}
       type="button"
       className="bb-item"
       aria-current={active ? "page" : undefined}

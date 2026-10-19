@@ -9,7 +9,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database.core import SessionLocal, User
-from services.user_data import delete_user, delete_user_content
+from routers.notifications import http_error
+from services.notifications_client import NotifyError
+from services.user_data import delete_notification_channels, delete_user, delete_user_content
 from core.auth import (
     create_access_token,
     create_refresh_token,
@@ -273,6 +275,9 @@ def delete_user_endpoint(user_id: int, current_user: User = Depends(get_current_
         delete_user(db, user_id)
         db.commit()
         return {"status": "deleted"}
+    except NotifyError as error:
+        db.rollback()
+        raise http_error(error) from error
     finally:
         db.close()
 
@@ -286,11 +291,16 @@ def reset_user_data(request: Request, body: FactoryResetRequest, current_user: U
         if not user or not verify_password(body.password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Incorrect password")
         refuse_while_crawling(db, current_user.id)
+        # The channels first: while the service is down nothing is deleted (502).
+        delete_notification_channels(current_user.id)
         counts = delete_user_content(db, current_user.id)
         db.commit()
         return {"status": "reset complete", **counts}
     except HTTPException:
         raise
+    except NotifyError as error:
+        db.rollback()
+        raise http_error(error) from error
     except Exception as e:
         db.rollback()
         logger.error(f"Fehler beim Reset der Benutzerdaten: {e}")
