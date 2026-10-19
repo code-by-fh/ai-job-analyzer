@@ -55,7 +55,6 @@ Das früher bekannte AIHawk (`feder-cr/Jobs_Applier_AI_Agent_AIHawk`) existiert 
 | CV-Vorlage hochladen, KI füllt sie | ✅ | ? | ❌ | ❌ |
 | Lebenslauf aus PDF/Word importieren | ❌ | ? | ✅ | ❌ |
 | Profil-Dokumente (Zeugnisse, Referenzen) | ✅ | ? | ⚠️ Anhänge | ❌ |
-| Ablage in Google Drive | ✅ (alternativ DB) | ❌ | ❌ | ❌ (lokale Dateien) |
 | **Bewerbung & Nachverfolgung** | | | | |
 | Status-Pipeline | ✅ Open → … → Accepted/Rejected, mit Historie | ✅ | ✅ | ? |
 | Antworten aus Gmail auswerten (Interview/Absage erkennen) | ❌ | ✅ | ❌ | ❌ |
@@ -85,7 +84,7 @@ Das früher bekannte AIHawk (`feder-cr/Jobs_Applier_AI_Agent_AIHawk`) existiert 
 ### Was dieses Projekt als einziges kann
 - Frei konfigurierbare Plattformen per URL statt fest einprogrammierter Scraper. Das ist der größte Unterschied, gerade für deutsche Jobbörsen (StepStone, XING …), die keines der anderen Projekte mitbringt.
 - Eigene HTML-Vorlagen mit Editor im Browser, und hochgeladene CV-Vorlagen, die die KI befüllt.
-- Mehrere Benutzer mit Admin-Rolle, fünf Benachrichtigungskanäle, Ablage in Google Drive.
+- Mehrere Benutzer mit Admin-Rolle, fünf Benachrichtigungskanäle.
 - Wahl des KI-Anbieters pro Aufgabe (lokal oder Cloud) und automatische Archivierung unter dem Schwellwert.
 
 ### Was die anderen haben und hier fehlt

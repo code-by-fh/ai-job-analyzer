@@ -33,6 +33,7 @@
 * **Data Fetching:** All API calls go through the client in `src/api/` (`api` from `api/instance.ts`, one module per resource) — never use `fetch` directly. Server state lives in TanStack Query (query keys in `api/queryKeys.ts`).
 * **Internationalization (i18n):** All user-facing strings must use `t("key")` from `useI18n()`. Never hardcode German or English text directly in JSX. New keys must be added to both `frontend/src/i18n/de.ts` (source of truth) and `en.ts` before use.
 * **Focus after a dialog closes (`frontend/`):** when a confirmed dialog closes and focus must move elsewhere (the opener is gone or re-rendered), call `closeThenFocus(close, target)` from `ui/focus.ts`: it commits the close with `flushSync` and focuses `target()` in the next `requestAnimationFrame`; otherwise the dialog's own focus return can commit after the frame and leave focus on `<body>`. New code does not hand-roll `requestAnimationFrame` focus moves. Where the close already committed (focus from an unmount cleanup, where `flushSync` is not allowed) or no dialog is involved (the wizard's `focusSource`), use `focusNextFrame(target)`, with the `isFocusLost` guard where focus may have moved on. Only `ui/focus.ts` calls `requestAnimationFrame`; `tests/unit/ui/focusMoves.test.ts` enforces it.
+* **Scaling content (Frontend):** scale framed document pages with CSS `zoom` through the fixed step classes (`.zoom-30` ... `.zoom-100`, `ui/useFitZoom.ts`), never with an inline `style`; e2e clicks into a zoomed frame use `clickInZoomedFrame`.
 * **List roles (Frontend):** every JSX `ul`/`ol` starts with `role="list"` (list styling removes the native role in Safari); an AST guard test (`tests/unit/ui/listRoles.test.ts`) enforces it.
 * **Wrong password (Frontend):** detect a wrong-password refusal (400, never 401) only through `isWrongPassword` in `features/settings/wrongPassword.ts`, never by comparing the status or code locally.
 * **Error Handling (Frontend):** Map every API error to a fixed translated sentence with `describeError` (`api/describeError.ts`); never `console.error` alone and never show the server's `detail`.
@@ -45,6 +46,7 @@
 * **Async vs Sync Routes:** 
   - Do not use `async def` for endpoints that perform blocking synchronous operations (e.g., synchronous database queries via SQLAlchemy, file operations, or heavy computing). Use standard `def` routes so FastAPI can delegate them to its external thread pool.
   - Use `async def` only when all I/O operations inside the handler are asynchronous (e.g., async HTTP requests, async WebSockets, or async database calls).
+* **Synchronous AI runs (exception to Celery):** the CV import and the deep dive call the AI inside a plain `def` endpoint. Each takes a slot from `routers/sync_ai_runs.py` (`MAX_PARALLEL_SYNC_AI_RUNS`, non-blocking, 503 `ai_busy` when full, released in `finally`), commits a durable start stamp before the AI call (409 while a fresh run exists) and commits its read transaction first, so no database connection is held during the call. A new synchronous AI endpoint must do the same and be added to the sweep `ai.fail_stuck_generations`.
 * **Surgical Handlers:** Keep route handlers extremely thin. Handlers should parse inputs, trigger asynchronous background tasks (Celery) or invoke backend services, and return quickly.
 * **Error Handling (Backend):** Use `raise HTTPException(status_code=status.HTTP_<CODE>, detail="...")` for all client errors. Always use `status.*` constants (e.g. `status.HTTP_404_NOT_FOUND`), not raw integers. For unexpected server errors, catch the exception, log it, and re-raise as `HTTP_500_INTERNAL_SERVER_ERROR` with a generic message — never leak stack traces or internal state in the `detail` field.
 
@@ -62,7 +64,7 @@
 ## Data & Database
 
 * **Migrations:** Manage all database schema changes strictly through Alembic migrations. Do not modify databases manually or use `Base.metadata.create_all()` in application code paths.
-* **Storage Abstraction:** Store files and attachments only through the approved storage service abstraction (`services/storage.py`), supporting dual-storage (PostgreSQL LargeBinary or Google Drive OAuth).
+* **File Storage:** Files and attachments are stored in PostgreSQL only (`LargeBinary` content, `filename` `db://<name>`); there is no external storage backend.
 
 ## Review Checklist
 

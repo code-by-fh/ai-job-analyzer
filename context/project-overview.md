@@ -10,24 +10,27 @@ Developer documentation outlining the core concept, architecture, key features, 
   - Celery Worker (AI Queue + Celery Beat scheduler).
   - Celery Worker (Scraping Queue).
   - Infrastructure: PostgreSQL, Redis (pub/sub & caching), RabbitMQ.
+  - Separate services: page render service (`ai-job-agent-page-render`) and the notification service (`notification-service/`, compose `ai-job-agent-notify`, no host port, own SQLite store of encrypted channels, reached only by the server with `NOTIFY_API_KEY`).
 * **LLM Integrations:** OpenRouter (cloud models) + local Ollama instance (SSRF-exempt).
-* **Storage:** Dual-storage system per user (PostgreSQL LargeBinary Blob or Google Drive OAuth2) for documents and attachments.
+* **Storage:** Documents and attachments are stored in PostgreSQL (LargeBinary); there is no external storage.
 * **Frontend:** Next.js (App Router), React 19, Tailwind v4. No external UI kits; all components are hand-rolled.
 
 ## 2. Core Features (Developer Summary)
 1. **Authentication & Data Isolation:** Cookie-based JWT authentication validating a token version (`tv`) for API and WebSockets. Every database query/mutation must explicitly isolate data by matching `user_id == current_user.id`.
-2. **Crawl & Scraping Engine:** Scheduled and on-demand scraping running via Playwright-stealth (headless=False inside Xvfb, noVNC exposed on port 6080). SSRF protection filters out private, loopback, and link-local IP addresses using `_is_safe_url`.
+2. **Crawl & Scraping Engine:** Scheduled and on-demand scraping; job-board pages are rendered by an external page render service (`doublelayer/page-render-service`, headed Chrome on Xvfb in its own container) behind the swappable `services/page_rendering/` abstraction and parsed with BeautifulSoup4. SSRF protection (`core/url_safety.py`) refuses private, loopback, and link-local targets before a URL is sent; the render service blocks them again with its own egress guard (redirects, sub-resources, DNS rebinding).
 3. **AI Pipeline:** Automatic scoring and evaluation matching job requirements against user profile. Automatic archival of jobs below the matching threshold score. On-demand generation of tailored cover letters, resumes, and interview preparation guides.
+   - **Visible, durable runs:** interview prep, company research, posting-details extraction, CV and letter generation, CV import and deep dive keep a server-side start stamp, so a reload still shows them running with the elapsed time ("seit mm:ss") until an end event or the stuck-run sweep ends them. Posting details (contacts, recruiter, salary) are also extracted for jobs that already exist.
    - **Re-score edge case:** If a job's `match_score` is updated (e.g. after profile change) and the new score falls below the threshold, the job is re-archived. If the score rises above the threshold, the job is **not** automatically restored — manual status change is required.
 4. **ATS Pipeline & UI Layout:** Interactive application tracking status pipeline (`OPEN` ➔ `DRAFTED` ➔ `APPLIED` ➔ `INTERVIEW` ➔ `OFFER` ➔ `ACCEPTED/REJECTED`). Desktop uses collapsible sidebar layout; mobile uses bottom navigation. The `JobSidePanel` is a slide-in panel synchronized with `?job=<id>` query param, supporting deep-linking and a dedicated `/jobs/[id]` route.
-5. **Template & Document Editor:** Two-column in-browser HTML editor (dnd-kit BlockInspector, StylePanel) working with `DocumentTemplates`. Renders and fills slots/repeats, exporting clean PDFs using Playwright (with legacy xhtml2pdf fallback).
+5. **Template & Document Editor:** Two-column in-browser HTML editor (dnd-kit BlockInspector, StylePanel) working with `DocumentTemplates`. Renders and fills slots/repeats, CV and letter stay HTML; the PDF is rendered on download only (`GET /jobs/{id}/documents/pdf`, WeasyPrint, nothing stored).
 
 ## 3. Scope Boundaries & Hard Invariants
 
 ### In Scope
 * Multi-user support with admin role configurations.
 * Global and user-scoped AI model configuration.
-* Dual storage and notification channels (Gmail, Pushover, Resend, Mailjet, SMTP).
+* Crawling (manual and scheduled) and adding sources require a complete profile (`profile_complete`, 409 `profile_required`).
+* Per-user notification channels (Pushover, Resend, Mailjet, SMTP) managed in the notification service; each source picks the channels it notifies.
 
 ### Out of Scope (Strictly Forbidden)
 * **No Auto-Submit:** Do not implement automated application submission (only generate drafts).
@@ -35,7 +38,7 @@ Developer documentation outlining the core concept, architecture, key features, 
 * **No Native Apps:** UI is web-only (responsive mobile layout).
 
 ### Hard Invariants
-1. **No Inline Heavy Work:** HTTP handlers must never block on long-running processes (scraping, LLM, PDF generation). Handlers must only queue Celery tasks and return a task ID. State updates are published via Redis to WebSockets.
+1. **No Inline Heavy Work:** HTTP handlers must never block on long-running processes (scraping, LLM, PDF generation). Handlers must only queue Celery tasks and return a task ID. State updates are published via Redis to WebSockets. Two documented exceptions run the AI in the request thread: the CV import and the deep dive (capped at 4 parallel runs, durable start stamp, swept when stuck; see `architecture.md`, Durable run state).
 2. **Auth & Ownership Check:** Every request query/mutation must validate auth and resource ownership checking `user_id`.
 3. **Alembic Migrations:** Database schema updates must go through Alembic migrations. Never rely on metadata `create_all`.
 4. **SSRF Safe Requests:** All outgoing web crawler requests must be validated through `_is_safe_url` to prevent server-side request forgery.

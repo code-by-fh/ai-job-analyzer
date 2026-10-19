@@ -26,6 +26,7 @@ An production-ready, self-hosted web application for technical professionals to 
     *   Compares extracted job descriptions against your candidate profile (skills, experience, and targeted spoken languages).
     *   Calculates a matching threshold score; postings failing to meet the minimum score are automatically archived.
     *   Performs deep-dive company research (extracting tech stack details, cultural fit reviews, and salary benchmarks).
+    *   Long AI runs (interview prep, company research, deep dive, CV import, posting details, document generation) show their elapsed time and survive a page reload; stuck runs are ended automatically. Contacts, recruiter and salary can also be read from the posting of an existing job.
 *   **📋 Interactive ATS Pipeline**
     *   Track applications through statuses: `OPEN` ➔ `DRAFTED` ➔ `APPLIED` ➔ `INTERVIEW` ➔ `OFFER` ➔ `ACCEPTED`/`REJECTED`.
     *   Desktop-optimized collapsible sidebar and a responsive slide-in detail panel (`JobSidePanel`) synchronized with the URL via `?job=<id>` query parameters.
@@ -37,10 +38,10 @@ An production-ready, self-hosted web application for technical professionals to 
 *   **🔒 Tenant Isolation & Token Versioning**
     *   All queries enforce strict ownership separation (`user_id == current_user.id`).
     *   Sessions validate a token version (`tv`) for instant API and WebSocket access revocation upon logout.
-*   **⚙️ Adaptable Integrations & Storage**
+*   **⚙️ Adaptable Integrations**
     *   **AI Models:** Dynamic settings panel to switch between OpenRouter (cloud models like DeepSeek-R1 or Claude) and local Ollama instances.
-    *   **Persistence:** Dual-storage system saving generated documents into the PostgreSQL database (`LargeBinary`) or uploading to Google Drive via OAuth2.
-    *   **Notifications:** Supports SMTP, Gmail API, Pushover, Resend, and Mailjet channels.
+    *   **Persistence:** Uploaded files and attached proofs are stored in the PostgreSQL database (`LargeBinary`); generated CVs and letters are stored as HTML.
+    *   **Notifications:** Pushover, Resend, Mailjet and SMTP channels, managed per user in the app and sent by the standalone notification service.
 
 ---
 
@@ -65,14 +66,14 @@ graph TB
         PG[(🐘 PostgreSQL 15)]
         Redis[(🔴 Redis Cache & Pub/Sub)]
         RabbitMQ[(🐇 RabbitMQ Message Broker)]
-        Botosaurus["🤖 Botosaurus Service<br/>(PDF rendering helper)"]
+        PageRender["🤖 Page Render Service<br/>(renders job-board pages for the scraper)"]
+        Notify["🔔 Notification Service<br/>(channels and sending, ai-job-agent-notify)"]
     end
 
     subgraph ExternalServices ["🌐 External APIs"]
         OpenRouter["✨ OpenRouter API (Cloud LLM)"]
         Ollama["🦙 Ollama (Local LLM)"]
-        GoogleDrive["📁 Google Drive API (OAuth2 Storage)"]
-        Gmail["📧 Mail/Push Channels (Pushover, Resend, SMTP)"]
+        Channels["📧 Mail/Push Channels (Pushover, Resend, Mailjet, SMTP)"]
     end
 
     %% Connections
@@ -91,16 +92,24 @@ graph TB
     %% External integrations
     CeleryAI -->|Inference| OpenRouter
     CeleryAI -->|Inference| Ollama
-    CeleryAI -->|OAuth Store| GoogleDrive
-    CeleryAI -->|Send Alerts| Gmail
-    CeleryAI -->|Render API| Botosaurus
+    CeleryAI & FastAPI -->|Channels and alerts| Notify
+    Notify -->|Send| Channels
+    CeleryScrape & FastAPI -->|Render API| PageRender
 ```
+
+### Page Render Service
+
+Crawls and the source preview fetch job-board pages through an external render service (`doublelayer/page-render-service`, compose service `ai-job-agent-page-render`; published only on `127.0.0.1:18431` for local development, inside the compose network it listens on 8000). The server talks to it only through `server/services/page_rendering/`: callers use `fetch_html(url)`, which delegates to the renderer selected by `RENDER_SERVICE` (default `page-render-service`). To swap the render service, add an adapter in that package that implements the `PageRenderer` protocol (`fetch_html(url) -> str | None`, never raises), register it under a new name in the package's registry, and set `RENDER_SERVICE` to that name. Endpoint and key come from `RENDER_API_URL` and `RENDER_API_KEY`.
+
+### Notification Service
+
+Notification channels (Pushover, Resend, Mailjet, SMTP) and all sending logic live in the standalone service `notification-service/` (compose service `ai-job-agent-notify`, port 8000, not published on the host; only the server shares its `notify` network). Every route except `GET /health` needs a per-app API key; channel settings are stored Fernet-encrypted in a SQLite file on the `notify_data` volume. Set `NOTIFY_API_KEY` and `NOTIFY_ENCRYPTION_KEY` in `.env` (see `.env.example`). The server reaches it only through `server/services/notifications_client.py` (`NOTIFY_API_URL`, `NOTIFY_API_KEY`); the API and the AI worker refuse to start without both. Users manage their channels through the server's `/notifications/*` routes, and each source names the channels it notifies. On its first start after the upgrade the server copies the old per-user credentials into the service once (in the background, retried on the next start while the service is unreachable); the old credential columns are kept, read-only, until a later migration drops them. API contract, environment variables and local development: [`notification-service/README.md`](notification-service/README.md).
 
 ---
 
 ## 🛠️ Docker Quickstart
 
-To run the complete production bundle including database, cache, message broker, PDF renderer, FastAPI backend, and Next.js frontend:
+To run the complete production bundle including database, cache, message broker, page render service, FastAPI backend, and Next.js frontend:
 
 1.  **Clone the Repository**:
     ```bash
@@ -118,6 +127,12 @@ To run the complete production bundle including database, cache, message broker,
     openssl rand -hex 32
     # Paste the generated string into SECRET_KEY in your .env file
     ```
+    `RENDER_API_KEY`, `NOTIFY_API_KEY` (both at least 32 characters) and `NOTIFY_ENCRYPTION_KEY` are required; compose refuses to start without them. Generate a separate value for each:
+    ```bash
+    python -c "import secrets; print(secrets.token_urlsafe(48))"   # RENDER_API_KEY, NOTIFY_API_KEY (one run each)
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"   # NOTIFY_ENCRYPTION_KEY
+    ```
+    `NOTIFY_ENCRYPTION_KEY` must be a real Fernet key (44 characters ending in `=`); an arbitrary 32-character string is refused at startup. Keep it safe: without it the stored notification channels cannot be read. Details, the variant without a local `cryptography` package, and key rotation: [`notification-service/README.md`](notification-service/README.md#generating-the-keys).
 
 3.  **Launch the Services**:
     ```bash
@@ -136,11 +151,34 @@ To run the complete production bundle including database, cache, message broker,
     *   Sign in with user `admin` and the password configured in `ADMIN_PASSWORD` (if left blank, check the server container logs for a generated random password).
     *   Go to **System Settings** and input your **OpenRouter API Key** and preferred model IDs (e.g., `anthropic/claude-3.5-sonnet`, `deepseek/deepseek-chat`).
 
+### Troubleshooting: AI calls fail with "Connection error"
+
+The server container joins two networks: `default` (route to the internet) and the internal `notify` (only the notification service, no route out; an internal network supplies no gateway, so the default route comes from `default`).
+
+When the company research says the AI service is unreachable, or the log shows `openai.APIConnectionError: Connection error.`, check from the host:
+
+```bash
+# Internet egress of the server container: prints 200
+docker compose exec ai-job-agent-server python -c "import urllib.request; print(urllib.request.urlopen('https://openrouter.ai/api/v1/models', timeout=10).status)"
+# DNS: prints an address of openrouter.ai
+docker compose exec ai-job-agent-server python -c "import socket; print(socket.getaddrinfo('openrouter.ai', 443)[0][4])"
+# Default route inside the container (the image has no `ip`): interface and gateway
+docker compose exec ai-job-agent-server python -c "import socket, struct; [print(f.split()[0], socket.inet_ntoa(struct.pack('<L', int(f.split()[2], 16)))) for f in open('/proc/net/route') if f.split()[1] == '00000000']"
+# The gateway above must be the one of the *_default network here, never the *_notify one
+docker inspect ai-job-agent-server --format '{{json .NetworkSettings.Networks}}'
+# The notification service stays unreachable from other containers: prints "unreachable"
+docker compose exec ai-job-agent-frontend node -e "fetch('http://ai-job-agent-notify:8000/health').then(r => console.log(r.status), () => console.log('unreachable'))"
+```
+
+If the default-route check shows the gateway of the `*_notify` network, upgrade Docker (Engine 28.0+) or Compose (2.33.1+) and give the server's `default` network the gateway priority in `docker-compose.yml` (`networks: {default: {gw_priority: 1}, notify: {}}`).
+
+If all of these pass, the log line `AI connection error in <task> to <base URL>` names the target: a `host.docker.internal` URL means the task is routed to the local model server (System Settings, AI routing), which must then be running on the host.
+
 ---
 
 ## 🤝 Development Setup
 
-For local development, it is highly recommended to run the infrastructure components (PostgreSQL, Redis, RabbitMQ, Botosaurus) in Docker, while running the FastAPI backend and Next.js frontend locally to support live reloading, debugging, and step-through code execution.
+For local development, it is highly recommended to run the infrastructure components (PostgreSQL, Redis, RabbitMQ, page render service) in Docker, while running the FastAPI backend and Next.js frontend locally to support live reloading, debugging, and step-through code execution.
 
 ### Prerequisites
 *   **Python 3.11** installed on your host system.
@@ -152,7 +190,7 @@ For local development, it is highly recommended to run the infrastructure compon
 ### Step 1: Start Infrastructure Containers
 Run only the supporting services from the root folder:
 ```bash
-docker-compose up -d ai-job-agent-database ai-job-agent-redis ai-job-agent-rabbitmq ai-job-agent-botosaurus
+docker-compose up -d ai-job-agent-database ai-job-agent-redis ai-job-agent-rabbitmq ai-job-agent-page-render
 ```
 
 ---
@@ -189,6 +227,11 @@ docker-compose up -d ai-job-agent-database ai-job-agent-redis ai-job-agent-rabbi
     CELERY_RESULT_BACKEND=redis://localhost:6379/0
     SECRET_KEY=dev-secret-key-make-sure-to-generate-a-secure-one
     ADMIN_PASSWORD=adminpassword
+    RENDER_API_KEY=same-key-as-in-the-root-env-at-least-32-characters
+    # The notification service has no host port: run it locally as its README describes
+    # (uvicorn on 127.0.0.1:8000) with NOTIFY_API_KEYS=ai-job-agent:<the same key>.
+    NOTIFY_API_URL=http://127.0.0.1:8000
+    NOTIFY_API_KEY=same-key-as-in-the-root-env-at-least-32-characters
     ```
 
 5.  **Apply Database Migrations**:
@@ -291,7 +334,7 @@ If you're making code contributions to this repository, please adhere to the fol
 1.  **Strict Type Safety**: The use of `any` is forbidden in TypeScript files. Backend code must maintain strict type hinting on all functions.
 2.  **Tenant Security**: Every query and mutation must explicitly filter by user identity (`user_id == current_user.id`) to avoid cross-tenant leaks.
 3.  **Route Selection**: Use `def` for synchronous tasks (SQLAlchemy queries, template fills, standard filesystem checks) to let FastAPI delegate them to a thread pool. Use `async def` only for fully non-blocking asynchronous calls.
-4.  **Heavy Task Handlers**: Never block an HTTP route handler on long-running processes (scraping, AI generation, PDF compiles). Immediately push to the Celery broker, return a task ID, and broadcast progress updates using WebSockets.
+4.  **Heavy Task Handlers**: Never block an HTTP route handler on long-running processes (scraping, AI generation, PDF compiles). Immediately push to the Celery broker, return a task ID, and broadcast progress updates using WebSockets. The only exceptions are the CV import and the deep dive, which run the AI in the request thread behind a cap of 4 parallel runs and a durable start stamp.
 5.  **Schema Updates**: Never manually modify the database tables. Always generate Alembic migrations:
     ```bash
     alembic -c database/alembic.ini revision --autogenerate -m "describe_changes"
